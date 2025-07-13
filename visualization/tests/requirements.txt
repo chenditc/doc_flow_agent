@@ -1,0 +1,10 @@
+# Test dependencies for visualization module
+# Install with: pip install -r visualization/tests/requirements.txt
+
+# Frontend testing dependencies (optional - for Selenium tests)
+selenium>=4.0.0
+webdriver-manager>=3.8.0
+
+# Additional test utilities
+pytest-html>=3.0.0  # For HTML test reports
+pytest-cov>=4.0.0   # For coverage reports

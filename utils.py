@@ -1,0 +1,202 @@
+#!/usr/bin/env python3
+"""
+Utility functions for doc_flow_agent
+"""
+
+import re
+from typing import Dict, Any, List, Union
+from jsonpath_ng.ext import parse
+from jsonpath_ng import jsonpath
+
+
+def set_json_path_value(data: Dict[str, Any], json_path: str, value: Any) -> None:
+    """
+    Set a value in a dictionary using JSON path notation.
+    
+    This function can handle both simple paths ($.key) and nested paths ($.parent.child).
+    If parent paths don't exist, they will be created as empty dictionaries.
+    
+    Args:
+        data: The target dictionary to modify
+        json_path: JSON path string (e.g., "$.key", "$.parent.child", "$.parent[0].child")
+        value: The value to set at the specified path
+        
+    Examples:
+        >>> data = {}
+        >>> set_json_path_value(data, "$.title", "My Title")
+        >>> print(data)  # {"title": "My Title"}
+        
+        >>> set_json_path_value(data, "$.blog.outline", ["point1", "point2"])
+        >>> print(data)  # {"title": "My Title", "blog": {"outline": ["point1", "point2"]}}
+    """
+    
+    # Handle simple case: $.key
+    if json_path.startswith('$.') and '.' not in json_path[2:] and '[' not in json_path:
+        key = json_path[2:]
+        data[key] = value
+        return
+    
+    # Parse the JSON path
+    try:
+        jsonpath_expr = parse(json_path)
+    except Exception as e:
+        raise ValueError(f"Invalid JSON path '{json_path}': {e}")
+    
+    # For more complex paths, we need to ensure parent paths exist
+    _ensure_path_exists(data, json_path)
+    
+    # Now set the value using jsonpath
+    # We'll use a more direct approach for setting values
+    _set_value_by_path(data, json_path, value)
+
+
+def _ensure_path_exists(data: Dict[str, Any], json_path: str) -> None:
+    """
+    Ensure all parent paths exist in the data dictionary.
+    Creates empty dictionaries for missing parent paths.
+    """
+    # Parse path components - handle $.parent.child.key format
+    if not json_path.startswith('$.'):
+        raise ValueError(f"JSON path must start with '$.' but got: {json_path}")
+    
+    # Remove the initial '$.' and split by '.'
+    path_without_root = json_path[2:]
+    
+    # Handle array indices and complex paths
+    # For now, focus on simple dot notation paths
+    if '[' in path_without_root:
+        # Complex path with array indices - handle separately
+        _ensure_complex_path_exists(data, json_path)
+        return
+    
+    # Simple dot notation path
+    path_parts = path_without_root.split('.')
+    
+    # Navigate/create the path up to the parent
+    current = data
+    for part in path_parts[:-1]:  # All parts except the last one
+        if part not in current:
+            current[part] = {}
+        elif not isinstance(current[part], dict):
+            # If the intermediate path exists but is not a dict, we can't continue
+            raise ValueError(f"Cannot set nested path: intermediate key '{part}' is not a dictionary")
+        current = current[part]
+
+
+def _ensure_complex_path_exists(data: Dict[str, Any], json_path: str) -> None:
+    """
+    Handle complex paths with array indices.
+    For now, we'll implement basic support for simple cases.
+    """
+    # This is a simplified implementation
+    # A full implementation would need to handle various array syntax patterns
+    raise NotImplementedError("Complex paths with array indices are not yet supported")
+
+
+def _set_value_by_path(data: Dict[str, Any], json_path: str, value: Any) -> None:
+    """
+    Set the value at the specified JSON path.
+    Assumes the path already exists (created by _ensure_path_exists).
+    """
+    # For simple paths, use direct dictionary access
+    if not json_path.startswith('$.'):
+        raise ValueError(f"JSON path must start with '$.' but got: {json_path}")
+    
+    path_without_root = json_path[2:]
+    
+    # Handle simple dot notation
+    if '[' not in path_without_root:
+        path_parts = path_without_root.split('.')
+        current = data
+        
+        # Navigate to the parent
+        for part in path_parts[:-1]:
+            current = current[part]
+        
+        # Set the final value
+        final_key = path_parts[-1]
+        current[final_key] = value
+    else:
+        # Complex path - use jsonpath library for setting
+        # This is more complex and might need additional logic
+        raise NotImplementedError("Complex paths with array indices are not yet supported")
+
+
+def get_json_path_value(data: Dict[str, Any], json_path: str) -> Any:
+    """
+    Get a value from a dictionary using JSON path notation.
+    
+    Args:
+        data: The source dictionary
+        json_path: JSON path string (e.g., "$.key", "$.parent.child")
+        
+    Returns:
+        The value at the specified path, or None if not found
+        
+    Examples:
+        >>> data = {"title": "My Title", "blog": {"outline": ["point1", "point2"]}}
+        >>> get_json_path_value(data, "$.title")
+        "My Title"
+        >>> get_json_path_value(data, "$.blog.outline")
+        ["point1", "point2"]
+    """
+    # Handle simple case: $.key
+    if json_path.startswith('$.') and '.' not in json_path[2:] and '[' not in json_path:
+        key = json_path[2:]
+        return data.get(key)
+    
+    # Use jsonpath for complex cases
+    try:
+        jsonpath_expr = parse(json_path)
+        matches = jsonpath_expr.find(data)
+        if matches:
+            return matches[0].value
+        return None
+    except Exception:
+        return None
+
+
+# Test function to verify the implementation
+def test_set_json_path_value():
+    """Test the set_json_path_value function"""
+    print("Testing set_json_path_value function...")
+    
+    # Test 1: Simple path
+    data1 = {}
+    set_json_path_value(data1, "$.title", "My Blog Title")
+    assert data1 == {"title": "My Blog Title"}, f"Test 1 failed: {data1}"
+    print("✓ Test 1 passed: Simple path")
+    
+    # Test 2: Nested path (parent doesn't exist)
+    data2 = {}
+    set_json_path_value(data2, "$.blog.title", "Nested Title")
+    expected2 = {"blog": {"title": "Nested Title"}}
+    assert data2 == expected2, f"Test 2 failed: {data2}"
+    print("✓ Test 2 passed: Nested path creation")
+    
+    # Test 3: Nested path (parent exists)
+    data3 = {"blog": {"author": "John"}}
+    set_json_path_value(data3, "$.blog.title", "Another Title")
+    expected3 = {"blog": {"author": "John", "title": "Another Title"}}
+    assert data3 == expected3, f"Test 3 failed: {data3}"
+    print("✓ Test 3 passed: Nested path with existing parent")
+    
+    # Test 4: Deep nested path
+    data4 = {}
+    set_json_path_value(data4, "$.blog.meta.tags", ["python", "json"])
+    expected4 = {"blog": {"meta": {"tags": ["python", "json"]}}}
+    assert data4 == expected4, f"Test 4 failed: {data4}"
+    print("✓ Test 4 passed: Deep nested path")
+    
+    # Test 5: Overwriting existing value
+    data5 = {"title": "Old Title"}
+    set_json_path_value(data5, "$.title", "New Title")
+    expected5 = {"title": "New Title"}
+    assert data5 == expected5, f"Test 5 failed: {data5}"
+    print("✓ Test 5 passed: Overwriting existing value")
+    
+    print("All tests passed! ✓")
+
+
+if __name__ == "__main__":
+    test_set_json_path_value()

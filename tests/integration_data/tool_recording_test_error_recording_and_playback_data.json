@@ -1,0 +1,27 @@
+{
+  "test_name": "tool_recording_test_error_recording_and_playback",
+  "mode": "real",
+  "timestamp": "2025-08-21T15:47:18.848646",
+  "tool_calls": [
+    {
+      "tool_id": "CLI",
+      "parameters": {
+        "command": "this-command-does-not-exist-12345"
+      },
+      "output": {
+        "error": "CLI command failed: /bin/sh: 1: this-command-does-not-exist-12345: not found\n",
+        "error_type": "RuntimeError"
+      },
+      "timestamp": "2025-08-21T15:47:18.847181",
+      "execution_time_ms": 36.32238899990625,
+      "parameters_hash": "d8db154d372d03a3"
+    }
+  ],
+  "metadata": {
+    "total_tool_calls": 1,
+    "tools_used": [
+      "CLI"
+    ]
+  },
+  "saved_at": "2025-08-21T15:47:18.848729"
+}

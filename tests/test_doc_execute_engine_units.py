@@ -1,0 +1,421 @@
+#!/usr/bin/env python3
+"""
+Unit Tests for DocExecuteEngine isolated components
+Tests for methods that can be tested in isolation without complex dependencies
+"""
+
+import unittest
+import sys
+import os
+import json
+from unittest.mock import patch, MagicMock
+
+# Add parent directory to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from doc_execute_engine import DocExecuteEngine, Task
+
+
+class TestDocExecuteEngineUnits(unittest.TestCase):
+    """Unit tests for isolated DocExecuteEngine methods"""
+    
+    def setUp(self):
+        """Set up test fixtures"""
+        self.engine = DocExecuteEngine()
+    
+    def test_template_rendering_basic(self):
+        """Test basic template rendering with {var} syntax"""
+        template = "Hello {name}, welcome to {place}!"
+        variables = {"name": "Alice", "place": "Wonderland"}
+        
+        result = self.engine.render_template(template, variables)
+        
+        self.assertEqual(result, "Hello Alice, welcome to Wonderland!")
+    
+    def test_template_rendering_missing_variables(self):
+        """Test template rendering with missing variables"""
+        template = "Process {available} and {missing}"
+        variables = {"available": "data"}
+        
+        result = self.engine.render_template(template, variables)
+        
+        # Missing variables should remain as template placeholders
+        self.assertEqual(result, "Process data and {missing}")
+    
+    def test_template_rendering_empty_variables(self):
+        """Test template rendering with empty variables dict"""
+        template = "No variables to replace"
+        variables = {}
+        
+        result = self.engine.render_template(template, variables)
+        
+        self.assertEqual(result, "No variables to replace")
+    
+    def test_template_rendering_special_characters(self):
+        """Test template rendering with special characters"""
+        template = "Command: {command}"
+        variables = {"command": "echo 'Hello & goodbye!'"}
+        
+        result = self.engine.render_template(template, variables)
+        
+        self.assertEqual(result, "Command: echo 'Hello & goodbye!'")
+    
+    def test_template_rendering_numeric_values(self):
+        """Test template rendering with numeric values"""
+        template = "Age: {age}, Score: {score}, Active: {active}"
+        variables = {"age": 25, "score": 95.5, "active": True}
+        
+        result = self.engine.render_template(template, variables)
+        
+        self.assertEqual(result, "Age: 25, Score: 95.5, Active: True")
+    
+    def test_json_path_prefix_generation_simple(self):
+        """Test execution prefix path generation with simple paths"""
+        self.engine.task_execution_counter = 3
+        
+        test_cases = [
+            ("$.output", "$.msg3_output"),
+            ("$.result", "$.msg3_result"),
+            ("$.data", "$.msg3_data"),
+        ]
+        
+        for input_path, expected in test_cases:
+            with self.subTest(input_path=input_path):
+                result = self.engine.add_execution_prefix_to_path(input_path)
+                self.assertEqual(result, expected)
+    
+    def test_json_path_prefix_generation_arrays(self):
+        """Test execution prefix path generation with array notation"""
+        self.engine.task_execution_counter = 7
+        
+        test_cases = [
+            ("$.messages[0]", "$.msg7_messages[0]"),
+            ("$.items[5]", "$.msg7_items[5]"),
+            ("$.users[10].name", "$.msg7_users[10].name"),
+        ]
+        
+        for input_path, expected in test_cases:
+            with self.subTest(input_path=input_path):
+                result = self.engine.add_execution_prefix_to_path(input_path)
+                self.assertEqual(result, expected)
+    
+    def test_json_path_prefix_generation_nested(self):
+        """Test execution prefix path generation with nested paths"""
+        self.engine.task_execution_counter = 12
+        
+        test_cases = [
+            ("$.output.nested", "$.msg12_output.nested"),
+            ("$.data.level1.level2", "$.msg12_data.level1.level2"),
+            ("$.result.summary.count", "$.msg12_result.summary.count"),
+        ]
+        
+        for input_path, expected in test_cases:
+            with self.subTest(input_path=input_path):
+                result = self.engine.add_execution_prefix_to_path(input_path)
+                self.assertEqual(result, expected)
+    
+    def test_json_path_prefix_generation_edge_cases(self):
+        """Test execution prefix path generation with edge cases"""
+        self.engine.task_execution_counter = 1
+        
+        test_cases = [
+            ("", ""),  # Empty string
+            ("invalid_path", "invalid_path"),  # No $ prefix
+            ("$.", "$."),  # Just root
+            ("$..", "$.."),  # Double dot (returns as-is due to empty first key)
+        ]
+        
+        for input_path, expected in test_cases:
+            with self.subTest(input_path=input_path):
+                result = self.engine.add_execution_prefix_to_path(input_path)
+                self.assertEqual(result, expected)
+    
+    def test_json_path_resolution_simple_values(self):
+        """Test JSON path resolution with simple values"""
+        context = {
+            "string_value": "hello",
+            "number_value": 42,
+            "boolean_value": True,
+            "null_value": None
+        }
+        
+        test_cases = [
+            ("$.string_value", "hello"),
+            ("$.number_value", 42),
+            ("$.boolean_value", True),
+            ("$.null_value", None),
+        ]
+        
+        for path, expected in test_cases:
+            with self.subTest(path=path):
+                result = self.engine.resolve_json_path(path, context)
+                self.assertEqual(result, expected)
+    
+    def test_json_path_resolution_nested_objects(self):
+        """Test JSON path resolution with nested objects"""
+        context = {
+            "user": {
+                "profile": {
+                    "name": "John",
+                    "age": 30
+                },
+                "preferences": {
+                    "theme": "dark",
+                    "notifications": True
+                }
+            }
+        }
+        
+        test_cases = [
+            ("$.user.profile.name", "John"),
+            ("$.user.profile.age", 30),
+            ("$.user.preferences.theme", "dark"),
+            ("$.user.preferences.notifications", True),
+        ]
+        
+        for path, expected in test_cases:
+            with self.subTest(path=path):
+                result = self.engine.resolve_json_path(path, context)
+                self.assertEqual(result, expected)
+    
+    def test_json_path_resolution_arrays(self):
+        """Test JSON path resolution with arrays"""
+        context = {
+            "items": ["first", "second", "third"],
+            "users": [
+                {"name": "Alice", "id": 1},
+                {"name": "Bob", "id": 2}
+            ]
+        }
+        
+        test_cases = [
+            ("$.items[0]", "first"),
+            ("$.items[2]", "third"),
+            ("$.users[0].name", "Alice"),
+            ("$.users[1].id", 2),
+        ]
+        
+        for path, expected in test_cases:
+            with self.subTest(path=path):
+                result = self.engine.resolve_json_path(path, context)
+                self.assertEqual(result, expected)
+    
+    def test_json_path_resolution_missing_paths(self):
+        """Test JSON path resolution with missing paths"""
+        context = {
+            "existing": {
+                "nested": "value"
+            },
+            "array": ["item1", "item2"]
+        }
+        
+        missing_paths = [
+            "$.nonexistent",
+            "$.existing.missing",
+            "$.existing.nested.deeper",
+            "$.array[10]",
+            "$.array.missing",
+        ]
+        
+        for path in missing_paths:
+            with self.subTest(path=path):
+                result = self.engine.resolve_json_path(path, context)
+                self.assertIsNone(result)
+    
+    def test_json_path_resolution_invalid_syntax(self):
+        """Test JSON path resolution with invalid syntax"""
+        context = {"valid": "data"}
+        
+        # Invalid JSON paths should return None (handled gracefully)
+        invalid_paths = [
+            "invalid_syntax",
+            "$.{invalid}",
+            "$.[invalid]",
+        ]
+        
+        for path in invalid_paths:
+            with self.subTest(path=path):
+                result = self.engine.resolve_json_path(path, context)
+                self.assertIsNone(result)
+    
+    def test_task_dataclass_creation(self):
+        """Test Task dataclass creation and validation"""
+        task = Task(
+            task_id="test-123",
+            description="Test task description",
+            sop_doc_id="general/test",
+            tool={"tool_id": "LLM", "parameters": {"param": "value"}},
+            input_json_path={"input": "$.data"},
+            output_json_path="$.result",
+            output_description="Test output description"
+        )
+        
+        self.assertEqual(task.task_id, "test-123")
+        self.assertEqual(task.description, "Test task description")
+        self.assertEqual(task.sop_doc_id, "general/test")
+        self.assertEqual(task.tool["tool_id"], "LLM")
+        self.assertEqual(task.input_json_path["input"], "$.data")
+        self.assertEqual(task.output_json_path, "$.result")
+        self.assertEqual(task.output_description, "Test output description")
+    
+    def test_task_dataclass_string_representation(self):
+        """Test Task dataclass string representation"""
+        task = Task(
+            task_id="test-456",
+            description="String repr test",
+            sop_doc_id="general/string_test",
+            tool={"tool_id": "CLI"},
+            input_json_path={"cmd": "$.command"},
+            output_json_path="$.output"
+        )
+        
+        # Test __str__ method
+        str_repr = str(task)
+        self.assertIn("test-456", str_repr)
+        self.assertIn("String repr test", str_repr)
+        self.assertIn("general/string_test", str_repr)
+        self.assertIn("CLI", str_repr)
+        
+        # Test __repr__ method
+        repr_str = repr(task)
+        self.assertIn("Task(", repr_str)
+        self.assertIn("task_id=test-456", repr_str)
+    
+    def test_get_engine_state(self):
+        """Test engine state capture for tracing"""
+        # Set up some engine state
+        self.engine.task_stack = ["task1", "task2"]
+        self.engine.context = {"key": "value", "nested": {"data": 123}}
+        self.engine.task_execution_counter = 5
+        
+        state = self.engine._get_engine_state()
+        
+        # Verify state capture
+        self.assertEqual(state["task_stack"], ["task1", "task2"])
+        self.assertEqual(state["context"]["key"], "value")
+        self.assertEqual(state["context"]["nested"]["data"], 123)
+        self.assertEqual(state["task_execution_counter"], 5)
+        
+        # Verify it's a deep copy (modifying original shouldn't affect state)
+        self.engine.task_stack.append("task3")
+        self.engine.context["new_key"] = "new_value"
+        
+        # State should remain unchanged
+        self.assertEqual(len(state["task_stack"]), 2)
+        self.assertNotIn("new_key", state["context"])
+    
+    def test_get_available_tools_empty(self):
+        """Test get_available_tools with empty tools dict"""
+        engine = DocExecuteEngine()
+        engine.tools = {}
+        
+        tools = engine.get_available_tools()
+        
+        self.assertEqual(tools, {})
+    
+    def test_get_available_tools_with_tools(self):
+        """Test get_available_tools with registered tools"""
+        # Mock tools for testing
+        class MockLLMTool:
+            pass
+        
+        class MockCLITool:
+            pass
+        
+        engine = DocExecuteEngine()
+        engine.tools = {
+            "LLM": MockLLMTool(),
+            "CLI": MockCLITool()
+        }
+        
+        tools = engine.get_available_tools()
+        
+        expected = {
+            "LLM": "MockLLMTool",
+            "CLI": "MockCLITool"
+        }
+        self.assertEqual(tools, expected)
+    
+    @patch('builtins.open', new_callable=unittest.mock.mock_open, read_data='{"test": "data"}')
+    @patch('pathlib.Path.exists', return_value=True)
+    def test_load_context_existing_file(self, mock_exists, mock_open_file):
+        """Test loading context from existing file"""
+        engine = DocExecuteEngine()
+        
+        context = engine.load_context(load_if_exists=True)
+        
+        self.assertEqual(context, {"test": "data"})
+        self.assertEqual(engine.context, {"test": "data"})
+        mock_open_file.assert_called_once()
+    
+    @patch('pathlib.Path.exists', return_value=False)
+    def test_load_context_nonexistent_file(self, mock_exists):
+        """Test loading context when file doesn't exist"""
+        engine = DocExecuteEngine()
+        
+        context = engine.load_context(load_if_exists=True)
+        
+        self.assertEqual(context, {})
+        self.assertEqual(engine.context, {})
+    
+    def test_load_context_ignore_existing(self):
+        """Test loading context with load_if_exists=False"""
+        engine = DocExecuteEngine()
+        
+        context = engine.load_context(load_if_exists=False)
+        
+        self.assertEqual(context, {})
+        self.assertEqual(engine.context, {})
+    
+    @patch('builtins.open', new_callable=unittest.mock.mock_open)
+    @patch('json.dump')
+    def test_save_context(self, mock_json_dump, mock_open_file):
+        """Test saving context to file"""
+        engine = DocExecuteEngine()
+        engine.context = {"save_test": "data", "number": 42}
+        
+        engine.save_context()
+        
+        mock_open_file.assert_called_once()
+        mock_json_dump.assert_called_once()
+        
+        # Verify json.dump was called with correct parameters
+        call_args = mock_json_dump.call_args
+        self.assertEqual(call_args[0][0], {"save_test": "data", "number": 42})
+        self.assertEqual(call_args[1]["ensure_ascii"], False)
+        self.assertEqual(call_args[1]["indent"], 2)
+
+    def test_last_task_output_initialization(self):
+        """Test that last_task_output is initialized to None"""
+        engine = DocExecuteEngine()
+        
+        # Should be None initially
+        self.assertIsNone(engine.get_last_task_output())
+        self.assertIsNone(engine.last_task_output)
+
+    def test_last_task_output_getter(self):
+        """Test the get_last_task_output method"""
+        engine = DocExecuteEngine()
+        
+        # Test initial state
+        self.assertIsNone(engine.get_last_task_output())
+        
+        # Manually set a value and test getter
+        test_output = {"test": "output", "result": 123}
+        engine.last_task_output = test_output
+        
+        result = engine.get_last_task_output()
+        self.assertEqual(result, test_output)
+        
+        # Test with different data types
+        string_output = "Simple string output"
+        engine.last_task_output = string_output
+        self.assertEqual(engine.get_last_task_output(), string_output)
+        
+        list_output = [1, 2, 3, "test"]
+        engine.last_task_output = list_output
+        self.assertEqual(engine.get_last_task_output(), list_output)
+
+
+if __name__ == '__main__':
+    unittest.main()

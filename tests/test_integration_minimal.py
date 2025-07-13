@@ -1,0 +1,204 @@
+#!/usr/bin/env python3
+"""
+Example Integration Test using the Save/Mock Framework
+Demonstrates testing DocExecuteEngine with tool recording/playback
+"""
+
+import asyncio
+import sys
+import os
+import pytest
+from pathlib import Path
+
+# Add parent directory to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from integration_test_framework import IntegrationTestBase, IntegrationTestMode, get_test_mode, print_test_mode_info
+from tools.llm_tool import LLMTool
+from tools.cli_tool import CLITool
+from tools.user_communicate_tool import UserCommunicateTool
+from doc_execute_engine import DocExecuteEngine
+from sop_document import SOPDocumentParser
+
+
+class TestDocExecuteEngineIntegration:
+    """Integration test for DocExecuteEngine with save/mock capabilities"""
+    
+    def setup_method(self, method):
+        """Set up test fixtures"""
+        self.test_mode = get_test_mode()
+        print_test_mode_info(self.test_mode)
+        
+        # Use method name to create unique test names
+        test_name = f"doc_execute_engine_{method.__name__}"
+        
+        # Initialize integration test framework
+        self.integration_test = IntegrationTestBase(
+            test_name=test_name,
+            mode=self.test_mode
+        )
+        
+        # Create wrapped tools
+        self.llm_tool = self.integration_test.wrap_tool(LLMTool())
+        self.cli_tool = self.integration_test.wrap_tool(CLITool())
+        self.user_tool = self.integration_test.wrap_tool(UserCommunicateTool())
+        
+        # Create DocExecuteEngine with wrapped tools
+        self.engine = DocExecuteEngine()
+        
+        # Replace the engine's tools with our wrapped versions
+        self.engine.tools = {
+            "LLM": self.llm_tool,
+            "CLI": self.cli_tool,
+            "USER_COMMUNICATE": self.user_tool
+        }
+        
+        # Recreate JsonPathGenerator with the wrapped LLM tool
+        from tools.json_path_generator import JsonPathGenerator
+        self.engine.json_path_generator = JsonPathGenerator(self.llm_tool)
+
+        # Inject SOP document parser
+        self.engine.sop_parser = SOPDocumentParser(llm_tool=self.llm_tool)
+    
+    def teardown_method(self):
+        """Clean up and save test data if in real mode"""
+        if self.test_mode == IntegrationTestMode.REAL:
+            self.integration_test.save_test_data()
+    
+    @pytest.mark.asyncio
+    async def test_basic_document_execution(self):
+        """Test basic document execution flow"""
+        # Sample input data - just a simple task description
+        initial_task = "Write a simple Python script that prints 'Hello World'"
+        
+        # Execute the task using start method (this is the main entry point)
+        result = await self.engine.start(initial_task)
+        
+        # The start method doesn't return a specific result, but we can check
+        # that the engine executed without errors and has some context
+        assert self.engine.context is not None
+        
+        print(f"✅ Execution completed successfully")
+        print(f"   Context keys: {list(self.engine.context.keys())}")
+
+    
+    @pytest.mark.asyncio
+    async def test_llm_tool_direct(self):
+        """Test LLM tool directly with save/mock"""
+        prompt = "Generate a simple Python function that adds two numbers"
+        
+        try:
+            result = await self.llm_tool.execute({
+                "prompt": prompt
+            })
+            
+            # Verify response structure
+            assert result is not None
+            if self.test_mode == IntegrationTestMode.REAL:
+                # In real mode, we expect actual LLM response
+                assert "def" in result.lower()  # Should contain function definition
+            
+            print(f"✅ LLM tool test completed")
+            print(f"   Response length: {len(str(result))}")
+            
+        except RuntimeError as e:
+            if "Failed to connect to LLM API" in str(e):
+                print(f"⚠️ LLM API not available, but error was recorded for mock testing")
+                # This is expected in environments without LLM API access
+                # The error will be recorded and can be replayed in mock mode
+            else:
+                raise
+    
+    @pytest.mark.asyncio
+    async def test_cli_tool_direct(self):
+        """Test CLI tool directly with save/mock"""
+        # Simple command that should work on most systems
+        result = await self.cli_tool.execute({
+            "command": "echo 'Hello from CLI tool'"
+        })
+        
+        # Verify response
+        assert result is not None
+        if self.test_mode == IntegrationTestMode.REAL:
+            assert "Hello from CLI tool" in result
+        
+        print(f"✅ CLI tool test completed")
+        print(f"   Result: {result}")
+    
+    @pytest.mark.asyncio
+    async def test_missing_mock_data_error(self):
+        """Test that helpful error is raised when mock data is missing (only in mock mode)"""
+        if self.test_mode != IntegrationTestMode.MOCK:
+            pytest.skip("This test only runs in MOCK mode")
+        
+        # Create a separate integration test instance for this test that doesn't load data
+        # This test intentionally tests missing data behavior
+        test_integration = IntegrationTestBase(
+            test_name="intentionally_missing_data_test",
+            mode=self.test_mode,
+            load_data=False  # Don't load any data for this test
+        )
+        llm_tool = test_integration.wrap_tool(LLMTool())
+        
+        # Try to call tool with parameters that weren't recorded
+        with pytest.raises(ValueError) as exc_info:
+            await llm_tool.execute({
+                "prompt": "This is a unique prompt that was never recorded"
+            })
+        
+        # Verify error message is helpful
+        error_msg = str(exc_info.value)
+        assert "No mock data found" in error_msg
+        assert "parameters hash" in error_msg
+        assert "Run the test in REAL mode" in error_msg
+        
+        print(f"✅ Mock error handling test completed")
+
+
+class TestToolRecordingFeatures:
+    """Test the recording framework features"""
+    
+    def setup_method(self, method):
+        """Set up test fixtures"""
+        self.test_mode = get_test_mode()
+        
+        # Use method name to create unique test names
+        test_name = f"tool_recording_{method.__name__}"
+        
+        self.integration_test = IntegrationTestBase(
+            test_name=test_name,
+            mode=self.test_mode
+        )
+    
+    def teardown_method(self):
+        if self.test_mode == IntegrationTestMode.REAL:
+            self.integration_test.save_test_data()
+    
+    @pytest.mark.asyncio
+    async def test_error_recording_and_playback(self):
+        """Test that tool errors are properly recorded and replayed"""
+        cli_tool = self.integration_test.wrap_tool(CLITool())
+        
+        # Command that should fail
+        with pytest.raises(RuntimeError):
+            await cli_tool.execute({
+                "command": "this-command-does-not-exist-12345"
+            })
+        
+        print(f"✅ Error recording test completed")
+    
+    @pytest.mark.asyncio
+    async def test_multiple_identical_calls(self):
+        """Test that identical calls are handled properly"""
+        cli_tool = self.integration_test.wrap_tool(CLITool())
+        
+        # Make the same call multiple times
+        command = "echo 'test call'"
+        
+        result1 = await cli_tool.execute({"command": command})
+        result2 = await cli_tool.execute({"command": command})
+        
+        # Results should be identical
+        assert result1 == result2
+        
+        print(f"✅ Multiple identical calls test completed")

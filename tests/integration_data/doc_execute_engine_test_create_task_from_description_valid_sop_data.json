@@ -1,0 +1,25 @@
+{
+  "test_name": "doc_execute_engine_test_create_task_from_description_valid_sop",
+  "mode": "real",
+  "timestamp": "2025-08-21T15:45:11.434589",
+  "tool_calls": [
+    {
+      "tool_id": "LLM",
+      "parameters": {
+        "prompt": "## Task: Generate Parameter Extraction Code\nGenerate Python code to extract and reformat parameter for the request parameter from candidate fields. User has raise a request and we need to extract and reformat the parameter from the candidate fields in the context.\n\n## User Original Request\nRun ls command to list home directory contents using: ls -la ~/\n\n## Required Request Parameter Description\nAll related context that might be helpful to clarify the task or be used during task execution.\n\n## Candidate Fields from Context\nContext object is a dictionary, here we represent them using json_path syntax:\n- $.['current_task']: Run ls command to list home directory contents using: ls -la ~/\n- current_task: Run ls command to list home directory contents using: ls -la ~/\n\n## Instructions\n1. Generate a Python function that takes 'context' as input variable and returns the code for extracting the request parameter\n2. The code can be:\n   - Hard-coded information, when the parameter needs some rephrasing: `return \"Some fixed string\"` or it's so simple (<50 words) that it can be hard-coded.\n   - Simple extraction, when the parameter is directly available: `return context['key']`\n   - Complex extraction with transformations, regex, string operations, etc, when the parameter needs some transformation.\n3. Think if there is info available in context before generating the code. If info is not enough or still have ambiguitiy, use `return \"<NOT_FOUND_IN_CANDIDATES>\"`. The generated code should just be a getter / parser.\n4. The parameter should only be \"extracted\" or \"rephrased\", not inferred. This means different people should get the same parameter value if they have the same context, if there is uncertainty, do not rephrase it.\n5. If there is no perfect match, return a piece of code which return \"<NOT_FOUND_IN_CANDIDATES>\".\n\n## Examples\n```python\n# The information is directly available in context, just need to do simple extraction\ndef extract_func(context):\n    return context['some_key'][0]['nested_key']\n```\n\n```python\n# The information is available in context, but needs some transformation\ndef extract_func(context): \n    import re\n    # Extract content between <title> tags\n    return re.match(r'<title>(.*?)</title>', context.get('html', '')).group(1)\n```\n\n```python\ndef extract_func(context): \n    # The information is available in context, but doesn't have extact format, so we rephrase it.\n    # Rephrase xxx from xxx\n    return \"Rephrased content based on context\" \n```\n\n```python\ndef extract_func(context): \n    # The information is already present in context, and it's simple enough to return directly\n    return \"cat ./some.log | grep 'error' | wc -l\" \n```\n\n```python\ndef extract_func(context):\n    # The information is not available in context, return a placeholder\n    return \"<NOT_FOUND_IN_CANDIDATES>\"\n```\n\n## Return Format\n<THINK_PROCESS>\n...\n</THINK_PROCESS>\n<GENERATED_CODE>\n```python\ndef extract_func(context):\n    return \"The extracted parameter value\"\n```\n</GENERATED_CODE>\n",
+        "step": "json_path_generate_extraction_code"
+      },
+      "output": "<THINK_PROCESS>\n1. **Understand User Request:** The user's original request is to run the `ls` command to list the contents of the home directory using `ls -la ~/`.\n2. **Analyze Required Parameter:** The required parameter is the command `ls -la ~/`, which is explicitly mentioned in the user's request.\n3. **Examine Candidate Fields:** Both candidate fields (`$.['current_task']` and `current_task`) contain the exact phrase: \"Run ls command to list home directory contents using: ls -la ~/\". This provides enough context to extract the command directly.\n4. **Decide Extraction Strategy:** The command can be extracted using string operations or a regular expression to isolate `ls -la ~/`. Since the context explicitly contains the command, we will use a regex to extract it cleanly.\n5. **Generate Code:** The code will look for the command in the context and extract the part after \"using: \" in the `current_task` field.\n</THINK_PROCESS>\n<GENERATED_CODE>\n```python\ndef extract_func(context):\n    import re\n    task = context.get('current_task', '')\n    match = re.search(r'using:\\s*(.*)', task)\n    return match.group(1) if match else \"<NOT_FOUND_IN_CANDIDATES>\"\n```\n</GENERATED_CODE>",
+      "timestamp": "2025-08-21T15:45:11.431159",
+      "execution_time_ms": 4267.540494000059,
+      "parameters_hash": "0c3898c810e4a7b0"
+    }
+  ],
+  "metadata": {
+    "total_tool_calls": 1,
+    "tools_used": [
+      "LLM"
+    ]
+  },
+  "saved_at": "2025-08-21T15:45:11.434735"
+}
