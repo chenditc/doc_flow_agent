@@ -1,5 +1,6 @@
 import React from 'react';
 import type { SOPResolutionPhase } from '../../types/trace';
+import { ContextualLLMCall } from '../enhanced/ContextualLLMCall';
 
 interface SOPResolutionViewerProps {
   phaseData: SOPResolutionPhase;
@@ -86,10 +87,20 @@ export const SOPResolutionViewer: React.FC<SOPResolutionViewerProps> = ({ phaseD
       {/* LLM Validation Call */}
       {phaseData.llm_validation_call && (
         <div>
-          <h4 className="text-sm font-medium text-gray-700 mb-2">LLM Validation</h4>
-          <div className="bg-purple-50 border border-purple-200 rounded p-3">
-            <div className="text-sm text-purple-800">
-              LLM validation call made - details available in LLM Call component
+          <div className="border border-purple-200 rounded-lg">
+            <div className="px-3 py-2 bg-purple-50 border-b border-purple-200 rounded-t-lg">
+              <span className="text-sm font-medium text-purple-900">Document Selection Validation</span>
+            </div>
+            <div className="p-3">
+              <ContextualLLMCall 
+                llmCall={phaseData.llm_validation_call}
+                context="sop_validation"
+                relatedData={{ 
+                  candidateDocuments: phaseData.candidate_documents,
+                  selectedDocument: phaseData.selected_doc_id,
+                  inputDescription: phaseData.input?.description
+                }}
+              />
             </div>
           </div>
         </div>

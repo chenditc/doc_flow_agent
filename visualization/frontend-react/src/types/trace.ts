@@ -99,6 +99,7 @@ export interface Task {
   sop_doc_id: string;
   tool: {
     tool_id: string;
+    parameters?: Record<string, any>;
   };
   input_json_path: Record<string, string>;
   output_json_path: string;

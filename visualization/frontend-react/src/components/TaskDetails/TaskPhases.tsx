@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import type { TaskExecution, TaskPhases as TaskPhasesType } from '../../types/trace';
 import { SOPResolutionViewer } from '../SOPResolution/SOPResolutionViewer';
+import { TaskCreationPhaseViewer } from '../enhanced/TaskCreationPhaseViewer';
 
 interface TaskPhasesProps {
   task: TaskExecution;
@@ -150,9 +151,34 @@ export const TaskPhases: React.FC<TaskPhasesProps> = ({ task }) => {
                     </div>
                   </div>
                 </div>
-                <div className="p-4">
+                <CollapsibleSection title="View Details" defaultExpanded={false}>
                   <SOPResolutionViewer phaseData={phaseData} />
+                </CollapsibleSection>
+              </div>
+            );
+          }
+
+          // Special handling for task creation phase
+          if (phaseName === 'task_creation' && 'sop_document' in phaseData) {
+            return (
+              <div key={phaseName} className="border rounded-md">
+                <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 rounded-t-md">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="font-medium text-gray-900">Task Creation</span>
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeColor(phaseData.status)}`}>
+                        {phaseData.status}
+                      </span>
+                    </div>
+                    <div className="text-sm text-gray-500">
+                      {formatTime(phaseData.start_time)} - {formatTime(phaseData.end_time)} 
+                      ({calculateDuration(phaseData.start_time, phaseData.end_time)})
+                    </div>
+                  </div>
                 </div>
+                <CollapsibleSection title="View Details" defaultExpanded={false}>
+                  <TaskCreationPhaseViewer phaseData={phaseData} />
+                </CollapsibleSection>
               </div>
             );
           }

@@ -3,6 +3,7 @@ export { Header } from './common/Header';
 export { LoadingSpinner } from './common/LoadingSpinner';
 export { ErrorMessage } from './common/ErrorMessage';
 export { Modal } from './common/Modal';
+export { Tooltip, InfoIconWithTooltip } from './common/Tooltip';
 
 // Timeline Components
 export { Timeline } from './Timeline/Timeline';
@@ -20,6 +21,11 @@ export { TaskPhases } from './TaskDetails/TaskPhases';
 
 // SOPResolution Components
 export { SOPResolutionViewer } from './SOPResolution/SOPResolutionViewer';
+
+// Enhanced Components (Phase 1 Improvements)
+export { InputFieldInspector } from './enhanced/InputFieldInspector';
+export { TaskCreationPhaseViewer } from './enhanced/TaskCreationPhaseViewer';
+export { ContextualLLMCall } from './enhanced/ContextualLLMCall';
 
 // LLMCall Components
 export { LLMCallComponent } from './LLMCall/LLMCallComponent';
