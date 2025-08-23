@@ -3,7 +3,7 @@
  * Handles trace data, selection, and real-time monitoring
  */
 
-import React, { createContext, useContext, useReducer, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useReducer, useCallback, useEffect, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import type { TraceSession } from '../types';
 import { RealtimeService, createRealtimeService } from '../services/realtimeService';
@@ -220,26 +220,11 @@ export const TraceContextProvider: React.FC<TraceContextProviderProps> = ({
     { ...initialState, ...initialStateOverride }
   );
 
-  // Create realtime service instance
-  const realtimeService = createRealtimeService(baseUrl, {
-    onMessage: (message) => {
-      console.log('Received realtime message:', message);
-      dispatch({ type: 'SET_LAST_UPDATE', payload: new Date().toISOString() });
-      // Could trigger a trace refresh here if needed
-    },
-    onError: (error) => {
-      console.error('Realtime connection error:', error);
-      dispatch({ type: 'SET_CONNECTION_STATE', payload: { isConnected: false, error: error.message } });
-    },
-    onOpen: () => {
-      console.log('Realtime connection opened');
-      dispatch({ type: 'SET_CONNECTION_STATE', payload: { isConnected: true, error: null } });
-    },
-    onClose: () => {
-      console.log('Realtime connection closed');
-      dispatch({ type: 'SET_CONNECTION_STATE', payload: { isConnected: false, error: null } });
-    },
-  });
+  // Create realtime service instance once per baseUrl
+  const realtimeService = useMemo(() => {
+    console.log('[TraceContext] Creating RealtimeService for baseUrl:', baseUrl);
+    return createRealtimeService(baseUrl);
+  }, [baseUrl]);
 
   // Action creators
   const setAvailableTraces = useCallback((traces: string[]) => {
@@ -255,15 +240,10 @@ export const TraceContextProvider: React.FC<TraceContextProviderProps> = ({
   }, []);
 
   const setRealTimeEnabled = useCallback((enabled: boolean) => {
+    console.log('[TraceContext] setRealTimeEnabled:', enabled);
+    // Pure state setter: actual start/stop is orchestrated by useRealtime hook
     dispatch({ type: 'SET_REALTIME_ENABLED', payload: enabled });
-    
-    // Manage realtime service based on enabled state
-    if (enabled && state.selectedTraceId) {
-      realtimeService.startMonitoring(state.selectedTraceId);
-    } else {
-      realtimeService.stopMonitoring();
-    }
-  }, [state.selectedTraceId, realtimeService]);
+  }, []);
 
   const setConnectionState = useCallback((isConnected: boolean, error: string | null) => {
     dispatch({ type: 'SET_CONNECTION_STATE', payload: { isConnected, error } });
@@ -312,6 +292,7 @@ export const TraceContextProvider: React.FC<TraceContextProviderProps> = ({
   // Cleanup realtime service on unmount
   useEffect(() => {
     return () => {
+      console.log('[TraceContext] Provider unmount cleanup: stopping realtime monitoring');
       realtimeService.stopMonitoring();
     };
   }, [realtimeService]);

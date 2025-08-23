@@ -193,7 +193,7 @@ class IntegrationTestProxy:
         if param_hash not in self._mock_data:
             raise ValueError(
                 f"No mock data found for {self.tool_id} with parameters hash '{param_hash}'. "
-                "Run the test in REAL mode first to generate mock data. Use environment variable INTEGRATION_TEST_MODE=real to do this."
+                "Use environment variable INTEGRATION_TEST_MODE=real to run the test in REAL mode first to generate mock data."
             )
         
         record = self._mock_data[param_hash]

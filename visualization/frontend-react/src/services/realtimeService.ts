@@ -98,13 +98,14 @@ export class RealtimeService {
     this.disconnect(); // Close any existing connection
 
     const url = `${this.baseUrl}/traces/${encodeURIComponent(traceId)}/stream`;
-    console.log(`Creating SSE connection to: ${url}`);
+    console.log('[RealtimeService] Creating SSE connection to:', url, 'traceId:', traceId);
 
     try {
       this.eventSource = new EventSource(url);
+      console.log('[RealtimeService] EventSource created. readyState:', this.eventSource.readyState);
       this.setupEventHandlers(traceId);
     } catch (error) {
-      console.error('Failed to create SSE connection:', error);
+      console.error('[RealtimeService] Failed to create SSE connection:', error);
       this.handleError(new Error(`Failed to create SSE connection: ${error}`));
     }
   }
@@ -113,7 +114,7 @@ export class RealtimeService {
     if (!this.eventSource) return;
 
     this.eventSource.onopen = () => {
-      console.log(`SSE connection opened for trace: ${traceId}`);
+      console.log('[RealtimeService] SSE connection opened for trace:', traceId, 'readyState:', this.eventSource?.readyState);
       this.isConnected = true;
       this.reconnectAttempts = 0;
       this.clearReconnectTimer();
@@ -129,15 +130,15 @@ export class RealtimeService {
     };
 
     this.eventSource.onmessage = (event: MessageEvent) => {
-      console.log(`SSE message received:`, event.data);
+      console.log('[RealtimeService] SSE message received:', event.data);
       this.lastHeartbeat = Date.now();
       
       try {
         const data = JSON.parse(event.data);
         
         // Handle heartbeat messages
-        if (data.type === 'heartbeat') {
-          console.log('Heartbeat received');
+        if (data.type === 'heartbeat' || data.event === 'heartbeat') {
+          console.log('[RealtimeService] Heartbeat received');
           return;
         }
         
@@ -147,7 +148,7 @@ export class RealtimeService {
           timestamp: new Date().toISOString(),
         };
         
-        console.log(`Parsed SSE data:`, message);
+  console.log('[RealtimeService] Parsed SSE data:', message);
         
         if (this.options.onMessage) {
           this.options.onMessage(message);
@@ -159,8 +160,8 @@ export class RealtimeService {
     };
 
     this.eventSource.onerror = (error: Event) => {
-      console.error('SSE connection error:', error);
-      console.error('SSE readyState:', this.eventSource?.readyState);
+      console.error('[RealtimeService] SSE connection error:', error);
+      console.error('[RealtimeService] SSE readyState:', this.eventSource?.readyState);
       
       this.isConnected = false;
       this.stopHeartbeat();
@@ -220,8 +221,9 @@ export class RealtimeService {
     this.stopHeartbeat();
     
     if (this.eventSource) {
-      console.log('Closing SSE connection');
+  console.log('[RealtimeService] Closing SSE connection. Current readyState:', this.eventSource.readyState);
       this.eventSource.close();
+  console.log('[RealtimeService] SSE connection closed. New readyState:', this.eventSource.readyState);
       this.eventSource = null;
     }
     

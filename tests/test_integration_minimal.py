@@ -150,7 +150,7 @@ class TestDocExecuteEngineIntegration:
         error_msg = str(exc_info.value)
         assert "No mock data found" in error_msg
         assert "parameters hash" in error_msg
-        assert "Run the test in REAL mode" in error_msg
+        assert "run the test in REAL mode" in error_msg
         
         print(f"✅ Mock error handling test completed")
 

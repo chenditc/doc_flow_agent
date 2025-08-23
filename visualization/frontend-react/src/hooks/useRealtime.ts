@@ -39,16 +39,17 @@ export const useRealtime = (options: UseRealtimeOptions = {}) => {
   const startMonitoring = useCallback((traceId?: string) => {
     const targetTraceId = traceId || state.selectedTraceId;
     if (!targetTraceId) {
-      console.warn('Cannot start monitoring: no trace ID provided');
+  console.warn('[useRealtime] Cannot start monitoring: no trace ID provided');
       return false;
     }
 
     try {
+  console.log('[useRealtime] startMonitoring called with traceId:', targetTraceId);
       realtimeService.startMonitoring(targetTraceId);
       setRealTimeEnabled(true);
       return true;
     } catch (error) {
-      console.error('Failed to start monitoring:', error);
+  console.error('[useRealtime] Failed to start monitoring:', error);
       setConnectionState(false, error instanceof Error ? error.message : 'Unknown error');
       return false;
     }
@@ -56,12 +57,14 @@ export const useRealtime = (options: UseRealtimeOptions = {}) => {
 
   // Stop monitoring
   const stopMonitoring = useCallback(() => {
+  console.log('[useRealtime] stopMonitoring called');
     realtimeService.stopMonitoring();
     setRealTimeEnabled(false);
   }, [realtimeService, setRealTimeEnabled]);
 
   // Toggle monitoring
   const toggleMonitoring = useCallback(() => {
+  console.log('[useRealtime] toggleMonitoring. isRealTimeEnabled:', state.isRealTimeEnabled, 'selectedTraceId:', state.selectedTraceId);
     if (state.isRealTimeEnabled) {
       stopMonitoring();
       return false;
@@ -79,10 +82,12 @@ export const useRealtime = (options: UseRealtimeOptions = {}) => {
   useEffect(() => {
     realtimeService.updateOptions({
       onMessage: (message) => {
+        console.log('[useRealtime] onMessage received:', message);
         setLastUpdate(new Date().toISOString());
         
         // Trigger a trace refresh when we receive updates
         if (state.selectedTraceId) {
+          console.log('[useRealtime] refreshing trace due to realtime message. traceId:', state.selectedTraceId);
           refreshTrace.mutate(state.selectedTraceId);
         }
         
@@ -92,6 +97,7 @@ export const useRealtime = (options: UseRealtimeOptions = {}) => {
         }
       },
       onError: (error) => {
+  console.log('[useRealtime] onError:', error);
         setConnectionState(false, error.message);
         
         // Call user-provided callback
@@ -100,6 +106,7 @@ export const useRealtime = (options: UseRealtimeOptions = {}) => {
         }
       },
       onOpen: () => {
+  console.log('[useRealtime] onOpen');
         setConnectionState(true, null);
         
         if (optionsRef.current.onConnectionChange) {
@@ -107,6 +114,7 @@ export const useRealtime = (options: UseRealtimeOptions = {}) => {
         }
       },
       onClose: () => {
+  console.log('[useRealtime] onClose');
         setConnectionState(false, null);
         
         if (optionsRef.current.onConnectionChange) {
@@ -126,20 +134,35 @@ export const useRealtime = (options: UseRealtimeOptions = {}) => {
     options.maxReconnectAttempts,
   ]);
 
-  // Auto-restart monitoring when trace changes
+  // Auto-restart monitoring when trace changes (but not when first enabling)
+  const prevTraceIdRef = useRef<string | null>(null);
+  const prevIsEnabledRef = useRef<boolean>(false);
+  
   useEffect(() => {
     if (state.isRealTimeEnabled && state.selectedTraceId) {
-      // Stop current monitoring and restart with new trace
-      realtimeService.stopMonitoring();
-      setTimeout(() => {
-        realtimeService.startMonitoring(state.selectedTraceId!);
-      }, 100); // Small delay to ensure cleanup
+      const traceChanged = prevTraceIdRef.current && prevTraceIdRef.current !== state.selectedTraceId;
+      const wasAlreadyEnabled = prevIsEnabledRef.current;
+      
+      // Only restart if trace changed while monitoring was already active
+      if (traceChanged && wasAlreadyEnabled) {
+    console.log('[useRealtime] Trace changed from', prevTraceIdRef.current, 'to', state.selectedTraceId, 'restarting monitoring');
+        realtimeService.stopMonitoring();
+        setTimeout(() => {
+          realtimeService.startMonitoring(state.selectedTraceId!);
+        }, 100); // Small delay to ensure cleanup
+      }
     }
+    
+    // Update refs for next render
+  console.log('[useRealtime] Trace/Enabled state changed. selectedTraceId:', state.selectedTraceId, 'isRealTimeEnabled:', state.isRealTimeEnabled);
+    prevTraceIdRef.current = state.selectedTraceId;
+    prevIsEnabledRef.current = state.isRealTimeEnabled;
   }, [state.selectedTraceId, state.isRealTimeEnabled, realtimeService]);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+  console.log('[useRealtime] cleanup: stopMonitoring');
       realtimeService.stopMonitoring();
     };
   }, [realtimeService]);

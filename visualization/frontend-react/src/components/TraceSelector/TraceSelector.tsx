@@ -54,6 +54,7 @@ export const TraceSelector: React.FC<TraceSelectorProps> = ({
   };
 
   const handleRealtimeToggle = (enabled: boolean) => {
+  console.log('[TraceSelector] Realtime toggle to', enabled, 'for traceId:', selectedTraceId);
     if (enabled && selectedTraceId) {
       startMonitoring(selectedTraceId);
     } else {

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { TraceContextProvider } from './context/TraceContext';
+import { TraceContextProvider, useTraceContext } from './context/TraceContext';
 import { Header } from './components/common/Header';
 import { TraceSelector } from './components/TraceSelector/TraceSelector';
 import { Timeline } from './components/Timeline/Timeline';
@@ -9,7 +9,6 @@ import { LoadingSpinner, LoadingState, SkeletonTimeline } from './components/com
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { ConnectionStatus } from './components/common/ConnectionIndicators';
 import { useTrace } from './hooks/useTraceData';
-import { useTraceContext } from './context/TraceContext';
 import { useRealtime } from './hooks/useRealtime';
 import { useAnnouncement } from './utils/accessibility';
 import type { TaskExecution } from './types/trace';
@@ -29,7 +28,7 @@ function AppContent() {
   const [selectedTask, setSelectedTask] = useState<TaskExecution | null>(null);
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
 
-  const { state } = useTraceContext();
+  const { state, setSelectedTraceId: setCtxSelectedTraceId } = useTraceContext();
   const { announce, AnnouncerComponent } = useAnnouncement();
 
   const {
@@ -52,6 +51,8 @@ function AppContent() {
 
   const handleTraceSelected = (traceId: string | null) => {
     setSelectedTraceId(traceId);
+  // Keep context in sync for components/hooks depending on context-selected trace
+  setCtxSelectedTraceId(traceId);
     // Close task modal when switching traces
     setIsTaskModalOpen(false);
     setSelectedTask(null);

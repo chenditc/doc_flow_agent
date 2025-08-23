@@ -10,6 +10,6 @@ output_description: The output of large language model
 ---
 ## parameters.prompt
 
-Please complete the following task:
+Please complete the following task, reply using same language as following task:
 
 {current_task}

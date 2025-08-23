@@ -55,6 +55,17 @@ if __name__ == "__main__":
 - OpenAI API key or compatible LLM API
 - Unix-like environment (Linux/macOS recommended)
 
+### Visualization
+
+The project includes a web-based visualization system for monitoring and analyzing execution traces in real-time:
+
+```bash
+# Start the visualization server
+cd visualization/frontend-react && npm install && npm run build && cd .. && source ../.venv/bin/activate && uvicorn server.viz_server:app --reload --host 0.0.0.0 --port 8000
+```
+
+Visit http://localhost:8000 to view execution traces, task timelines, and debug information. See [`visualization/README.md`](visualization/README.md) for detailed setup and development instructions.
+
 ---
 
 ## Table of Contents

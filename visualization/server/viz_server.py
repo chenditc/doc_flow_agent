@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import asyncio
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import List, Dict, Any
 
@@ -62,11 +63,53 @@ class TraceFileHandler(FileSystemEventHandler):
                 except Exception as e:
                     logger.error(f"Error adding message to queue: {e}")
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage app lifecycle events (startup and shutdown)."""
+    global file_observer
+    
+    # Startup
+    # Check if we're in testing mode (don't start file watcher during tests)
+    import os
+    if os.getenv('TESTING') == 'true':
+        logger.info("Testing mode detected, file watcher disabled")
+    else:
+        if TRACES_DIR.exists():
+            event_handler = TraceFileHandler()
+            file_observer = Observer()
+            file_observer.schedule(event_handler, str(TRACES_DIR), recursive=False)
+            file_observer.start()
+            logger.info(f"File watcher started for directory: {TRACES_DIR}")
+        else:
+            logger.warning(f"Traces directory {TRACES_DIR} does not exist, file watcher not started")
+    
+    yield  # App runs here
+    
+    # Shutdown
+    if file_observer:
+        try:
+            file_observer.stop()
+            # Use a timeout to avoid hanging indefinitely
+            file_observer.join(timeout=2.0)
+            if file_observer.is_alive():
+                logger.warning("File watcher did not stop within timeout")
+            else:
+                logger.info("File watcher stopped")
+        except Exception as e:
+            logger.error(f"Error stopping file watcher: {e}")
+        finally:
+            file_observer = None
+    
+    # Clear all active connections
+    active_connections.clear()
+    logger.info("All SSE connections cleared")
+
 # Create FastAPI app
 app = FastAPI(
     title="Doc Flow Trace Viewer API",
     description="API for viewing and analyzing doc flow execution traces",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # Add CORS middleware for local development
@@ -203,7 +246,7 @@ async def stream_trace_updates(trace_id: str):
     if trace_id.endswith('.json'):
         trace_id = trace_id[:-5]
     
-    logger.info(f"Starting SSE stream for trace: {trace_id}")
+    logger.info(f"[SSE] Starting SSE stream handler for trace: {trace_id}")
     
     # Create a queue for this connection
     message_queue = asyncio.Queue(maxsize=100)
@@ -212,24 +255,28 @@ async def stream_trace_updates(trace_id: str):
     if trace_id not in active_connections:
         active_connections[trace_id] = []
     active_connections[trace_id].append(message_queue)
-    logger.info(f"Added SSE connection for trace {trace_id}. Total connections: {len(active_connections[trace_id])}")
-    logger.info(f"All active trace connections: {list(active_connections.keys())}")
+    logger.info(f"[SSE] Added connection for trace {trace_id}. Total for this trace: {len(active_connections[trace_id])}. All traces with connections: {list(active_connections.keys())}")
     
     async def event_stream():
         """Generate SSE events for the client."""
         try:
             # Send initial connection confirmation
-            yield f"data: {json.dumps({'event': 'connected', 'trace_id': trace_id})}\n\n"
+            init_msg = {'event': 'connected', 'trace_id': trace_id}
+            logger.info(f"[SSE] Sending initial message: {init_msg}")
+            yield f"data: {json.dumps(init_msg)}\n\n"
             
             while True:
                 try:
                     # Wait for message with timeout for heartbeat
                     message = await asyncio.wait_for(message_queue.get(), timeout=30.0)
+                    logger.info(f"[SSE] Emitting message: {message}")
                     yield f"data: {json.dumps(message)}\n\n"
                 except asyncio.TimeoutError:
                     # Send heartbeat message
                     import time
-                    yield f"data: {json.dumps({'event': 'heartbeat', 'timestamp': time.time()})}\n\n"
+                    hb = {'event': 'heartbeat', 'timestamp': time.time()}
+                    logger.debug(f"[SSE] Heartbeat: {hb}")
+                    yield f"data: {json.dumps(hb)}\n\n"
                 except Exception as e:
                     logger.error(f"Error in SSE stream: {e}")
                     break
@@ -242,7 +289,7 @@ async def stream_trace_updates(trace_id: str):
                 active_connections[trace_id].remove(message_queue)
                 if not active_connections[trace_id]:
                     del active_connections[trace_id]
-            logger.info(f"SSE stream closed for trace: {trace_id}")
+            logger.info(f"[SSE] Stream closed for trace: {trace_id}")
     
     return StreamingResponse(
         event_stream(),
@@ -251,53 +298,12 @@ async def stream_trace_updates(trace_id: str):
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
             "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Headers": "Cache-Control"
+            "Access-Control-Allow-Headers": "Cache-Control",
+            # Some environments need explicit no-transform and X-Accel-Buffering to keep the stream live
+            "X-Accel-Buffering": "no",
+            "Cache-Control": "no-cache, no-transform",
         }
     )
-
-# Startup and shutdown events for file watcher
-@app.on_event("startup")
-async def startup_event():
-    """Initialize file watcher on startup."""
-    global file_observer
-    
-    # Check if we're in testing mode (don't start file watcher during tests)
-    import os
-    if os.getenv('TESTING') == 'true':
-        logger.info("Testing mode detected, file watcher disabled")
-        return
-    
-    if TRACES_DIR.exists():
-        event_handler = TraceFileHandler()
-        file_observer = Observer()
-        file_observer.schedule(event_handler, str(TRACES_DIR), recursive=False)
-        file_observer.start()
-        logger.info(f"File watcher started for directory: {TRACES_DIR}")
-    else:
-        logger.warning(f"Traces directory {TRACES_DIR} does not exist, file watcher not started")
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Stop file watcher on shutdown."""
-    global file_observer
-    
-    if file_observer:
-        try:
-            file_observer.stop()
-            # Use a timeout to avoid hanging indefinitely
-            file_observer.join(timeout=2.0)
-            if file_observer.is_alive():
-                logger.warning("File watcher did not stop within timeout")
-            else:
-                logger.info("File watcher stopped")
-        except Exception as e:
-            logger.error(f"Error stopping file watcher: {e}")
-        finally:
-            file_observer = None
-    
-    # Clear all active connections
-    active_connections.clear()
-    logger.info("All SSE connections cleared")
 
 # Add logging middleware for debugging
 @app.middleware("http")
