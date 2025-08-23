@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Debug API Client</title>
+</head>
+<body>
+  <h1>Debug API Client</h1>
+  <div id="output"></div>
+  
+  <script>
+    console.log('Debug script starting');
+    
+    // Test basic fetch
+    fetch('/traces')
+      .then(response => {
+        console.log('Response status:', response.status);
+        return response.json();
+      })
+      .then(data => {
+        console.log('Data received:', data);
+        document.getElementById('output').innerHTML = '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
+      })
+      .catch(error => {
+        console.error('Fetch error:', error);
+        document.getElementById('output').innerHTML = 'Error: ' + error.message;
+      });
+  </script>
+</body>
+</html>

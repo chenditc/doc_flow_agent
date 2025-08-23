@@ -1,0 +1,60 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Global styles */
+@layer base {
+  html, body {
+    @apply h-full bg-gray-50;
+  }
+  
+  #root {
+    @apply h-full;
+  }
+}
+
+/* Component specific styles */
+@layer components {
+  /* Timeline animations */
+  .timeline-item {
+    @apply transition-all duration-200 ease-in-out;
+  }
+  
+  .timeline-item:hover {
+    @apply transform scale-[1.01] shadow-md;
+  }
+  
+  /* New task indicator animation */
+  .new-task-indicator {
+    @apply animate-pulse bg-blue-50 border-blue-400;
+    animation: new-task-highlight 3s ease-out forwards;
+  }
+  
+  /* Timeline connector */
+  .timeline-connector {
+    @apply absolute left-6 top-16 w-0.5 h-8 bg-gray-300 z-0;
+  }
+}
+
+/* Custom animations */
+@keyframes new-task-highlight {
+  0% {
+    @apply bg-blue-100 border-blue-500 shadow-lg;
+    transform: scale(1.02);
+  }
+  50% {
+    @apply bg-blue-50 border-blue-400;
+    transform: scale(1.01);
+  }
+  100% {
+    @apply bg-gray-50 border-gray-300;
+    transform: scale(1);
+  }
+}
+
+/* Smooth scroll behavior for timeline */
+@layer utilities {
+  .smooth-scroll {
+    scroll-behavior: smooth;
+  }
+}

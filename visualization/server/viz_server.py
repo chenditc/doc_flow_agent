@@ -75,6 +75,8 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "http://127.0.0.1:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
         "http://localhost:8080",
         "http://127.0.0.1:8080",
         "http://localhost:8000",
@@ -88,7 +90,7 @@ app.add_middleware(
 # Get paths relative to the project root
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 TRACES_DIR = PROJECT_ROOT / "traces"
-FRONTEND_DIR = PROJECT_ROOT / "visualization" / "frontend"
+REACT_BUILD_DIR = PROJECT_ROOT / "visualization" / "frontend-react" / "dist"
 
 @app.get("/health")
 async def health_check():
@@ -306,24 +308,24 @@ async def log_requests(request: Request, call_next):
     logger.info(f"Response status: {response.status_code}")
     return response
 
-# Serve static files (frontend) - this should be last
-if FRONTEND_DIR.exists():
-    # Mount static files for assets (CSS, JS, etc.)
-    app.mount("/assets", StaticFiles(directory=FRONTEND_DIR / "assets"), name="assets")
+# Serve static files (React frontend) - this should be last
+if REACT_BUILD_DIR.exists() and (REACT_BUILD_DIR / "index.html").exists():
+    # Mount static assets (CSS, JS, etc.)
+    app.mount("/assets", StaticFiles(directory=REACT_BUILD_DIR / "assets"), name="assets")
     
-    # Serve index.html at root
+    # Serve index.html at root and handle SPA routing
     @app.get("/")
-    async def serve_frontend():
-        """Serve the frontend index.html file."""
-        index_path = FRONTEND_DIR / "index.html"
-        if index_path.exists():
-            return FileResponse(index_path)
-        else:
-            raise HTTPException(status_code=404, detail="Frontend not found. Please ensure visualization/frontend/index.html exists.")
+    @app.get("/{path:path}")
+    async def serve_react_app(path: str = None):
+        """Serve the React SPA. All paths serve index.html for client-side routing."""
+        # Serve API endpoints first (they won't reach here due to route precedence)
+        # For all other paths, serve the React app
+        index_path = REACT_BUILD_DIR / "index.html"
+        return FileResponse(index_path)
     
-    logger.info(f"Frontend directory found at {FRONTEND_DIR}")
+    logger.info(f"React build directory found at {REACT_BUILD_DIR}")
 else:
-    logger.warning(f"Frontend directory not found at {FRONTEND_DIR}. Static file serving disabled.")
+    logger.warning(f"No React build found at {REACT_BUILD_DIR}. Please run 'npm run build' in frontend-react/ to build the frontend.")
 
 if __name__ == "__main__":
     import uvicorn

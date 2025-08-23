@@ -1,0 +1,32 @@
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+
+// https://vite.dev/config/
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        rewrite: (path: string) => path.replace(/^\/api/, '')
+      },
+      '/traces': {
+        target: 'http://localhost:8000',
+        changeOrigin: true
+      }
+    }
+  },
+  test: {
+    // Use jsdom environment for DOM testing with React Testing Library
+    environment: 'jsdom',
+    globals: true,
+    // Setup file to initialize testing library and globals
+    setupFiles: './src/test/setup.ts',
+    include: ['src/**/*.{test,spec}.{ts,tsx,js,jsx}'],
+    coverage: {
+      provider: 'c8',
+      reporter: ['text', 'json', 'html']
+    }
+  }
+} as any) as any
