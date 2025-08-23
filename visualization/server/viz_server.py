@@ -8,8 +8,13 @@ import logging
 import os
 import asyncio
 from contextlib import asynccontextmanager
+import threading
+import time
+import signal
+import traceback
+import sys
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,9 +27,27 @@ from watchdog.events import FileSystemEventHandler
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Enable faulthandler to dump stack traces on SIGUSR1
+try:
+    import faulthandler  # type: ignore
+    try:
+        faulthandler.register(signal.SIGUSR1)
+        logger.info("Faulthandler registered on SIGUSR1 for thread dumps")
+    except Exception:
+        # Some platforms may not support SIGUSR1
+        logger.warning("Faulthandler could not register SIGUSR1; thread dumps via endpoint only")
+except Exception:
+    logger.warning("Faulthandler not available; install or rely on /debug/threads endpoint")
+
 # Global variables for real-time monitoring
 active_connections: Dict[str, List[asyncio.Queue]] = {}
 file_observer = None
+# Capture the main asyncio event loop so watchdog thread can safely schedule work
+main_event_loop: Optional[asyncio.AbstractEventLoop] = None
+ 
+# Debounce control to avoid flooding the event loop with too many broadcasts
+DEBOUNCE_SECONDS = 0.3
+_pending_broadcast_handles: Dict[str, asyncio.TimerHandle] = {}
 
 class TraceFileHandler(FileSystemEventHandler):
     """Handler for file system events on trace files."""
@@ -40,33 +63,61 @@ class TraceFileHandler(FileSystemEventHandler):
         # Extract trace ID from file path
         trace_id = Path(event.src_path).stem
         logger.info(f"Trace file modified: {trace_id}")
-        logger.info(f"Active connections: {list(active_connections.keys())}")
-        logger.info(f"Number of connections for {trace_id}: {len(active_connections.get(trace_id, []))}")
-        
-        # Notify all active connections for this trace
-        if trace_id in active_connections:
-            import time
-            message = {
-                "event": "file_updated",
-                "trace_id": trace_id,
-                "timestamp": time.time()
-            }
-            logger.info(f"Sending SSE message to {len(active_connections[trace_id])} connections: {message}")
-            
-            # Add message to all queues for this trace
-            for queue in active_connections[trace_id]:
-                try:
-                    # Use put_nowait which doesn't require an event loop
-                    queue.put_nowait(message)
-                except asyncio.QueueFull:
-                    logger.warning(f"Queue full for trace {trace_id}, dropping message")
-                except Exception as e:
-                    logger.error(f"Error adding message to queue: {e}")
+
+        # Notify connections using a debounced scheduler on the main event loop.
+        # IMPORTANT: watchdog invokes this in a thread; only schedule work, do not touch asyncio objects.
+        if main_event_loop is not None:
+            try:
+                main_event_loop.call_soon_threadsafe(_schedule_debounced_broadcast, trace_id)
+            except Exception as e:
+                logger.error(f"Failed to schedule debounced SSE broadcast on main loop: {e}")
+        else:
+            logger.warning("Main event loop not set; skipping SSE broadcast from watchdog thread")
+
+def _schedule_debounced_broadcast(trace_id: str):
+    """Debounce broadcasts for a trace: collapse rapid file change events.
+
+    Must be called on the asyncio loop thread.
+    """
+    loop = asyncio.get_running_loop()
+    # Cancel any existing pending broadcast
+    handle = _pending_broadcast_handles.get(trace_id)
+    if handle and not handle.cancelled():
+        handle.cancel()
+    # Schedule a new broadcast after DEBOUNCE_SECONDS
+    new_handle = loop.call_later(DEBOUNCE_SECONDS, _broadcast_sse_message_in_loop, trace_id)
+    _pending_broadcast_handles[trace_id] = new_handle
+
+def _broadcast_sse_message_in_loop(trace_id: str):
+    """Broadcast an SSE message to all connections for a trace within the asyncio loop thread."""
+    # Clear pending handle if this is the scheduled run
+    handle = _pending_broadcast_handles.pop(trace_id, None)
+    if handle and not handle.cancelled():
+        # nothing else needed; just ensure it's removed
+        pass
+
+    queues = active_connections.get(trace_id, [])
+    if not queues:
+        return
+    import time
+    message: Dict[str, Any] = {
+        "event": "file_updated",
+        "trace_id": trace_id,
+        "timestamp": time.time(),
+    }
+    logger.info(f"Sending SSE message to {len(queues)} connections: {message}")
+    for queue in list(queues):
+        try:
+            queue.put_nowait(message)
+        except asyncio.QueueFull:
+            logger.warning(f"Queue full for trace {trace_id}, dropping message")
+        except Exception as e:
+            logger.error(f"Error adding message to queue in loop: {e}")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage app lifecycle events (startup and shutdown)."""
-    global file_observer
+    global file_observer, main_event_loop
     
     # Startup
     # Check if we're in testing mode (don't start file watcher during tests)
@@ -74,6 +125,13 @@ async def lifespan(app: FastAPI):
     if os.getenv('TESTING') == 'true':
         logger.info("Testing mode detected, file watcher disabled")
     else:
+        # Capture the running loop for cross-thread scheduling
+        try:
+            main_event_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            main_event_loop = None
+            logger.warning("Could not capture main event loop during startup")
+        
         if TRACES_DIR.exists():
             event_handler = TraceFileHandler()
             file_observer = Observer()
@@ -100,9 +158,19 @@ async def lifespan(app: FastAPI):
         finally:
             file_observer = None
     
+    # Cancel any pending debounced broadcasts
+    for trace_id, handle in list(_pending_broadcast_handles.items()):
+        try:
+            if handle and not handle.cancelled():
+                handle.cancel()
+        except Exception:
+            pass
+    _pending_broadcast_handles.clear()
+
     # Clear all active connections
     active_connections.clear()
     logger.info("All SSE connections cleared")
+    main_event_loop = None
 
 # Create FastAPI app
 app = FastAPI(
@@ -139,6 +207,57 @@ REACT_BUILD_DIR = PROJECT_ROOT / "visualization" / "frontend-react" / "dist"
 async def health_check():
     """Health check endpoint to verify server is running."""
     return {"status": "ok", "message": "Doc Flow Trace Viewer API is running"}
+
+@app.get("/debug/state")
+async def debug_state():
+    """Return internal server state for debugging hangs/flows."""
+    try:
+        loop = asyncio.get_running_loop()
+        # Summarize active connections and queue sizes
+        conn_summary: Dict[str, Any] = {}
+        for tid, queues in active_connections.items():
+            try:
+                q_sizes = [q.qsize() for q in queues]
+            except Exception:
+                q_sizes = [None for _ in queues]
+            conn_summary[tid] = {
+                "connections": len(queues),
+                "queue_sizes": q_sizes,
+            }
+        # Pending debounced broadcasts
+        pending = list(_pending_broadcast_handles.keys())
+        # File observer status
+        observer_alive = bool(file_observer and file_observer.is_alive())
+        # Loop info
+        tasks = list(asyncio.all_tasks(loop))
+        return {
+            "active_traces": list(active_connections.keys()),
+            "connections": conn_summary,
+            "pending_broadcasts": pending,
+            "file_observer_alive": observer_alive,
+            "loop_debug": getattr(loop, "get_debug", lambda: False)(),
+            "tasks_count": len(tasks),
+        }
+    except Exception as e:
+        logger.error(f"/debug/state error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/debug/threads")
+async def debug_threads():
+    """Dump stacks of all threads to help inspect hangs."""
+    frames = sys._current_frames()
+    parts = []
+    for thread_id, frame in frames.items():
+        thread_name = None
+        for t in threading.enumerate():
+            if t.ident == thread_id:
+                thread_name = t.name
+                break
+        header = f"\n--- Thread {thread_name or thread_id} ({thread_id}) ---\n"
+        stack = ''.join(traceback.format_stack(frame))
+        parts.append(header + stack)
+    content = ''.join(parts)
+    return FileResponse(path=None) if False else StreamingResponse(iter([content]), media_type="text/plain")
 
 @app.get("/traces", response_model=List[str])
 async def list_traces():
@@ -268,6 +387,8 @@ async def stream_trace_updates(trace_id: str):
             while True:
                 try:
                     # Wait for message with timeout for heartbeat
+                    qsize_before = message_queue.qsize()
+                    logger.debug(f"[SSE] Waiting for message (qsize={qsize_before}) for trace {trace_id}")
                     message = await asyncio.wait_for(message_queue.get(), timeout=30.0)
                     logger.info(f"[SSE] Emitting message: {message}")
                     yield f"data: {json.dumps(message)}\n\n"
@@ -295,7 +416,6 @@ async def stream_trace_updates(trace_id: str):
         event_stream(),
         media_type="text/event-stream",
         headers={
-            "Cache-Control": "no-cache",
             "Connection": "keep-alive",
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Headers": "Cache-Control",
@@ -309,9 +429,11 @@ async def stream_trace_updates(trace_id: str):
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     """Log all incoming requests for debugging."""
+    start = time.time()
     logger.info(f"{request.method} {request.url.path}")
     response = await call_next(request)
-    logger.info(f"Response status: {response.status_code}")
+    dur_ms = int((time.time() - start) * 1000)
+    logger.info(f"Response status: {response.status_code} ({dur_ms} ms)")
     return response
 
 # Serve static files (React frontend) - this should be last

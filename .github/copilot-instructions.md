@@ -19,3 +19,4 @@
 - Unless you need to trace the error, do not capture the exception, let it float to top of program. 
 - If you see code not following this guide, point it out and propose change plan.
 - For any task which might take more than 1 hour for a developer, plan first by explicitly list out todo list, then execute them. You can regenerate todo list if you see plan needs to change.
+- Do not reinvent the wheel, use mature library if the functionality has been implemented before.

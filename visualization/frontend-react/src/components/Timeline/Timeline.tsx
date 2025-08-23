@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback, memo } from 'react';
+import isEqual from 'fast-deep-equal';
 import type { TraceSession, TaskExecution } from '../../types/trace';
 import { TimelineItem } from './TimelineItem';
 import { LoadingSpinner } from '../common/LoadingSpinner';
@@ -174,10 +175,7 @@ const TimelineComponent: React.FC<TimelineProps> = ({
 
 // Export memoized version for performance
 export const Timeline = memo(TimelineComponent, (prevProps, nextProps) => {
-  // Custom comparison to prevent unnecessary re-renders
-  return (
-    prevProps.isLoading === nextProps.isLoading &&
-    prevProps.trace?.session_id === nextProps.trace?.session_id &&
-    prevProps.trace?.task_executions?.length === nextProps.trace?.task_executions?.length
-  );
+  // Re-render when loading toggles or trace data differs deeply
+  if (prevProps.isLoading !== nextProps.isLoading) return false;
+  return isEqual(prevProps.trace, nextProps.trace);
 });
