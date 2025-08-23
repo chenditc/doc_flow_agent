@@ -134,6 +134,8 @@ class JsonPathGenerator:
             
             # Extract the generated path
             try:
+                if "```json" in response:
+                    response = re.search(r'```json(.*?)```', response, re.DOTALL).group(1).strip()
                 path_data = json.loads(response)
                 path = path_data.get("output_path", "$.output")
             except json.JSONDecodeError:
@@ -142,7 +144,7 @@ class JsonPathGenerator:
                 if content.startswith("$.") or content.startswith("$["):
                     path = content
                 else:
-                    path = "$.output"
+                    raise ValueError("Invalid output path format for output json path extraction: {}".format(content))
 
             print(f"[JSON_PATH_GEN] Generated output path: {path}")
             return path

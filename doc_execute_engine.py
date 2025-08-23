@@ -719,7 +719,7 @@ async def main():
     engine.load_context(load_if_exists=False)
     
     
-    task_description = "Follow bash.md, check current Beijing time"
+    task_description = "Follow write_xiaohongshu_ganhuo.md, 为一个初中男语文老师写关于作文的小红书笔记，对象是希望自己孩子作文能写好的家长，目的是推广他的作文精批服务。"
 
     # Execute the task
     print("Executing...")
