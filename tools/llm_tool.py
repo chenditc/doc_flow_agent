@@ -49,33 +49,25 @@ class LLMTool(BaseTool):
         
         print(f"[LLM CALL] Prompt: {prompt[:100]}...")
         
-        try:
-            # Make actual OpenAI API call
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                temperature=0.7,
-                max_tokens=4000
-            )
-            
-            # Extract response content
-            content = response.choices[0].message.content
+        # Make actual OpenAI API call
+        response = await self.client.chat.completions.create(
+            model=self.model,
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            temperature=0.7,
+            max_tokens=4000
+        )
+        
+        # Extract response content
+        content = response.choices[0].message.content
 
-            print(f"[LLM RESPONSE] {content}...")
-            
-            return content
-        except Exception as e:
-            print(f"[LLM ERROR] {str(e)}")
-            # Return error response in expected format
-            error_response = {
-                "error": str(e)
-            }
-            return json.dumps(error_response, ensure_ascii=False)
+        print(f"[LLM RESPONSE] {content}...")
+        
+        return content
     
     def _validate_api_key(self) -> bool:
         """Validate that API key is configured"""

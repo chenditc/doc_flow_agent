@@ -21,7 +21,7 @@ from tools import LLMTool
 class JsonPathGenerator:
     """Generate JSON paths for SOP documents using LLM"""
     
-    def __init__(self, llm_tool = None):
+    def __init__(self, llm_tool = None, tracer = None):
         """Initialize JsonPathGenerator with an LLM tool instance
         
         Args:
@@ -30,7 +30,7 @@ class JsonPathGenerator:
         self.llm_tool = llm_tool
         if self.llm_tool is None:
             self.llm_tool = LLMTool()
-        
+        self.tracer = tracer
     
     async def generate_input_json_paths(
         self, 
@@ -57,6 +57,10 @@ class JsonPathGenerator:
         # Process each input description through multi-step analysis
         for field_name, description in input_descriptions.items():
             try:
+                # Start input field extraction tracing
+                if self.tracer and self.tracer.enabled:
+                    self.tracer.start_input_field_extraction(field_name, description)
+                
                 # Step 1: Analyze context for candidate fields
                 candidate_fields = await self._analyze_context_candidates(
                     description, context, user_original_ask
@@ -75,6 +79,14 @@ class JsonPathGenerator:
                 temp_key = f"_temp_input_{str(uuid.uuid4())}"
                 extracted_content = self._execute_extraction_code(extraction_code, context)
                 if extracted_content == "<NOT_FOUND_IN_CANDIDATES>":
+                    # End tracing with error
+                    if self.tracer and self.tracer.enabled:
+                        error = TaskInputMissingError(field_name, description)
+                        self.tracer.end_input_field_extraction(
+                            candidate_fields=candidate_fields,
+                            generated_code=extraction_code,
+                            error=error
+                        )
                     # Raise exception without recovery task - that's the engine's job
                     raise TaskInputMissingError(field_name, description)
                 else:
@@ -86,8 +98,20 @@ class JsonPathGenerator:
 
                     print("Current context after processing:")
                     print(json.dumps(context, ensure_ascii=False, indent=2))
+                    
+                    # End successful tracing
+                    if self.tracer and self.tracer.enabled:
+                        self.tracer.end_input_field_extraction(
+                            candidate_fields=candidate_fields,
+                            generated_code=extraction_code,
+                            extracted_value=extracted_content,
+                            generated_path=f"$.['{temp_key}']"
+                        )
             except Exception as e:
                 print(f"[JSON_PATH_GEN] Error processing '{field_name}': {e}")
+                # End tracing with error if not already ended
+                if self.tracer and self.tracer.enabled and self.tracer._context.current_sub_step == "input_field_extraction":
+                    self.tracer.end_input_field_extraction(error=e)
                 raise e
         
         print(f"[JSON_PATH_GEN] Generated input paths: {result_paths}")
@@ -126,33 +150,26 @@ class JsonPathGenerator:
         )
         
         # Call LLM
+        response = await self.llm_tool.execute({
+            "prompt": prompt
+        })
+        
+        # Extract the generated path
         try:
-            response = await self.llm_tool.execute({
-                "prompt": prompt,
-                "step": "json_path_output_generation"
-            })
-            
-            # Extract the generated path
-            try:
-                if "```json" in response:
-                    response = re.search(r'```json(.*?)```', response, re.DOTALL).group(1).strip()
-                path_data = json.loads(response)
-                path = path_data.get("output_path", "$.output")
-            except json.JSONDecodeError:
-                # If content is not JSON, try to extract path from text
-                content = response.strip()
-                if content.startswith("$.") or content.startswith("$["):
-                    path = content
-                else:
-                    raise ValueError("Invalid output path format for output json path extraction: {}".format(content))
+            if "```json" in response:
+                response = re.search(r'```json(.*?)```', response, re.DOTALL).group(1).strip()
+            path_data = json.loads(response)
+            path = path_data.get("output_path", "$.output")
+        except json.JSONDecodeError:
+            # If content is not JSON, try to extract path from text
+            content = response.strip()
+            if content.startswith("$.") or content.startswith("$["):
+                path = content
+            else:
+                raise ValueError("Invalid output path format for output json path extraction: {}".format(content))
 
-            print(f"[JSON_PATH_GEN] Generated output path: {path}")
-            return path
-            
-        except Exception as e:
-            print(f"[JSON_PATH_GEN] Error generating output path: {e}")
-            # Fallback: generate simple path based on description
-            return "$.output"
+        print(f"[JSON_PATH_GEN] Generated output path: {path}")
+        return path
     
     def _generate_context_schema(self, context: Dict[str, Any]) -> str:
         """Generate a readable schema representation of the context
@@ -225,8 +242,7 @@ Analyze the current context to find fields that might contain information for th
 ]"""
 
         response = await self.llm_tool.execute({
-            "prompt": prompt,
-            "step": "json_path_analyze_context_candidates"
+            "prompt": prompt
         })
 
         if "```json" in response:
@@ -300,6 +316,7 @@ Context object is a dictionary, here we represent them using json_path syntax:
 3. Think if there is info available in context before generating the code. If info is not enough or still have ambiguitiy, use `return "<NOT_FOUND_IN_CANDIDATES>"`. The generated code should just be a getter / parser.
 4. The parameter should only be "extracted" or "rephrased", not inferred. This means different people should get the same parameter value if they have the same context, if there is uncertainty, do not rephrase it.
 5. If there is no perfect match, return a piece of code which return "<NOT_FOUND_IN_CANDIDATES>".
+6. If you rephrase the information, make sure you use the same language as the input_description.
 
 ## Examples
 ```python
@@ -349,8 +366,7 @@ def extract_func(context):
 
         try:
             response = await self.llm_tool.execute({
-                "prompt": prompt,
-                "step": "json_path_generate_extraction_code"
+                "prompt": prompt
             })
             # Print think process for debugging
             print(f"[JSON_PATH_GEN] Think process for '{input_description}': {response}")

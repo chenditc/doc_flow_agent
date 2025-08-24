@@ -7,6 +7,8 @@ interface SOPResolutionViewerProps {
 }
 
 export const SOPResolutionViewer: React.FC<SOPResolutionViewerProps> = ({ phaseData }) => {
+  const documentSelection = phaseData.document_selection;
+  
   return (
     <div className="space-y-4">
       {/* Input Description */}
@@ -19,89 +21,86 @@ export const SOPResolutionViewer: React.FC<SOPResolutionViewerProps> = ({ phaseD
         </div>
       )}
 
-      {/* Candidate Documents */}
-      {phaseData.candidate_documents && phaseData.candidate_documents.length > 0 && (
-        <div>
-          <h4 className="text-sm font-medium text-gray-700 mb-2">
-            Candidate Documents ({phaseData.candidate_documents.length})
-          </h4>
-          <div className="space-y-2">
-            {phaseData.candidate_documents.map((docId, index) => (
-              <div 
-                key={index}
-                className={`p-3 rounded border ${
-                  docId === phaseData.selected_doc_id 
-                    ? 'bg-green-50 border-green-200' 
-                    : 'bg-gray-50 border-gray-200'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-mono text-sm">{docId}</span>
-                  {docId === phaseData.selected_doc_id && (
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                      Selected
-                    </span>
-                  )}
+      {/* Document Selection Sub-step */}
+      {documentSelection && (
+        <div className="border border-blue-200 rounded-lg">
+          <div className="px-3 py-2 bg-blue-50 border-b border-blue-200 rounded-t-lg">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-blue-900">Document Selection</span>
+              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                documentSelection.status === 'completed' ? 'bg-green-100 text-green-800' : 
+                documentSelection.status === 'failed' ? 'bg-red-100 text-red-800' : 
+                'bg-blue-100 text-blue-800'
+              }`}>
+                {documentSelection.status}
+              </span>
+            </div>
+          </div>
+          <div className="p-3 space-y-4">
+            
+            {/* Candidate Documents */}
+            {documentSelection.candidate_documents && documentSelection.candidate_documents.length > 0 && (
+              <div>
+                <h5 className="text-sm font-medium text-gray-700 mb-2">
+                  Candidate Documents ({documentSelection.candidate_documents.length})
+                </h5>
+                <div className="space-y-2">
+                  {documentSelection.candidate_documents.map((docId, index) => (
+                    <div 
+                      key={index}
+                      className={`p-3 rounded border ${
+                        docId === documentSelection.selected_doc_id 
+                          ? 'bg-green-50 border-green-200' 
+                          : 'bg-gray-50 border-gray-200'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-sm">{docId}</span>
+                        {docId === documentSelection.selected_doc_id && (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                            Selected
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
-            ))}
-          </div>
-        </div>
-      )}
+            )}
 
-      {/* Selected Document Details */}
-      {phaseData.loaded_sop_document && (
-        <div>
-          <h4 className="text-sm font-medium text-gray-700 mb-2">Selected SOP Document</h4>
-          <div className="bg-blue-50 border border-blue-200 rounded p-4">
-            <div className="grid grid-cols-1 gap-3">
+            {/* Selected Document Details */}
+            {documentSelection.loaded_document && (
               <div>
-                <span className="text-sm font-medium text-blue-900">ID:</span>
-                <span className="ml-2 font-mono text-sm text-blue-800">{phaseData.loaded_sop_document.doc_id}</span>
+                <h5 className="text-sm font-medium text-gray-700 mb-2">Selected SOP Document</h5>
+                <div className="bg-blue-50 border border-blue-200 rounded p-4">
+                  <pre className="text-xs text-gray-700 overflow-x-auto">
+                    {JSON.stringify(documentSelection.loaded_document, null, 2)}
+                  </pre>
+                </div>
               </div>
+            )}
+
+            {/* LLM Validation Call */}
+            {documentSelection.validation_call && (
               <div>
-                <span className="text-sm font-medium text-blue-900">Description:</span>
-                <span className="ml-2 text-sm text-blue-800">{phaseData.loaded_sop_document.description}</span>
-              </div>
-              {phaseData.loaded_sop_document.aliases?.length > 0 && (
-                <div>
-                  <span className="text-sm font-medium text-blue-900">Aliases:</span>
-                  <div className="ml-2 flex flex-wrap gap-1 mt-1">
-                    {phaseData.loaded_sop_document.aliases.map((alias, index) => (
-                      <span key={index} className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-blue-100 text-blue-800">
-                        {alias}
-                      </span>
-                    ))}
+                <div className="border border-purple-200 rounded-lg">
+                  <div className="px-3 py-2 bg-purple-50 border-b border-purple-200 rounded-t-lg">
+                    <span className="text-sm font-medium text-purple-900">Document Selection Validation</span>
+                  </div>
+                  <div className="p-3">
+                    <ContextualLLMCall 
+                      llmCall={documentSelection.validation_call}
+                      context="sop_validation"
+                      relatedData={{ 
+                        candidateDocuments: documentSelection.candidate_documents,
+                        selectedDocument: documentSelection.selected_doc_id,
+                        inputDescription: phaseData.input?.description
+                      }}
+                    />
                   </div>
                 </div>
-              )}
-              <div>
-                <span className="text-sm font-medium text-blue-900">Tool ID:</span>
-                <span className="ml-2 font-mono text-sm text-blue-800">{phaseData.loaded_sop_document.tool.tool_id}</span>
               </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* LLM Validation Call */}
-      {phaseData.llm_validation_call && (
-        <div>
-          <div className="border border-purple-200 rounded-lg">
-            <div className="px-3 py-2 bg-purple-50 border-b border-purple-200 rounded-t-lg">
-              <span className="text-sm font-medium text-purple-900">Document Selection Validation</span>
-            </div>
-            <div className="p-3">
-              <ContextualLLMCall 
-                llmCall={phaseData.llm_validation_call}
-                context="sop_validation"
-                relatedData={{ 
-                  candidateDocuments: phaseData.candidate_documents,
-                  selectedDocument: phaseData.selected_doc_id,
-                  inputDescription: phaseData.input?.description
-                }}
-              />
-            </div>
+            )}
           </div>
         </div>
       )}

@@ -56,13 +56,11 @@ class TracingLLMTool(TracingToolWrapper):
             # Log LLM call with prompt/response details
             if self.tracer.enabled:
                 prompt = parameters.get('prompt', '')
-                step = parameters.get('step')  # Optional step identifier
                 model = getattr(self.tool, 'model', None)
                 
                 self.tracer.log_llm_call(
                     prompt=prompt,
                     response=result,
-                    step=step,
                     model=model
                 )
                 

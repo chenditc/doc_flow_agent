@@ -42,18 +42,26 @@ export interface TaskPhases {
   new_task_generation?: NewTaskGenerationPhase;
 }
 
-// SOP Resolution Phase
+// SOP Resolution Phase (Updated for new tracing structure)
 export interface SOPResolutionPhase {
   start_time: string;
   end_time: string | null;
   status: PhaseStatus;
-  input: {
+  input?: {
     description: string;
-  };
+  } | null;
+  document_selection?: DocumentSelection | null;
+  error: string | null;
+}
+
+export interface DocumentSelection {
+  start_time: string;
+  end_time: string | null;
+  status: PhaseStatus;
+  validation_call?: LLMCall | null;
   candidate_documents: string[];
-  llm_validation_call?: LLMCall;
   selected_doc_id: string | null;
-  loaded_sop_document?: SOPDocument;
+  loaded_document?: any | null;
   error: string | null;
 }
 
@@ -72,18 +80,44 @@ export interface SOPDocument {
   output_description: string;
 }
 
-// Task Creation Phase
+// Task Creation Phase (Updated for new tracing structure)
 export interface TaskCreationPhase {
   start_time: string;
   end_time: string | null;
   status: PhaseStatus;
-  sop_document: SOPDocument;
-  json_path_generation: Record<string, JsonPathGeneration>;
-  output_path_generation?: any;
-  created_task: Task;
+  sop_document?: SOPDocument | null;
+  input_field_extractions: Record<string, InputFieldExtraction>;
+  output_path_generation?: OutputPathGeneration | null;
+  created_task?: Task | null;
   error: string | null;
 }
 
+export interface InputFieldExtraction {
+  field_name: string;
+  description: string;
+  start_time: string;
+  end_time: string | null;
+  status: PhaseStatus;
+  context_analysis_call?: LLMCall | null;
+  extraction_code_generation_call?: LLMCall | null;
+  candidate_fields: Record<string, any>;
+  generated_extraction_code?: string | null;
+  extracted_value: any;
+  generated_path?: string | null;
+  error: string | null;
+}
+
+export interface OutputPathGeneration {
+  start_time: string;
+  end_time: string | null;
+  status: PhaseStatus;
+  path_generation_call?: LLMCall | null;
+  generated_path?: string | null;
+  prefixed_path?: string | null;
+  error: string | null;
+}
+
+// Legacy JsonPathGeneration interface (kept for backward compatibility)
 export interface JsonPathGeneration {
   field_name: string;
   description: string;
@@ -106,19 +140,19 @@ export interface Task {
   output_description: string;
 }
 
-// Task Execution Phase
+// Task Execution Phase (Updated for new tracing structure)
 export interface TaskExecutionPhase {
   start_time: string;
   end_time: string | null;
   status: PhaseStatus;
-  task: Task;
-  input_resolution: {
+  task?: Task | null;
+  input_resolution?: {
     resolved_inputs: Record<string, any>;
-  };
-  tool_execution: ToolExecution;
-  output_path_generation?: LLMCall;
-  generated_path?: string;
-  prefixed_path?: string;
+  } | null;
+  tool_execution?: ToolExecution | null;
+  output_path_generation?: OutputPathGeneration | null;
+  generated_path?: string | null;
+  prefixed_path?: string | null;
   error: string | null;
 }
 
@@ -145,31 +179,38 @@ export interface ContextUpdatePhase {
   error: string | null;
 }
 
-// New Task Generation Phase
+// New Task Generation Phase (Updated for new tracing structure)
 export interface NewTaskGenerationPhase {
   start_time: string;
   end_time: string | null;
   status: PhaseStatus;
-  tool_output: string;
-  current_task_description: string;
-  llm_call: LLMCall;
+  task_generation?: NewTaskGeneration | null;
+  error: string | null;
+}
+
+export interface NewTaskGeneration {
+  start_time: string;
+  end_time: string | null;
+  status: PhaseStatus;
+  task_generation_call?: LLMCall | null;
+  tool_output: any;
+  current_task_description?: string | null;
   generated_tasks: string[];
   error: string | null;
 }
 
-// Common Types
+// Common Types (Updated for new tracing structure)
 export interface LLMCall {
   tool_call_id: string;
-  step: string;
   prompt: string;
   response: string;
   start_time: string;
   end_time: string;
-  model: string;
-  token_usage: any;
+  model?: string | null;
+  token_usage?: any | null;
 }
 
-export type PhaseStatus = 'running' | 'completed' | 'error' | 'cancelled';
+export type PhaseStatus = 'started' | 'completed' | 'failed' | 'interrupted' | 'retrying';
 
 // Timeline visualization types
 export interface TimelineItem {

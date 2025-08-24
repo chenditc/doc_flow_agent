@@ -160,16 +160,23 @@ class SOPDocumentParser:
         # Log candidate documents to tracing system
         candidate_doc_ids = [candidate[0] for candidate in candidates]
         if tracer and tracer.enabled and tracer.current_task_execution:
-            # Update the current SOP resolution phase with candidate documents
-            phase = tracer.current_task_execution.phases.get("sop_resolution")
-            if phase:
-                phase.candidate_documents = candidate_doc_ids
-
+            # Start document selection sub-step
+            tracer.start_document_selection()
+            
         if not candidates:
+            if tracer and tracer.enabled:
+                tracer.end_document_selection(candidate_docs=[], error=Exception("No candidate documents found"))
             return None
 
         # Validate matched doc_id against description using LLM
         best_doc_id = await self._validate_with_llm(description, candidates, all_doc_ids, tracer)
+        
+        if tracer and tracer.enabled:
+            tracer.end_document_selection(
+                candidate_docs=candidate_doc_ids,
+                selected_doc=best_doc_id
+            )
+            
         return best_doc_id
     
     def _get_all_doc_ids(self) -> List[str]:
@@ -201,7 +208,6 @@ class SOPDocumentParser:
         """Use LLM to validate and select the best matching doc_id"""
 
         from tools.llm_tool import LLMTool
-        from tracing import LLMCall
         from datetime import datetime
         
         # Use injected LLM tool if available, otherwise create a new one
@@ -238,25 +244,10 @@ Please select the most appropriate SOP document from the following candidates:
         
         # Get LLM response
         response = await llm_tool.execute({
-            "prompt": prompt,
-            "step": "sop_document_validation"
+            "prompt": prompt
         })
         
-        # Log the LLM validation call to tracing system
-        if tracer and tracer.enabled and tracer.current_task_execution:
-            phase = tracer.current_task_execution.phases.get("sop_resolution")
-            if phase:
-                end_time = datetime.now().isoformat()
-                llm_call = LLMCall(
-                    tool_call_id=tracer._generate_id(),
-                    step="sop_document_validation",
-                    prompt=prompt,
-                    response=response,
-                    start_time=start_time,
-                    end_time=end_time,
-                    model=getattr(llm_tool, 'model', None)
-                )
-                phase.llm_validation_call = llm_call
+        # Note: LLM call is automatically logged by the tracer context
         
         response = re.search(r'<doc_id>(.*?)</doc_id>', response)
 

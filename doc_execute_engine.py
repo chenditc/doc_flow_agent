@@ -97,7 +97,7 @@ class DocExecuteEngine:
         self.sop_parser = SOPDocumentParser(docs_dir, llm_tool=self.tools.get("LLM"))
         
         # Initialize JSON path generator
-        self.json_path_generator = JsonPathGenerator(self.tools.get("LLM"))
+        self.json_path_generator = JsonPathGenerator(self.tools.get("LLM"), self.tracer)
     
     def _get_engine_state(self) -> Dict[str, Any]:
         """Get current engine state for tracing"""
@@ -356,6 +356,10 @@ class DocExecuteEngine:
         # Generate output JSON path dynamically if needed (after getting tool output)
         if not task.output_json_path and task.output_description:
             print(f"[TASK_EXECUTION] Generating output JSON path for {task.sop_doc_id} based on tool output")
+            
+            # Start output path generation tracing
+            self.tracer.start_output_path_generation()
+            
             task.output_json_path = await self.json_path_generator.generate_output_json_path(
                 task.output_description,
                 self.context,
@@ -363,6 +367,9 @@ class DocExecuteEngine:
                 tool_output
             )
             print(f"[TASK_EXECUTION] Generated output JSON path: {task.output_json_path}")
+            
+            # End output path generation tracing
+            self.tracer.end_output_path_generation(generated_path=task.output_json_path)
         
         # Add execution prefix to output JSON path
         if task.output_json_path:
@@ -422,10 +429,25 @@ class DocExecuteEngine:
         # Start new task generation phase
         self.tracer.start_phase("new_task_generation")
         
+        # Start new task generation step
+        self.tracer.start_new_task_generation_step()
+        
         # Use LLM to check the output, see if there is new task needed.
         try:
             new_task_list = await self.parse_new_tasks_from_output(tool_output, task.description)
+            
+            # End new task generation step
+            self.tracer.end_new_task_generation_step(
+                generated_tasks=new_task_list,
+                tool_output=tool_output,
+                task_description=task.description
+            )
         except Exception as e:
+            self.tracer.end_new_task_generation_step(
+                tool_output=tool_output,
+                task_description=task.description,
+                error=e
+            )
             self.tracer.end_phase(error=e)
             raise
         
@@ -539,8 +561,7 @@ Please return the JSON array directly without any additional explanations.
             raise Exception("[TASK_PARSER] Warning: LLM tool not available, returning empty task list")
 
         llm_response = await llm_tool.execute({
-            "prompt": prompt,
-            "step": "new_task_generation"
+            "prompt": prompt
         })
         print(f"[TASK_PARSER] LLM response: {llm_response}")
         

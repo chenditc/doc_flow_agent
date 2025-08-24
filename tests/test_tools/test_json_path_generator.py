@@ -347,27 +347,10 @@ def extract_func(context):
             )
             return result
         
-        result = asyncio.run(run_test())
-        # Should fallback to default
-        self.assertEqual(result, "$.output")
-    
-    @patch('tools.llm_tool.LLMTool.execute')
-    @patch('builtins.print')
-    def test_generate_output_json_path_llm_error(self, mock_print, mock_llm_execute):
-        """Test generate_output_json_path when LLM call fails"""
-        # Mock LLM to raise an exception
-        mock_llm_execute.side_effect = Exception("LLM error")
-        
-        async def run_test():
-            result = await self.generator.generate_output_json_path(
-                "test output description",
-                {"existing": "data"}
-            )
-            return result
-        
-        result = asyncio.run(run_test())
-        # Should fallback to default
-        self.assertEqual(result, "$.output")
+        # Should raise and ValueError
+        with self.assertRaises(ValueError) as context:
+            result = asyncio.run(run_test())
+        self.assertIn("Invalid output path format for output json path extraction", str(context.exception))
 
 
 if __name__ == '__main__':

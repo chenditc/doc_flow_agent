@@ -256,7 +256,7 @@ export const InputFieldInspector: React.FC<InputFieldInspectorProps> = ({
                           Extraction Call {index + 1}
                         </span>
                         <span className="text-xs text-blue-600">
-                          {call.step}
+                          N/A
                         </span>
                       </div>
                     </div>

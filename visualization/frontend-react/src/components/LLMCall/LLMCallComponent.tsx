@@ -54,7 +54,7 @@ export const LLMCallComponent: React.FC<LLMCallComponentProps> = ({ llmCall }) =
         </div>
         <div>
           <span className="font-medium text-purple-700">Step:</span>
-          <span className="ml-2 text-purple-600">{llmCall.step || 'N/A'}</span>
+          <span className="ml-2 text-purple-600">N/A</span>
         </div>
       </div>
 

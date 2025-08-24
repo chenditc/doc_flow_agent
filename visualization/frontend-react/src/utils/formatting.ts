@@ -215,11 +215,13 @@ export const getStatusColor = (status: PhaseStatus): string => {
   switch (status) {
     case 'completed':
       return 'text-green-600 bg-green-100';
-    case 'running':
+    case 'started':
       return 'text-blue-600 bg-blue-100 animate-pulse';
-    case 'error':
-    case 'cancelled':
+    case 'failed':
+    case 'interrupted':
       return 'text-red-600 bg-red-100';
+    case 'retrying':
+      return 'text-orange-600 bg-orange-100';
     default:
       return 'text-gray-600 bg-gray-100';
   }
@@ -266,27 +268,35 @@ export const extractLLMCalls = (task: TaskExecution): Array<{
   };
 
   // Check SOP resolution phase
-  if (task.phases?.sop_resolution?.llm_validation_call) {
-    addLLMCall(task.phases.sop_resolution.llm_validation_call, 'SOP Resolution');
+  if (task.phases?.sop_resolution?.document_selection?.validation_call) {
+    addLLMCall(task.phases.sop_resolution.document_selection.validation_call, 'SOP Resolution');
   }
 
   // Check task creation phase
-  if (task.phases?.task_creation?.json_path_generation) {
-    Object.entries(task.phases.task_creation.json_path_generation).forEach(([field, generation]: [string, any]) => {
-      generation?.llm_calls?.forEach((call: any) => {
-        addLLMCall(call, `Task Creation - ${field}`);
-      });
+  if (task.phases?.task_creation?.input_field_extractions) {
+    Object.entries(task.phases.task_creation.input_field_extractions).forEach(([field, extraction]: [string, any]) => {
+      if (extraction?.context_analysis_call) {
+        addLLMCall(extraction.context_analysis_call, `Task Creation - ${field} (Analysis)`);
+      }
+      if (extraction?.extraction_code_generation_call) {
+        addLLMCall(extraction.extraction_code_generation_call, `Task Creation - ${field} (Code Gen)`);
+      }
     });
   }
 
+  // Check task creation output path generation
+  if (task.phases?.task_creation?.output_path_generation?.path_generation_call) {
+    addLLMCall(task.phases.task_creation.output_path_generation.path_generation_call, 'Task Creation - Output Path');
+  }
+
   // Check task execution phase
-  if (task.phases?.task_execution?.output_path_generation) {
-    addLLMCall(task.phases.task_execution.output_path_generation, 'Task Execution');
+  if (task.phases?.task_execution?.output_path_generation?.path_generation_call) {
+    addLLMCall(task.phases.task_execution.output_path_generation.path_generation_call, 'Task Execution - Output Path');
   }
 
   // Check new task generation phase
-  if (task.phases?.new_task_generation?.llm_call) {
-    addLLMCall(task.phases.new_task_generation.llm_call, 'New Task Generation');
+  if (task.phases?.new_task_generation?.task_generation?.task_generation_call) {
+    addLLMCall(task.phases.new_task_generation.task_generation.task_generation_call, 'New Task Generation');
   }
 
   return llmCalls;

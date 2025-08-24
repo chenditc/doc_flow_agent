@@ -8,7 +8,7 @@ import json
 import uuid
 from dataclasses import dataclass, asdict, field
 from datetime import datetime, timezone
-from typing import Dict, List, Any, Optional, Union
+from typing import Dict, List, Any, Optional, Union, Callable
 from pathlib import Path
 from enum import Enum
 
@@ -26,7 +26,6 @@ class ExecutionStatus(Enum):
 class LLMCall:
     """Represents a single LLM interaction"""
     tool_call_id: str
-    step: Optional[str]
     prompt: str
     response: str
     start_time: str
@@ -49,16 +48,87 @@ class ToolCall:
 
 
 @dataclass
+class InputFieldExtraction:
+    """Container for input field value extraction process"""
+    field_name: str
+    description: str
+    start_time: str
+    end_time: Optional[str] = None
+    status: ExecutionStatus = ExecutionStatus.STARTED
+    
+    # LLM calls in the extraction process
+    context_analysis_call: Optional[LLMCall] = None
+    extraction_code_generation_call: Optional[LLMCall] = None
+    
+    # Results
+    candidate_fields: Dict[str, Any] = field(default_factory=dict)
+    generated_extraction_code: Optional[str] = None
+    extracted_value: Any = None
+    generated_path: Optional[str] = None
+    error: Optional[str] = None
+
+
+@dataclass
+class OutputPathGeneration:
+    """Container for output path generation process"""
+    start_time: str
+    end_time: Optional[str] = None
+    status: ExecutionStatus = ExecutionStatus.STARTED
+    
+    # LLM call for path generation
+    path_generation_call: Optional[LLMCall] = None
+    
+    # Results
+    generated_path: Optional[str] = None
+    prefixed_path: Optional[str] = None
+    error: Optional[str] = None
+
+
+@dataclass
+class DocumentSelection:
+    """Container for SOP document selection process"""
+    start_time: str
+    end_time: Optional[str] = None
+    status: ExecutionStatus = ExecutionStatus.STARTED
+    
+    # LLM call for validation
+    validation_call: Optional[LLMCall] = None
+    
+    # Results
+    candidate_documents: List[str] = field(default_factory=list)
+    selected_doc_id: Optional[str] = None
+    loaded_document: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+
+
+@dataclass
+class NewTaskGeneration:
+    """Container for new task generation process"""
+    start_time: str
+    end_time: Optional[str] = None
+    status: ExecutionStatus = ExecutionStatus.STARTED
+    
+    # LLM call for task generation
+    task_generation_call: Optional[LLMCall] = None
+    
+    # Results
+    tool_output: Any = None
+    current_task_description: Optional[str] = None
+    generated_tasks: List[str] = field(default_factory=list)
+    error: Optional[str] = None
+
+
+@dataclass
 class SopResolutionPhase:
-    """SOP document resolution phase"""
+    """SOP document resolution phase with structured sub-steps"""
     start_time: str
     end_time: Optional[str] = None
     status: ExecutionStatus = ExecutionStatus.STARTED
     input: Optional[Dict[str, Any]] = None
-    candidate_documents: Optional[List[str]] = None
-    llm_validation_call: Optional[LLMCall] = None
-    selected_doc_id: Optional[str] = None
-    loaded_sop_document: Optional[Dict[str, Any]] = None
+    
+    # Sub-step containers
+    document_selection: Optional[DocumentSelection] = None
+    
     error: Optional[str] = None
 
 
@@ -69,33 +139,39 @@ class JsonPathGeneration:
     description: str
     llm_calls: List[LLMCall] = field(default_factory=list)
     generated_path: Optional[str] = None
-    extracted_value: Any = None
+    extracted_value: Dict[str, str] = None # Key is input field name, value is extracted value
     error: Optional[str] = None
 
 
 @dataclass
 class TaskCreationPhase:
-    """Task creation phase"""
+    """Task creation phase with structured sub-steps"""
     start_time: str
     end_time: Optional[str] = None
     status: ExecutionStatus = ExecutionStatus.STARTED
     sop_document: Optional[Dict[str, Any]] = None
-    json_path_generation: Dict[str, JsonPathGeneration] = field(default_factory=dict)
-    output_path_generation: Optional[LLMCall] = None
+    
+    # Sub-step containers
+    input_field_extractions: Dict[str, InputFieldExtraction] = field(default_factory=dict)
+    output_path_generation: Optional[OutputPathGeneration] = None
+    
     created_task: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
 
 
 @dataclass
 class TaskExecutionPhase:
-    """Task execution phase"""
+    """Task execution phase with structured sub-steps"""
     start_time: str
     end_time: Optional[str] = None
     status: ExecutionStatus = ExecutionStatus.STARTED
     task: Optional[Dict[str, Any]] = None
     input_resolution: Optional[Dict[str, Any]] = None
     tool_execution: Optional[ToolCall] = None
-    output_path_generation: Optional[LLMCall] = None
+    
+    # Sub-step containers
+    output_path_generation: Optional[OutputPathGeneration] = None
+    
     generated_path: Optional[str] = None
     prefixed_path: Optional[str] = None
     error: Optional[str] = None
@@ -116,14 +192,14 @@ class ContextUpdatePhase:
 
 @dataclass
 class NewTaskGenerationPhase:
-    """New task generation phase"""
+    """New task generation phase with structured sub-steps"""
     start_time: str
     end_time: Optional[str] = None
     status: ExecutionStatus = ExecutionStatus.STARTED
-    tool_output: Any = None
-    current_task_description: Optional[str] = None
-    llm_call: Optional[LLMCall] = None
-    generated_tasks: List[str] = field(default_factory=list)
+    
+    # Sub-step containers
+    task_generation: Optional[NewTaskGeneration] = None
+    
     error: Optional[str] = None
 
 
@@ -158,6 +234,17 @@ class ExecutionSession:
     task_executions: List[TaskExecutionRecord] = field(default_factory=list)
 
 
+@dataclass
+class TracingContext:
+    """Internal context for tracking current tracing state"""
+    current_phase: Optional[str] = None
+    current_sub_step: Optional[str] = None
+    current_field_name: Optional[str] = None  # For input field extraction
+    
+    # Callbacks to store LLM calls
+    llm_call_storage: Optional[Callable[[LLMCall], None]] = None
+
+
 class ExecutionTracer:
     """Main tracer for capturing execution state and events"""
     
@@ -172,7 +259,10 @@ class ExecutionTracer:
         
         self.session: Optional[ExecutionSession] = None
         self.current_task_execution: Optional[TaskExecutionRecord] = None
-        self.current_phase: Optional[str] = None
+        
+        # New: Internal tracing context
+        self._context = TracingContext()
+        
         self.tool_call_counter: int = 0
         self.current_session_file: Optional[str] = None  # Track current session file path
         
@@ -243,7 +333,10 @@ class ExecutionTracer:
         if not self.enabled or not self.current_task_execution:
             return
             
-        self.current_phase = phase_name
+        self._context.current_phase = phase_name
+        self._context.current_sub_step = None
+        self._context.current_field_name = None
+        self._context.llm_call_storage = None
         
         if phase_name == "sop_resolution":
             self.current_task_execution.phases[phase_name] = SopResolutionPhase(
@@ -266,18 +359,85 @@ class ExecutionTracer:
                 start_time=self._current_time()
             )
     
-    def log_llm_call(self, prompt: str, response: str, step: str = None, 
-                     model: str = None, token_usage: Dict[str, int] = None) -> str:
-        """Log an LLM interaction"""
+    # New: Sub-step methods for structured tracing
+    def start_document_selection(self) -> None:
+        """Start SOP document selection sub-step"""
+        if not self.enabled or self._context.current_phase != "sop_resolution":
+            return
+        
+        phase = self.current_task_execution.phases.get("sop_resolution")
+        if phase:
+            phase.document_selection = DocumentSelection(start_time=self._current_time())
+            self._context.current_sub_step = "document_selection"
+            # Set up storage callback
+            self._context.llm_call_storage = lambda call: setattr(phase.document_selection, 'validation_call', call)
+    
+    def start_input_field_extraction(self, field_name: str, description: str) -> None:
+        """Start input field value extraction sub-step"""
+        if not self.enabled or self._context.current_phase != "task_creation":
+            return
+        
+        phase = self.current_task_execution.phases.get("task_creation")
+        if phase:
+            extraction = InputFieldExtraction(
+                field_name=field_name,
+                description=description,
+                start_time=self._current_time()
+            )
+            phase.input_field_extractions[field_name] = extraction
+            self._context.current_sub_step = "input_field_extraction"
+            self._context.current_field_name = field_name
+            
+            # Set up storage callback that routes to appropriate LLM call field
+            def store_llm_call(call: LLMCall):
+                if not extraction.context_analysis_call:
+                    extraction.context_analysis_call = call
+                else:
+                    extraction.extraction_code_generation_call = call
+            
+            self._context.llm_call_storage = store_llm_call
+    
+    def start_output_path_generation(self) -> None:
+        """Start output path generation sub-step"""
+        if not self.enabled:
+            return
+        
+        current_time = self._current_time()
+        
+        if self._context.current_phase == "task_creation":
+            phase = self.current_task_execution.phases.get("task_creation")
+            if phase:
+                phase.output_path_generation = OutputPathGeneration(start_time=current_time)
+                self._context.current_sub_step = "output_path_generation"
+                self._context.llm_call_storage = lambda call: setattr(phase.output_path_generation, 'path_generation_call', call)
+        
+        elif self._context.current_phase == "task_execution":
+            phase = self.current_task_execution.phases.get("task_execution")
+            if phase:
+                phase.output_path_generation = OutputPathGeneration(start_time=current_time)
+                self._context.current_sub_step = "output_path_generation"
+                self._context.llm_call_storage = lambda call: setattr(phase.output_path_generation, 'path_generation_call', call)
+    
+    def start_new_task_generation_step(self) -> None:
+        """Start new task generation sub-step"""
+        if not self.enabled or self._context.current_phase != "new_task_generation":
+            return
+        
+        phase = self.current_task_execution.phases.get("new_task_generation")
+        if phase:
+            phase.task_generation = NewTaskGeneration(start_time=self._current_time())
+            self._context.current_sub_step = "new_task_generation_step"
+            self._context.llm_call_storage = lambda call: setattr(phase.task_generation, 'task_generation_call', call)
+    
+    def log_llm_call(self, prompt: str, response: str, model: str = None, 
+                     token_usage: Dict[str, int] = None) -> str:
+        """Log an LLM interaction - simplified interface"""
         if not self.enabled:
             return ""
-            
-        self.tool_call_counter += 1
-        call_id = self._generate_id()
         
+        call_id = self._generate_id()
         llm_call = LLMCall(
             tool_call_id=call_id,
-            step=step,
             prompt=prompt,
             response=response,
             start_time=self._current_time(),
@@ -286,31 +446,117 @@ class ExecutionTracer:
             token_usage=token_usage
         )
         
-        # Store in appropriate phase
-        if self.current_phase and self.current_task_execution:
-            phase = self.current_task_execution.phases.get(self.current_phase)
-            
-            if isinstance(phase, SopResolutionPhase):
-                phase.llm_validation_call = llm_call
-            elif isinstance(phase, TaskCreationPhase):
-                if step and "json_path" in step:
-                    # This is for JSON path generation
-                    field_name = step.replace("json_path_", "")
-                    if field_name not in phase.json_path_generation:
-                        phase.json_path_generation[field_name] = JsonPathGeneration(
-                            field_name=field_name,
-                            description=""
-                        )
-                    phase.json_path_generation[field_name].llm_calls.append(llm_call)
-                else:
-                    phase.output_path_generation = llm_call
-            elif isinstance(phase, TaskExecutionPhase):
-                phase.output_path_generation = llm_call
-            elif isinstance(phase, NewTaskGenerationPhase):
-                phase.llm_call = llm_call
+        # Use context-aware storage
+        if self._context.llm_call_storage:
+            self._context.llm_call_storage(llm_call)
+        else:
+            print(f"[TRACER] Warning: No storage context for LLM call in phase {self._context.current_phase}")
         
-        print(f"[TRACER] Logged LLM call: {step or 'unknown'}")
+        print(f"[TRACER] Logged LLM call in {self._context.current_phase}.{self._context.current_sub_step or 'main'}")
         return call_id
+    
+    # Sub-step completion methods
+    def end_document_selection(self, candidate_docs: List[str] = None, selected_doc: str = None, 
+                             loaded_doc: Dict[str, Any] = None, error: Exception = None) -> None:
+        """End document selection sub-step"""
+        if not self.enabled or self._context.current_sub_step != "document_selection":
+            return
+        
+        phase = self.current_task_execution.phases.get("sop_resolution")
+        if phase and phase.document_selection:
+            phase.document_selection.end_time = self._current_time()
+            phase.document_selection.status = ExecutionStatus.FAILED if error else ExecutionStatus.COMPLETED
+            if error:
+                phase.document_selection.error = str(error)
+            if candidate_docs:
+                phase.document_selection.candidate_documents = candidate_docs
+            if selected_doc:
+                phase.document_selection.selected_doc_id = selected_doc
+            if loaded_doc:
+                phase.document_selection.loaded_document = loaded_doc
+        
+        self._context.current_sub_step = None
+        self._context.llm_call_storage = None
+    
+    def end_input_field_extraction(self, generated_code: str = None, extracted_value: Any = None,
+                                 generated_path: str = None, candidate_fields: Dict[str, Any] = None,
+                                 error: Exception = None) -> None:
+        """End input field extraction sub-step"""
+        if not self.enabled or self._context.current_sub_step != "input_field_extraction":
+            return
+        
+        phase = self.current_task_execution.phases.get("task_creation")
+        if phase and self._context.current_field_name:
+            extraction = phase.input_field_extractions.get(self._context.current_field_name)
+            if extraction:
+                extraction.end_time = self._current_time()
+                extraction.status = ExecutionStatus.FAILED if error else ExecutionStatus.COMPLETED
+                if error:
+                    extraction.error = str(error)
+                if generated_code:
+                    extraction.generated_extraction_code = generated_code
+                if extracted_value is not None:
+                    extraction.extracted_value = extracted_value
+                if generated_path:
+                    extraction.generated_path = generated_path
+                if candidate_fields:
+                    extraction.candidate_fields = candidate_fields
+        
+        self._context.current_sub_step = None
+        self._context.current_field_name = None
+        self._context.llm_call_storage = None
+    
+    def end_output_path_generation(self, generated_path: str = None, prefixed_path: str = None,
+                                 error: Exception = None) -> None:
+        """End output path generation sub-step"""
+        if not self.enabled or self._context.current_sub_step != "output_path_generation":
+            return
+        
+        # Find the appropriate phase
+        output_gen = None
+        if self._context.current_phase == "task_creation":
+            phase = self.current_task_execution.phases.get("task_creation")
+            if phase:
+                output_gen = phase.output_path_generation
+        elif self._context.current_phase == "task_execution":
+            phase = self.current_task_execution.phases.get("task_execution")
+            if phase:
+                output_gen = phase.output_path_generation
+        
+        if output_gen:
+            output_gen.end_time = self._current_time()
+            output_gen.status = ExecutionStatus.FAILED if error else ExecutionStatus.COMPLETED
+            if error:
+                output_gen.error = str(error)
+            if generated_path:
+                output_gen.generated_path = generated_path
+            if prefixed_path:
+                output_gen.prefixed_path = prefixed_path
+        
+        self._context.current_sub_step = None
+        self._context.llm_call_storage = None
+    
+    def end_new_task_generation_step(self, generated_tasks: List[str] = None, tool_output: Any = None,
+                              task_description: str = None, error: Exception = None) -> None:
+        """End new task generation sub-step"""
+        if not self.enabled or self._context.current_sub_step != "new_task_generation_step":
+            return
+        
+        phase = self.current_task_execution.phases.get("new_task_generation")
+        if phase and phase.task_generation:
+            phase.task_generation.end_time = self._current_time()
+            phase.task_generation.status = ExecutionStatus.FAILED if error else ExecutionStatus.COMPLETED
+            if error:
+                phase.task_generation.error = str(error)
+            if generated_tasks:
+                phase.task_generation.generated_tasks = generated_tasks
+            if tool_output is not None:
+                phase.task_generation.tool_output = tool_output
+            if task_description:
+                phase.task_generation.current_task_description = task_description
+        
+        self._context.current_sub_step = None
+        self._context.llm_call_storage = None
     
     def log_tool_call(self, tool_id: str, parameters: Dict[str, Any], output: Any, 
                      error: Exception = None) -> str:
@@ -332,7 +578,7 @@ class ExecutionTracer:
         )
         
         # Store in task execution phase
-        if self.current_phase == "task_execution" and self.current_task_execution:
+        if self._context.current_phase == "task_execution" and self.current_task_execution:
             phase = self.current_task_execution.phases.get("task_execution")
             if isinstance(phase, TaskExecutionPhase):
                 phase.tool_execution = tool_call
@@ -342,10 +588,10 @@ class ExecutionTracer:
     
     def end_phase(self, phase_data: Dict[str, Any] = None, error: Exception = None) -> None:
         """Complete the current phase"""
-        if not self.enabled or not self.current_phase or not self.current_task_execution:
+        if not self.enabled or not self._context.current_phase or not self.current_task_execution:
             return
             
-        phase = self.current_task_execution.phases.get(self.current_phase)
+        phase = self.current_task_execution.phases.get(self._context.current_phase)
         if phase:
             phase.end_time = self._current_time()
             phase.status = ExecutionStatus.FAILED if error else ExecutionStatus.COMPLETED
@@ -358,12 +604,12 @@ class ExecutionTracer:
                     if hasattr(phase, key):
                         setattr(phase, key, value)
         
-        print(f"[TRACER] Ended phase: {self.current_phase}")
+        print(f"[TRACER] Ended phase: {self._context.current_phase}")
         
         # Save session file for real-time monitoring after phase completion
         self._save_session()
         
-        self.current_phase = None
+        self._context.current_phase = None
     
     def end_task_execution(self, engine_state: Dict[str, Any], status: ExecutionStatus, 
                           error: Exception = None) -> None:
