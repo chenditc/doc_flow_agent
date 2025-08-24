@@ -26,6 +26,3 @@ export { SOPResolutionViewer } from './SOPResolution/SOPResolutionViewer';
 export { InputFieldInspector } from './enhanced/InputFieldInspector';
 export { TaskCreationPhaseViewer } from './enhanced/TaskCreationPhaseViewer';
 export { ContextualLLMCall } from './enhanced/ContextualLLMCall';
-
-// LLMCall Components
-export { LLMCallComponent } from './LLMCall/LLMCallComponent';

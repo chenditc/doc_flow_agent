@@ -20,8 +20,15 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
+from pydantic import BaseModel
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+
+# Add path to import tools
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+# Import the LLM tuning API router
+from visualization.server.llm_tuning_api import router as llm_tuning_router
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -202,6 +209,9 @@ app.add_middleware(
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 TRACES_DIR = PROJECT_ROOT / "traces"
 REACT_BUILD_DIR = PROJECT_ROOT / "visualization" / "frontend-react" / "dist"
+
+# Include the LLM tuning router
+app.include_router(llm_tuning_router)
 
 @app.get("/health")
 async def health_check():
@@ -441,6 +451,16 @@ if REACT_BUILD_DIR.exists() and (REACT_BUILD_DIR / "index.html").exists():
     # Mount static assets (CSS, JS, etc.)
     app.mount("/assets", StaticFiles(directory=REACT_BUILD_DIR / "assets"), name="assets")
     
+    # Serve the LLM tuning HTML page
+    @app.get("/llm-tuning")
+    async def serve_llm_tuning():
+        """Serve the LLM tool tuning page."""
+        llm_tuning_path = PROJECT_ROOT / "visualization" / "llm_tuning.html"
+        if llm_tuning_path.exists():
+            return FileResponse(llm_tuning_path)
+        else:
+            raise HTTPException(status_code=404, detail="LLM tuning page not found")
+    
     # Serve index.html at root and handle SPA routing
     @app.get("/")
     @app.get("/{path:path}")
@@ -454,6 +474,12 @@ if REACT_BUILD_DIR.exists() and (REACT_BUILD_DIR / "index.html").exists():
     logger.info(f"React build directory found at {REACT_BUILD_DIR}")
 else:
     logger.warning(f"No React build found at {REACT_BUILD_DIR}. Please run 'npm run build' in frontend-react/ to build the frontend.")
+    
+    # If no React build, serve a basic index page
+    @app.get("/")
+    async def serve_basic_index():
+        """Serve basic index page when no React build is available."""
+        return {"message": "Doc Flow Visualization API", "llm_tuning": "/llm-tuning"}
 
 if __name__ == "__main__":
     import uvicorn

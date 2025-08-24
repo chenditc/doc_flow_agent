@@ -94,7 +94,7 @@ class DocExecuteEngine:
         
         # Initialize SOPDocument components
         self.sop_loader = SOPDocumentLoader(docs_dir)
-        self.sop_parser = SOPDocumentParser(docs_dir, llm_tool=self.tools.get("LLM"))
+        self.sop_parser = SOPDocumentParser(docs_dir, llm_tool=self.tools.get("LLM"), tracer=self.tracer)
         
         # Initialize JSON path generator
         self.json_path_generator = JsonPathGenerator(self.tools.get("LLM"), self.tracer)
@@ -254,45 +254,40 @@ class DocExecuteEngine:
         """
 
         # Trace SOP resolution phase
-        self.tracer.start_phase("sop_resolution")
-        
-        self.context["current_task"] = description
-        
-        # Step 1: Parse sop_doc_id from natural language
-        sop_doc_id = await self.sop_parser.parse_sop_doc_id_from_description(description, self.tracer)
+        with self.tracer.trace_phase_with_data("sop_resolution") as phase_ctx:
+            self.context["current_task"] = description
+            
+            # Step 1: Parse sop_doc_id from natural language
+            sop_doc_id = await self.sop_parser.parse_sop_doc_id_from_description(description)
 
-        if not sop_doc_id:
-            # Use general fallback SOP document if no specific doc_id found
-            print("[TASK_CREATION] No specific SOP document found, using fallback SOP document")
-            sop_doc_id = "general/fallback"
-        
-        # Step 3: Load SOP document
-        try:
-            sop_doc = self.load_sop_document(sop_doc_id)
-        except FileNotFoundError:
-            self.tracer.end_phase(error=FileNotFoundError(f"Cannot find SOP document for parsed doc_id: {sop_doc_id}"))
-            raise ValueError(f"Cannot find SOP document for parsed doc_id: {sop_doc_id}")
-        
-        # End SOP resolution phase with results
-        sop_resolution_data = {
-            "input": {"description": description},
-            "selected_doc_id": sop_doc_id,
-            "loaded_sop_document": asdict(sop_doc)
-        }
-        self.tracer.end_phase(sop_resolution_data)
+            if not sop_doc_id:
+                # Use general fallback SOP document if no specific doc_id found
+                print("[TASK_CREATION] No specific SOP document found, using fallback SOP document")
+                sop_doc_id = "general/fallback"
+            
+            # Step 3: Load SOP document
+            try:
+                sop_doc = self.load_sop_document(sop_doc_id)
+            except FileNotFoundError:
+                raise ValueError(f"Cannot find SOP document for parsed doc_id: {sop_doc_id}")
+            
+            # Set phase data with results
+            phase_ctx.set_data({
+                "input": {"description": description},
+                "selected_doc_id": sop_doc_id,
+                "loaded_sop_document": asdict(sop_doc)
+            })
         
         # Start task creation phase
-        self.tracer.start_phase("task_creation")
-        
-        # Step 4: Create task with all fields populated
-        task = await self.create_task_from_sop(sop_doc, description)
-        
-        # End task creation phase
-        task_creation_data = {
-            "sop_document": asdict(sop_doc),
-            "created_task": asdict(task)
-        }
-        self.tracer.end_phase(task_creation_data)
+        with self.tracer.trace_phase_with_data("task_creation") as phase_ctx:
+            # Step 4: Create task with all fields populated
+            task = await self.create_task_from_sop(sop_doc, description)
+            
+            # Set phase data
+            phase_ctx.set_data({
+                "sop_document": asdict(sop_doc),
+                "created_task": asdict(task)
+            })
         
         print(f"[TASK_CREATION] Created task: {task.description}")
         print(f"                SOP doc: {task.sop_doc_id}")
@@ -313,151 +308,120 @@ class DocExecuteEngine:
         print(f"SOP Doc: {task.sop_doc_id}")
         
         # Start task execution phase
-        self.tracer.start_phase("task_execution")
-        
-        # Resolve input values from context
-        input_values = {}
-        for key, path in task.input_json_path.items():
-            value = self.resolve_json_path(path, self.context)
-            if value is None:
-                self.tracer.end_phase(error=ValueError(f"Input path '{path}' not found in context"))
-                raise ValueError(f"Input path '{path}' not found in context: {self.context}")
-            input_values[key] = value
-            print(f"input {key}: {value}")
-        
-        # Prepare tool parameters
-        tool_params = task.tool.get('parameters', {}).copy()
-        
-        # Render all string parameters with input values
-        for param_key, param_value in tool_params.items():
-            if isinstance(param_value, str):
-                tool_params[param_key] = self.render_template(param_value, input_values)
+        with self.tracer.trace_phase_with_data("task_execution") as phase_ctx:
+            # Resolve input values from context
+            input_values = {}
+            for key, path in task.input_json_path.items():
+                value = self.resolve_json_path(path, self.context)
+                if value is None:
+                    raise ValueError(f"Input path '{path}' not found in context: {self.context}")
+                input_values[key] = value
+                print(f"input {key}: {value}")
+            
+            # Prepare tool parameters
+            tool_params = task.tool.get('parameters', {}).copy()
+            
+            # Render all string parameters with input values
+            for param_key, param_value in tool_params.items():
+                if isinstance(param_value, str):
+                    tool_params[param_key] = self.render_template(param_value, input_values)
 
-        # If input value key is not in tool_params, add it
-        for key, value in input_values.items():
-            if key not in tool_params:
-                tool_params[key] = value
-                print(f"Added task input parameter '{key}' with value to tools parameters as default value: {value}")
-        
-        # Call the tool
-        tool_id = task.tool.get('tool_id')
-        if tool_id not in self.tools:
-            self.tracer.end_phase(error=ValueError(f"Unknown tool: {tool_id}"))
-            raise ValueError(f"Unknown tool: {tool_id}")
-        
-        tool_instance = self.tools[tool_id]
-        try:
+            # If input value key is not in tool_params, add it
+            for key, value in input_values.items():
+                if key not in tool_params:
+                    tool_params[key] = value
+                    print(f"Added task input parameter '{key}' with value to tools parameters as default value: {value}")
+            
+            # Call the tool
+            tool_id = task.tool.get('tool_id')
+            if tool_id not in self.tools:
+                raise ValueError(f"Unknown tool: {tool_id}")
+            
+            tool_instance = self.tools[tool_id]
             tool_output = await tool_instance.execute(tool_params)
             print(f"Tool output: {tool_output}")
-        except Exception as e:
-            self.tracer.end_phase(error=e)
-            raise
-        
-        # Generate output JSON path dynamically if needed (after getting tool output)
-        if not task.output_json_path and task.output_description:
-            print(f"[TASK_EXECUTION] Generating output JSON path for {task.sop_doc_id} based on tool output")
             
-            # Start output path generation tracing
-            self.tracer.start_output_path_generation()
-            
-            task.output_json_path = await self.json_path_generator.generate_output_json_path(
-                task.output_description,
-                self.context,
-                task.description,
-                tool_output
-            )
-            print(f"[TASK_EXECUTION] Generated output JSON path: {task.output_json_path}")
-            
-            # End output path generation tracing
-            self.tracer.end_output_path_generation(generated_path=task.output_json_path)
-        
-        # Add execution prefix to output JSON path
-        if task.output_json_path:
-            prefixed_output_path = self.add_execution_prefix_to_path(task.output_json_path)
-            print(f"[TASK_EXECUTION] Using prefixed output path: {prefixed_output_path}")
-        else:
-            prefixed_output_path = None
-        
-        # End task execution phase with results
-        task_execution_data = {
-            "task": asdict(task),
-            "input_resolution": {"resolved_inputs": input_values},
-            "generated_path": task.output_json_path,
-            "prefixed_path": prefixed_output_path
-        }
-        self.tracer.end_phase(task_execution_data)
+            # Set phase data with results
+            phase_ctx.set_data({
+                "task": asdict(task),
+                "input_resolution": {"resolved_inputs": input_values},
+            })
         
         # Start context update phase
-        self.tracer.start_phase("context_update")
-        context_before = json.loads(json.dumps(self.context))  # Deep copy
-        
-        # Update context with output data using prefixed jsonpath
-        updated_paths = []
-        removed_temp_keys = []
-        
-        if prefixed_output_path:
-            try:
-                # Set the tool output value to the context using the prefixed JSON path
-                set_json_path_value(self.context, prefixed_output_path, tool_output)
-                print(f"Updated context at path '{prefixed_output_path}' with output")
-                updated_paths.append(prefixed_output_path)
-            except Exception as e:
-                print(f"Warning: Failed to update context at path '{prefixed_output_path}': {e}")
-                self.tracer.end_phase(error=e)
-                raise
+        with self.tracer.trace_phase_with_data("context_update") as phase_ctx:
+            context_before = json.loads(json.dumps(self.context))  # Deep copy
+            
+            # Update context with output data using prefixed jsonpath
+            updated_paths = []
+            removed_temp_keys = []
 
-        # Remove _temp_input_ * key from context
-        temp_keys = [k for k in self.context.keys() if k.startswith("_temp_input_")]
-        for key in temp_keys:
-            del self.context[key]
-            removed_temp_keys.append(key)
+            # Generate output JSON path dynamically if needed (after getting tool output)
+            if not task.output_json_path and task.output_description:
+                print(f"[TASK_EXECUTION] Generating output JSON path for {task.sop_doc_id} based on tool output")
+                
+                # Use output path generation tracing context manager
+                with self.tracer.trace_output_path_generation_step() as output_ctx:
+                    task.output_json_path = await self.json_path_generator.generate_output_json_path(
+                        task.output_description,
+                        self.context,
+                        task.description,
+                        tool_output
+                    )
+                    print(f"[TASK_EXECUTION] Generated output JSON path: {task.output_json_path}")
+                    output_ctx.set_result(generated_path=task.output_json_path)
+            
+                    # Add execution prefix to output JSON path
+                    prefixed_output_path = self.add_execution_prefix_to_path(task.output_json_path)
+                    print(f"[TASK_EXECUTION] Using prefixed output path: {prefixed_output_path}")
 
-        # Record last task output
-        self.last_task_output = tool_output
-        self.context["last_task_output"] = tool_output
-        print(f"[TASK_EXECUTION] Recorded last task output in context")
+                    output_ctx.set_result(prefixed_path=prefixed_output_path)
+            else:
+                prefixed_output_path = self.add_execution_prefix_to_path(task.output_json_path)
 
-        # End context update phase
-        context_update_data = {
-            "context_before": context_before,
-            "context_after": json.loads(json.dumps(self.context)),  # Deep copy
-            "updated_paths": updated_paths,
-            "removed_temp_keys": removed_temp_keys
-        }
-        self.tracer.end_phase(context_update_data)
+            # Set the tool output value to the context using the prefixed JSON path
+            set_json_path_value(self.context, prefixed_output_path, tool_output)
+            print(f"Updated context at path '{prefixed_output_path}' with output")
+            updated_paths.append(prefixed_output_path)
+
+            # Remove _temp_input_ * key from context
+            temp_keys = [k for k in self.context.keys() if k.startswith("_temp_input_")]
+            for key in temp_keys:
+                del self.context[key]
+                removed_temp_keys.append(key)
+
+            # Record last task output
+            self.last_task_output = tool_output
+            self.context["last_task_output"] = tool_output
+            print(f"[TASK_EXECUTION] Recorded last task output in context")
+
+            # Set phase data with results
+            phase_ctx.set_data({
+                "context_before": context_before,
+                "context_after": json.loads(json.dumps(self.context)),  # Deep copy
+                "updated_paths": updated_paths,
+                "removed_temp_keys": removed_temp_keys
+            })
         
         # Start new task generation phase
-        self.tracer.start_phase("new_task_generation")
-        
-        # Start new task generation step
-        self.tracer.start_new_task_generation_step()
-        
-        # Use LLM to check the output, see if there is new task needed.
-        try:
-            new_task_list = await self.parse_new_tasks_from_output(tool_output, task.description)
+        with self.tracer.trace_phase_with_data("new_task_generation") as phase_ctx:
+            # Use new task generation context manager
+            with self.tracer.trace_new_task_generation_step() as step_ctx:
+                # Use LLM to check the output, see if there is new task needed.
+                new_task_list = await self.parse_new_tasks_from_output(tool_output, task.description)
+                
+                # Set results in context manager
+                step_ctx.set_result(
+                    generated_tasks=new_task_list,
+                    tool_output=tool_output,
+                    task_description=task.description
+                )
             
-            # End new task generation step
-            self.tracer.end_new_task_generation_step(
-                generated_tasks=new_task_list,
-                tool_output=tool_output,
-                task_description=task.description
-            )
-        except Exception as e:
-            self.tracer.end_new_task_generation_step(
-                tool_output=tool_output,
-                task_description=task.description,
-                error=e
-            )
-            self.tracer.end_phase(error=e)
-            raise
-        
-        # End new task generation phase
-        new_task_generation_data = {
-            "tool_output": tool_output,
-            "current_task_description": task.description,
-            "generated_tasks": new_task_list
-        }
-        self.tracer.end_phase(new_task_generation_data)
+            # Set phase data with results
+            phase_ctx.set_data({
+                "tool_output": tool_output,
+                "current_task_description": task.description,
+                "generated_tasks": new_task_list
+            })
 
         return new_task_list
     
@@ -490,7 +454,7 @@ class DocExecuteEngine:
         print(f"[TASK_STACK] Stack size: {len(self.task_stack)}")
 
     async def parse_new_tasks_from_output(self, output: Any, current_task_description: str) -> List[str]:
-        """Parse new task descriptions from tool output using LLM
+        """Parse new task descriptions from tool output using LLM with function calling
         
         Args:
             output: The output from the previously executed task (any type, will be converted to string)
@@ -500,8 +464,11 @@ class DocExecuteEngine:
             List of task descriptions extracted from the output. Empty list if no tasks found.
         """
         # Convert output to string
-        output_str = str(output)
-        
+        if isinstance(output, dict) and "content" in output:
+            output_str = output["content"]
+        else:
+            output_str = str(output)
+
         # Create prompt for LLM to extract task descriptions
         prompt = f"""
 An agent has completed a task from user, analyze the output of the following task and extract any new task descriptions that need to be executed by agent.
@@ -514,33 +481,11 @@ An agent has completed a task from user, analyze the output of the following tas
 {output_str}
 </Task output content>
 
-Please carefully analyze the output content and identify if it explicitly contains any follow-up tasks that explicitly needed to be executed by agent. Only return the explicit task, do not infer task by yourself. If there are explicitly stated new tasks for agent, please return them in the following json format:
+Please carefully analyze the output content and identify if it explicitly contains any follow-up tasks that explicitly needed to be executed by agent. Only return the explicit task, do not infer task by yourself. 
 
-**Format requirements:**
-- If no new tasks, return:
-<THINK_PROCESS>
+**Analysis process:**
 1. Is the output satisfy the current task requirement?
 2. Does the output indicate any follow-up tasks that explicitly needed to be executed by agent?
-</THINK_PROCESS>
-<FINAL_CONFLUSION>
-```json
-[]
-```
-</FINAL_CONFLUSION>
-
-- If new tasks exist, return JSON array format: 
-<THINK_PROCESS>
-1. Is the output satisfy the current task requirement?
-2. Does the output indicate any follow-up tasks that explicitly needed to be executed by agent?
-</THINK_PROCESS>
-<FINAL_CONFLUSION>
-```json
-["task description 1", "task description 2", ...]
-```
-</FINAL_CONCLUSION>
-
-**Example Return:**
-
 
 **Important notes:**
 1. Only extract tasks that clearly need to be executed, do not speculate
@@ -550,46 +495,68 @@ Please carefully analyze the output content and identify if it explicitly contai
  - What is the expected output: what format or deliverable we expect.
  - How to do it: if there is reference documentation, include the path to it.
 4. There can be overlap between task description, make sure task description is comprehensive.
-5. You can use the original task description's language as your response language.
+5. Please use the original task description's language as your response language.
 
-Please return the JSON array directly without any additional explanations.
-"""        
-        # Use LLM tool to analyze output and extract tasks
+If you find new tasks that need to be executed, use the extract_new_tasks function to return them. If no new tasks are found, call the function with an empty task list.
+"""
+
+        # Define the function schema for extracting new tasks
+        extract_tasks_tool = {
+            "type": "function",
+            "function": {
+                "name": "extract_new_tasks",
+                "description": "Extract new task descriptions that need to be executed by the agent",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "tasks": {
+                            "type": "array",
+                            "description": "List of new task descriptions that need to be executed, each task should be a valid json string, becareful when you escape newline and quotes. Empty array if no new tasks found."
+                        }
+                    },
+                    "required": ["tasks"]
+                }
+            }
+        }
 
         llm_tool = self.tools.get("LLM")
         if not llm_tool:
             raise Exception("[TASK_PARSER] Warning: LLM tool not available, returning empty task list")
 
         llm_response = await llm_tool.execute({
-            "prompt": prompt
+            "prompt": prompt,
+            "tools": [extract_tasks_tool]
         })
         print(f"[TASK_PARSER] LLM response: {llm_response}")
         
-        # Parse the JSON response
-        import json
-        # Match content btween ```json and ```
-        json_match = re.search(r'```json(.*?)```', llm_response, re.DOTALL)
-        if json_match:
-            llm_response = json_match.group(1)
+        # Handle both string and dict responses (tool calls)
+        if isinstance(llm_response, dict) and "tool_calls" in llm_response:
+            # Extract tasks from tool calls
+            for tool_call in llm_response["tool_calls"]:
+                if tool_call.get("name") == "extract_new_tasks":
+                    task_list = tool_call.get("arguments", {}).get("tasks", [])
+                    
+                    # Validate that it's a list of strings
+                    if not isinstance(task_list, list):
+                        raise ValueError(f"[TASK_PARSER] Tool call response is not a list: {task_list}")
+                    
+                    validated_tasks = []
+                    for task in task_list:
+                        if isinstance(task, str) and task.strip():
+                            validated_tasks.append(task.strip())
+                        else:
+                            print(f"[TASK_PARSER] Warning: Invalid task format: {task}")
+                    
+                    print(f"[TASK_PARSER] Extracted {len(validated_tasks)} new tasks: {validated_tasks}")
+                    return validated_tasks
+            
+            # No tool calls found with the expected function name
+            print("[TASK_PARSER] No extract_new_tasks tool call found, returning empty task list")
+            return []
         else:
-            raise Exception(f"[TASK_PARSER] Warning: LLM response does not match expected JSON array format: {llm_response}")
-        
-        # Try to parse as JSON array
-        task_list = json.loads(llm_response.strip())
-        
-        # Validate that it's a list of strings
-        if not isinstance(task_list, list):
-            raise ValueError(f"[TASK_PARSER] LLM response is not a list: {llm_response}")
-        
-        validated_tasks = []
-        for task in task_list:
-            if isinstance(task, str) and task.strip():
-                validated_tasks.append(task.strip())
-            else:
-                print(f"[TASK_PARSER] Warning: Invalid task format: {task}")
-        
-        print(f"[TASK_PARSER] Extracted {len(validated_tasks)} new tasks: {validated_tasks}")
-        return validated_tasks
+            # Fallback: No tool calls were made, assume no new tasks
+            print("[TASK_PARSER] No tool calls in response, returning empty task list")
+            return []
 
     async def generate_recovery_task(self, missing_error: TaskInputMissingError, task_description: str) -> str:
         """Generate a recovery task to obtain missing input
@@ -630,7 +597,11 @@ Please return only the task description as a single paragraph, without additiona
 """
         
         llm_tool = self.tools.get("LLM")
-        recovery_task = await llm_tool.execute({"prompt": prompt})
+        recovery_response = await llm_tool.execute({"prompt": prompt})
+        
+        # Extract content from new response format
+        recovery_task = recovery_response["content"]
+            
         return recovery_task.strip()
 
     async def start(self, initial_task_description: str = None) -> None:

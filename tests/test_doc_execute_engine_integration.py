@@ -81,7 +81,7 @@ class TestDocExecuteEngineIntegration:
         
         # Recreate SOPDocumentParser with the wrapped LLM tool
         from sop_document import SOPDocumentParser
-        self.engine.sop_parser = SOPDocumentParser(str(real_docs_dir), llm_tool=self.llm_tool)
+        self.engine.sop_parser = SOPDocumentParser(str(real_docs_dir), llm_tool=self.llm_tool, tracer=self.engine.tracer)
     
     def teardown_method(self):
         """Clean up and save test data if in real mode"""
@@ -554,7 +554,10 @@ class TestDocExecuteEngineIntegration:
 
         # Validate the generated code by execute it in different namespace
         generated_code = self.engine.get_last_task_output()
-        assert "calculate_circle_area" in generated_code
+
+        content = generated_code['content']
+
+        assert "calculate_circle_area" in content
         
         print("✅ Complete LLM task workflow works correctly")
     

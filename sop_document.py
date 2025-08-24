@@ -129,11 +129,16 @@ class SOPDocumentLoader:
 class SOPDocumentParser:
     """Parser for extracting context and doc_id from natural language descriptions"""
     
-    def __init__(self, docs_dir: str = "sop_docs", llm_tool=None):
+    def __init__(self, docs_dir: str = "sop_docs", llm_tool=None, tracer=None):
         self.loader = SOPDocumentLoader(docs_dir)
         self.llm_tool = llm_tool
+        self.tracer = tracer
+        if self.tracer is None:
+            # For backwards compatibility in tests, create a minimal tracer
+            from tracing import ExecutionTracer
+            self.tracer = ExecutionTracer(enabled=False)
     
-    async def parse_sop_doc_id_from_description(self, description: str, tracer=None) -> str:
+    async def parse_sop_doc_id_from_description(self, description: str) -> str:
         """Parse sop_doc_id from natural language description using patterns
         
         This is a unified interface for natural language -> sop_doc_id mapping.
@@ -159,25 +164,24 @@ class SOPDocumentParser:
 
         # Log candidate documents to tracing system
         candidate_doc_ids = [candidate[0] for candidate in candidates]
-        if tracer and tracer.enabled and tracer.current_task_execution:
-            # Start document selection sub-step
-            tracer.start_document_selection()
-            
-        if not candidates:
-            if tracer and tracer.enabled:
-                tracer.end_document_selection(candidate_docs=[], error=Exception("No candidate documents found"))
-            return None
 
-        # Validate matched doc_id against description using LLM
-        best_doc_id = await self._validate_with_llm(description, candidates, all_doc_ids, tracer)
+        candidate_doc_ids = list(set(candidate_doc_ids))
         
-        if tracer and tracer.enabled:
-            tracer.end_document_selection(
+        # Use document selection tracing context manager
+        with self.tracer.trace_document_selection_step() as doc_ctx:
+            if not candidates:
+                print("No candidate documents found")
+                return None
+
+            # Validate matched doc_id against description using LLM
+            best_doc_id = await self._validate_with_llm(description, candidates, all_doc_ids)
+            
+            doc_ctx.set_result(
                 candidate_docs=candidate_doc_ids,
                 selected_doc=best_doc_id
             )
             
-        return best_doc_id
+            return best_doc_id
     
     def _get_all_doc_ids(self) -> List[str]:
         """Get all available SOP document IDs from the docs directory"""
@@ -204,7 +208,7 @@ class SOPDocumentParser:
         scan_directory(self.loader.docs_dir)
         return doc_ids
     
-    async def _validate_with_llm(self, description: str, candidates: List[tuple], all_doc_ids: List[str], tracer=None) -> str:
+    async def _validate_with_llm(self, description: str, candidates: List[tuple], all_doc_ids: List[str]) -> str:
         """Use LLM to validate and select the best matching doc_id"""
 
         from tools.llm_tool import LLMTool
@@ -249,7 +253,10 @@ Please select the most appropriate SOP document from the following candidates:
         
         # Note: LLM call is automatically logged by the tracer context
         
-        response = re.search(r'<doc_id>(.*?)</doc_id>', response)
+        # Extract content from new response format
+        response_content = response["content"]
+        
+        response = re.search(r'<doc_id>(.*?)</doc_id>', response_content)
 
         if response:
             response = response.group(1).strip()

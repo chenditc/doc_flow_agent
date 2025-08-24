@@ -177,6 +177,7 @@ export interface ContextUpdatePhase {
   updated_paths: string[];
   removed_temp_keys: string[];
   error: string | null;
+  output_path_generation?: OutputPathGeneration | null;
 }
 
 // New Task Generation Phase (Updated for new tracing structure)
@@ -204,10 +205,18 @@ export interface LLMCall {
   tool_call_id: string;
   prompt: string;
   response: string;
+  tool_calls?: ToolCall[] | null;
   start_time: string;
   end_time: string;
   model?: string | null;
   token_usage?: any | null;
+  all_parameters?: Record<string, any> | null;
+}
+
+export interface ToolCall {
+  id: string;
+  name: string;
+  arguments: Record<string, any>;
 }
 
 export type PhaseStatus = 'started' | 'completed' | 'failed' | 'interrupted' | 'retrying';

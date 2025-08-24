@@ -304,7 +304,7 @@ def extract_func(context):
     def test_generate_output_json_path_json_response(self, mock_print, mock_llm_execute):
         """Test generate_output_json_path with valid JSON response"""
         # Mock LLM response with JSON
-        mock_llm_execute.return_value = '{"output_path": "$.results.data"}'
+        mock_llm_execute.return_value = {"content": '{"output_path": "$.results.data"}', "tool_calls": []}
         
         async def run_test():
             result = await self.generator.generate_output_json_path(
@@ -321,7 +321,7 @@ def extract_func(context):
     def test_generate_output_json_path_text_response(self, mock_print, mock_llm_execute):
         """Test generate_output_json_path with text response containing path"""
         # Mock LLM response with plain text path
-        mock_llm_execute.return_value = '$.custom.path'
+        mock_llm_execute.return_value = {"content": '$.custom.path', "tool_calls": []}
         
         async def run_test():
             result = await self.generator.generate_output_json_path(
@@ -338,7 +338,7 @@ def extract_func(context):
     def test_generate_output_json_path_invalid_response(self, mock_print, mock_llm_execute):
         """Test generate_output_json_path with invalid response"""
         # Mock LLM response that's neither valid JSON nor a path
-        mock_llm_execute.return_value = 'invalid response'
+        mock_llm_execute.return_value = {"content": 'invalid response', "tool_calls": []}
         
         async def run_test():
             result = await self.generator.generate_output_json_path(

@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Tool Tuning</title>
+    <!-- Add markdown-it library for markdown rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/markdown-it@14.0.0/dist/markdown-it.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.0/dist/purify.min.js"></script>
+    
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+                'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+                sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+        .header {
+            background-color: #2c3e50;
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        .content {
+            padding: 20px;
+        }
+        .form-section {
+            margin-bottom: 30px;
+        }
+        .form-section h3 {
+            margin-top: 0;
+            color: #2c3e50;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 5px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        input[type="text"], textarea, select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        textarea {
+            min-height: 150px;
+            resize: vertical;
+            font-family: 'Courier New', monospace;
+        }
+        .tools-container {
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+            background-color: #f9f9f9;
+        }
+        .tool-item {
+            background-color: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 15px;
+            margin-bottom: 10px;
+        }
+        .tool-item:last-child {
+            margin-bottom: 0;
+        }
+        .tool-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .tool-name {
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        .remove-tool {
+            background-color: #e74c3c;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 5px 10px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .remove-tool:hover {
+            background-color: #c0392b;
+        }
+        .add-tool {
+            background-color: #27ae60;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 10px 15px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        .add-tool:hover {
+            background-color: #229954;
+        }
+        .execute-btn {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 15px 30px;
+            font-size: 16px;
+            cursor: pointer;
+            display: block;
+            margin: 0 auto;
+        }
+        .execute-btn:hover {
+            background-color: #2980b9;
+        }
+        .execute-btn:disabled {
+            background-color: #bdc3c7;
+            cursor: not-allowed;
+        }
+        .result-section {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+        }
+        .result-content {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 15px;
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .result-content.formatted {
+            white-space: normal;
+            font-family: inherit;
+            max-height: none;
+        }
+        .content-section {
+            margin-bottom: 20px;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+        .content-header {
+            background-color: #f8f9fa;
+            padding: 10px 15px;
+            border-bottom: 1px solid #e0e0e0;
+            font-weight: bold;
+            color: #495057;
+        }
+        .content-body {
+            padding: 15px;
+        }
+        .markdown-content {
+            line-height: 1.6;
+        }
+        .markdown-content h1, .markdown-content h2, .markdown-content h3 {
+            margin-top: 0;
+            margin-bottom: 10px;
+        }
+        .markdown-content p {
+            margin-bottom: 10px;
+        }
+        .markdown-content ul, .markdown-content ol {
+            margin-bottom: 10px;
+            padding-left: 20px;
+        }
+        .markdown-content code {
+            background-color: #f1f3f4;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-size: 0.9em;
+        }
+        .markdown-content pre {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 3px;
+            padding: 10px;
+            overflow-x: auto;
+            margin-bottom: 10px;
+        }
+        .tool-call-item {
+            margin-bottom: 15px;
+            border: 1px solid #d1ecf1;
+            border-radius: 6px;
+            background-color: #f9f9f9;
+        }
+        .tool-call-header {
+            background-color: #d1ecf1;
+            padding: 10px 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .tool-name {
+            font-weight: bold;
+            color: #155724;
+        }
+        .tool-id {
+            font-family: 'Courier New', monospace;
+            font-size: 0.8em;
+            color: #6c757d;
+        }
+        .tool-arguments {
+            padding: 15px;
+        }
+        .argument-item {
+            margin-bottom: 10px;
+            padding: 8px 12px;
+            background-color: #ffffff;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+        }
+        .argument-name {
+            font-weight: bold;
+            color: #495057;
+            margin-bottom: 4px;
+        }
+        .argument-type {
+            display: inline-block;
+            background-color: #6f42c1;
+            color: white;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 0.75em;
+            margin-bottom: 4px;
+        }
+        .argument-type.json-valid {
+            background-color: #28a745;
+        }
+        .argument-type.json-invalid {
+            background-color: #dc3545;
+        }
+        .argument-value {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 3px;
+            padding: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            white-space: pre-wrap;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .no-tool-calls {
+            color: #6c757d;
+            font-style: italic;
+            text-align: center;
+            padding: 20px;
+        }
+        .error {
+            background-color: #f8d7da;
+            border-color: #f5c6cb;
+            color: #721c24;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>LLM Tool Tuning</h1>
+            <p>Test and tune your LLM tool configurations</p>
+        </div>
+        
+        <div class="content">
+            <form id="llmForm">
+                <div class="form-section">
+                    <h3>Prompt Configuration</h3>
+                    <div class="form-group">
+                        <label for="prompt">Prompt:</label>
+                        <textarea id="prompt" name="prompt" placeholder="Enter your prompt here..." required></textarea>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <h3>Tools Configuration (OpenAI Function Calling Format)</h3>
+                    <div class="form-group">
+                        <label for="tools">Tools (JSON array format, optional):</label>
+                        <textarea id="tools" name="tools" placeholder='[{"type": "function", "function": {"name": "get_weather", "description": "Get weather info", "parameters": {"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"]}}}]'>[]</textarea>
+                    </div>
+                    <div class="examples">
+                        <h3>Example Tools Configuration:</h3>
+                        <pre>[
+  {
+    "type": "function",
+    "function": {
+      "name": "extract_new_tasks",
+      "description": "Extract new task descriptions that need to be executed by the agent",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tasks": {
+            "type": "array",
+            "description": "List of new task descriptions that need to be executed, each task should be a string. Empty array if no new tasks found."
+          }
+        },
+        "required": ["tasks"]
+      }
+    }
+  }
+]</pre>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <h3>Additional Parameters</h3>
+                    <div class="form-group">
+                        <label for="allParameters">All Parameters (JSON format, optional):</label>
+                        <textarea id="allParameters" name="allParameters" placeholder='{"temperature": 0.7, "max_tokens": 1000, "model": "gpt-4"}'></textarea>
+                    </div>
+                </div>
+
+                <button type="submit" class="execute-btn" id="executeBtn">Execute LLM Tool</button>
+            </form>
+
+            <div class="result-section" id="resultSection" style="display: none;">
+                <h3>Result</h3>
+                <div id="resultContent" class="result-content"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Auto-fill form fields from URL parameters with flexible parameter handling
+        function loadFromUrlParams() {
+            const urlParams = new URLSearchParams(window.location.search);
+            
+            // Get prompt parameter (with fallback to empty string)
+            const prompt = urlParams.get('prompt');
+            if (prompt) {
+                document.getElementById('prompt').value = decodeURIComponent(prompt);
+            }
+            
+            // Get tools parameter (with fallback to empty array)
+            const tools = urlParams.get('tools');
+            if (tools) {
+                try {
+                    const parsedTools = JSON.parse(decodeURIComponent(tools));
+                    document.getElementById('tools').value = JSON.stringify(parsedTools, null, 2);
+                } catch (e) {
+                    console.warn('Failed to parse tools from URL:', e);
+                }
+            }
+            
+            // Get all_parameters or build from individual parameters
+            let allParameters = {};
+            const allParametersParam = urlParams.get('all_parameters');
+            if (allParametersParam) {
+                try {
+                    allParameters = JSON.parse(decodeURIComponent(allParametersParam));
+                } catch (e) {
+                    console.warn('Failed to parse all_parameters from URL:', e);
+                }
+            }
+            
+            // Iterate through all URL parameters and merge them into allParameters
+            // This allows for flexible parameter passing without hardcoding field names
+            for (const [key, value] of urlParams.entries()) {
+                if (key !== 'prompt' && key !== 'tools' && key !== 'all_parameters') {
+                    try {
+                        // Try to parse as JSON first, fallback to string
+                        const decodedValue = decodeURIComponent(value);
+                        try {
+                            allParameters[key] = JSON.parse(decodedValue);
+                        } catch {
+                            allParameters[key] = decodedValue;
+                        }
+                    } catch (e) {
+                        console.warn(`Failed to process parameter ${key}:`, e);
+                    }
+                }
+            }
+            
+            // Set the all_parameters field if we have any parameters
+            if (Object.keys(allParameters).length > 0) {
+                document.getElementById('allParameters').value = JSON.stringify(allParameters, null, 2);
+            }
+        }
+
+        // Load URL parameters when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            loadFromUrlParams();
+        });
+
+        // Initialize markdown-it
+        const md = window.markdownit({
+            html: true,
+            linkify: true,
+            typographer: true,
+            breaks: true
+        });
+
+        /**
+         * Escape HTML entities to prevent XSS
+         */
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        /**
+         * Get the type of a JavaScript value as a string, with JSON validation for strings
+         */
+        function getValueType(value) {
+            if (value === null) return 'null';
+            if (value === undefined) return 'undefined';
+            if (Array.isArray(value)) return 'array';
+            
+            const baseType = typeof value;
+            
+            // For strings, also check if they contain valid JSON
+            if (baseType === 'string') {
+                try {
+                    JSON.parse(value);
+                    return 'string (valid json)';
+                } catch {
+                    return 'string (invalid json)';
+                }
+            }
+            
+            return baseType;
+        }
+
+        /**
+         * Format a value for display based on its type
+         */
+        function formatValueForDisplay(value) {
+            const type = getValueType(value);
+            
+            if (type === 'string (valid json)') {
+                try {
+                    const parsed = JSON.parse(value);
+                    // Show both the raw string and parsed JSON
+                    return `Raw: ${value}\n\nParsed JSON:\n${JSON.stringify(parsed, null, 2)}`;
+                } catch {
+                    // Fallback to raw string if parsing fails
+                    return value;
+                }
+            } else if (type === 'string (invalid json)') {
+                return value;
+            } else if (type === 'array' || type === 'object') {
+                return JSON.stringify(value, null, 2);
+            } else {
+                return String(value);
+            }
+        }
+
+        /**
+         * Render tool calls as formatted HTML
+         */
+        function renderToolCalls(toolCalls) {
+            if (!toolCalls || !Array.isArray(toolCalls) || toolCalls.length === 0) {
+                return '<div class="no-tool-calls">No tool calls</div>';
+            }
+
+            return toolCalls.map(toolCall => {
+                const toolName = toolCall.name || 'Unknown Tool';
+                const toolId = toolCall.id || 'No ID';
+                const arguments = toolCall.arguments || {};
+
+                // Generate arguments display
+                const argumentsHtml = Object.keys(arguments).length === 0 
+                    ? '<div class="no-tool-calls">No arguments</div>'
+                    : Object.entries(arguments).map(([key, value]) => {
+                        const type = getValueType(value);
+                        const formattedValue = formatValueForDisplay(value);
+                        
+                        // Determine CSS class based on JSON validity
+                        let typeClass = '';
+                        if (type === 'string (valid json)') {
+                            typeClass = 'json-valid';
+                        } else if (type === 'string (invalid json)') {
+                            typeClass = 'json-invalid';
+                        }
+                        
+                        return `
+                            <div class="argument-item">
+                                <div class="argument-name">${key}</div>
+                                <div class="argument-type ${typeClass}">${type}</div>
+                                <div class="argument-value">${formattedValue}</div>
+                            </div>
+                        `;
+                    }).join('');
+
+                return `
+                    <div class="tool-call-item">
+                        <div class="tool-call-header">
+                            <span class="tool-name">${toolName}</span>
+                            <span class="tool-id">${toolId}</span>
+                        </div>
+                        <div class="tool-arguments">
+                            ${argumentsHtml}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        /**
+         * Render the LLM result with proper formatting
+         */
+        function renderLLMResult(result) {
+                try {
+                    // Handle both cases: result is already parsed JSON object or a JSON string
+                    let parsedResult;
+                    if (typeof result === 'string') {
+                        try {
+                            parsedResult = JSON.parse(result);
+                        } catch (parseError) {
+                            // If parsing fails, treat as plain string
+                            return `<div class="error">Failed to parse result as JSON: ${parseError.message}<br><br><strong>Raw result:</strong><pre>${escapeHtml(result)}</pre></div>`;
+                        }
+                    } else if (typeof result === 'object' && result !== null) {
+                        parsedResult = result;
+                    } else {
+                        return `<div class="error">Unexpected result type: ${typeof result}<br><br><strong>Raw result:</strong><pre>${escapeHtml(String(result))}</pre></div>`;
+                    }
+                    
+                    // Validate the structure
+                    if (!parsedResult || typeof parsedResult !== 'object') {
+                        return `<div class="error">Result is not a valid object</div>`;
+                    }
+                    
+                    // Check for required keys
+                    if (!parsedResult.hasOwnProperty('content') || !parsedResult.hasOwnProperty('tool_calls')) {
+                        return `<div class="error">Result must have 'content' and 'tool_calls' keys<br><br><strong>Available keys:</strong> ${Object.keys(parsedResult).join(', ')}</div>`;
+                    }
+                    
+                    // Render content section
+                    const contentHtml = `
+                        <div class="content-section">
+                            <div class="content-header">📝 Content</div>
+                            <div class="content-body">
+                                <div class="markdown-content">
+                                    ${md.render(parsedResult.content)}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    
+                    // Render tool calls section
+                    const toolCallsHtml = `
+                        <div class="content-section">
+                            <div class="content-header">🔧 Tool Calls</div>
+                            <div class="content-body">
+                                ${renderToolCalls(parsedResult.tool_calls)}
+                            </div>
+                        </div>
+                    `;
+                    
+                    // Combine and render
+                    return contentHtml + toolCallsHtml;
+                    
+                } catch (error) {
+                    console.error('Error rendering LLM result:', error);
+                    return `<div class="error">Error rendering result: ${error.message}<br><br><strong>Raw result:</strong><pre>${escapeHtml(String(result))}</pre></div>`;
+                }
+            }
+
+        document.getElementById('llmForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const executeBtn = document.getElementById('executeBtn');
+            const resultSection = document.getElementById('resultSection');
+            const resultContent = document.getElementById('resultContent');
+            
+            // Disable button and show loading
+            executeBtn.disabled = true;
+            executeBtn.textContent = 'Executing...';
+            
+            resultSection.style.display = 'block';
+            resultContent.className = 'result-content';
+            resultContent.innerHTML = `
+                <div class="loading">
+                    <div class="spinner"></div>
+                    Executing LLM tool...
+                </div>
+            `;
+
+            try {
+                // Collect form data
+                const prompt = document.getElementById('prompt').value;
+                
+                // Parse tools JSON
+                const toolsText = document.getElementById('tools').value.trim();
+                let tools = null;
+                if (toolsText) {
+                    try {
+                        tools = JSON.parse(toolsText);
+                        // Validate that it's an array
+                        if (!Array.isArray(tools)) {
+                            throw new Error('Tools must be a JSON array');
+                        }
+                    } catch (e) {
+                        throw new Error(`Invalid JSON in tools configuration: ${e.message}`);
+                    }
+                }
+
+                // Parse additional parameters
+                const allParametersText = document.getElementById('allParameters').value.trim();
+                let allParameters = {};
+                if (allParametersText) {
+                    try {
+                        allParameters = JSON.parse(allParametersText);
+                    } catch (e) {
+                        throw new Error(`Invalid JSON in additional parameters: ${e.message}`);
+                    }
+                }
+
+                // Send request to server
+                const response = await fetch('/api/llm-tuning/execute', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        prompt: prompt,
+                        tools: tools,
+                        all_parameters: allParameters
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    // Use the new rendering function to display formatted results
+                    resultContent.className = 'result-content formatted';
+                    resultContent.innerHTML = renderLLMResult(data.result);
+                } else {
+                    resultContent.className = 'result-content error';
+                    resultContent.textContent = `Error: ${data.error}`;
+                }
+
+            } catch (error) {
+                resultContent.className = 'result-content error';
+                resultContent.textContent = `Error: ${error.message}`;
+            } finally {
+                // Re-enable button
+                executeBtn.disabled = false;
+                executeBtn.textContent = 'Execute LLM Tool';
+            }
+        });
+
+        // Auto-format JSON on blur
+        document.getElementById('tools').addEventListener('blur', function() {
+            const value = this.value.trim();
+            if (value) {
+                try {
+                    const parsed = JSON.parse(value);
+                    this.value = JSON.stringify(parsed, null, 2);
+                } catch (e) {
+                    // Invalid JSON, leave as is
+                }
+            }
+        });
+
+        document.getElementById('allParameters').addEventListener('blur', function() {
+            const value = this.value.trim();
+            if (value) {
+                try {
+                    const parsed = JSON.parse(value);
+                    this.value = JSON.stringify(parsed, null, 2);
+                } catch (e) {
+                    // Invalid JSON, leave as is
+                }
+            }
+        });
+    </script>
+</body>
+</html>

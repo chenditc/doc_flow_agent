@@ -58,7 +58,7 @@ class TestDocExecuteEngineIntegration:
         self.engine.json_path_generator = JsonPathGenerator(self.llm_tool)
 
         # Inject SOP document parser
-        self.engine.sop_parser = SOPDocumentParser(llm_tool=self.llm_tool)
+        self.engine.sop_parser = SOPDocumentParser(llm_tool=self.llm_tool, tracer=self.engine.tracer)
     
     def teardown_method(self):
         """Clean up and save test data if in real mode"""
@@ -94,12 +94,18 @@ class TestDocExecuteEngineIntegration:
             
             # Verify response structure
             assert result is not None
+            assert isinstance(result, dict), f"Expected dict response, got {type(result)}"
+            assert "content" in result, f"Expected 'content' key in response: {result}"
+            assert "tool_calls" in result, f"Expected 'tool_calls' key in response: {result}"
+            
             if self.test_mode == IntegrationTestMode.REAL:
                 # In real mode, we expect actual LLM response
-                assert "def" in result.lower()  # Should contain function definition
+                assert "def" in result["content"].lower()  # Should contain function definition
             
             print(f"✅ LLM tool test completed")
-            print(f"   Response length: {len(str(result))}")
+            print(f"   Response length: {len(str(result['content']))}")
+            if result["tool_calls"]:
+                print(f"   Tool calls: {len(result['tool_calls'])}")
             
         except RuntimeError as e:
             if "Failed to connect to LLM API" in str(e):

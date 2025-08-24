@@ -1,7 +1,11 @@
 import React, { useState } from 'react';
-import type { TaskExecution, TaskPhases as TaskPhasesType } from '../../types/trace';
+import type { TaskExecution, TaskPhases as TaskPhasesType, TaskExecutionPhase, LLMCall, ContextUpdatePhase, NewTaskGenerationPhase } from '../../types/trace';
 import { SOPResolutionViewer } from '../SOPResolution/SOPResolutionViewer';
 import { TaskCreationPhaseViewer } from '../enhanced/TaskCreationPhaseViewer';
+import { NewTaskGenerationViewer } from '../enhanced/NewTaskGenerationViewer';
+import { ContextualLLMCall } from '../enhanced/ContextualLLMCall';
+import { ParameterCards } from './ParameterCards';
+import { ContextUpdateViewer } from './ContextUpdateViewer';
 
 interface TaskPhasesProps {
   task: TaskExecution;
@@ -11,12 +15,16 @@ interface CollapsibleSectionProps {
   title: string;
   children: React.ReactNode;
   defaultExpanded?: boolean;
+  statusBadge?: React.ReactNode;
+  rightContent?: React.ReactNode;
 }
 
 const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({ 
   title, 
   children, 
-  defaultExpanded = false 
+  defaultExpanded = false,
+  statusBadge,
+  rightContent
 }) => {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
 
@@ -27,15 +35,21 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
         className="w-full px-4 py-3 text-left bg-gray-50 hover:bg-gray-100 focus:outline-none focus:bg-gray-100 transition-colors border-b border-gray-200 rounded-t-md"
       >
         <div className="flex items-center justify-between">
-          <span className="font-medium text-gray-900">{title}</span>
-          <svg
-            className={`h-5 w-5 text-gray-500 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
+          <div className="flex items-center gap-3">
+            <span className="font-medium text-gray-900">{title}</span>
+            {statusBadge}
+          </div>
+          <div className="flex items-center gap-3">
+            {rightContent}
+            <svg
+              className={`h-5 w-5 text-gray-500 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </div>
         </div>
       </button>
       
@@ -131,57 +145,266 @@ export const TaskPhases: React.FC<TaskPhasesProps> = ({ task }) => {
       <h3 className="text-lg font-medium text-gray-900">Execution Phases</h3>
       
       <div className="space-y-3">
-        {phaseNames.map((phaseName) => {
+        {phaseNames.map((phaseName, index) => {
           const phaseData = phases[phaseName as keyof TaskPhasesType];
           if (!phaseData) return null;
 
+          // Create a nicely formatted number index
+          const phaseIndex = index + 1;
+
           // Special handling for SOP resolution phase
           if (phaseName === 'sop_resolution' && 'input' in phaseData) {
-            return (
-              <div key={phaseName} className="border rounded-md">
-                <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 rounded-t-md">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="font-medium text-gray-900">SOP Resolution</span>
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeColor(phaseData.status)}`}>
-                        {phaseData.status}
-                      </span>
-                    </div>
-                    <div className="text-sm text-gray-500">
-                      {formatTime(phaseData.start_time)} - {formatTime(phaseData.end_time)} 
-                      ({calculateDuration(phaseData.start_time, phaseData.end_time)})
-                    </div>
-                  </div>
-                </div>
-                <CollapsibleSection title="View Details" defaultExpanded={false}>
-                  <SOPResolutionViewer phaseData={phaseData} />
-                </CollapsibleSection>
+            // Try multiple ways to get the selected document ID
+            let sopDoc = '';
+            
+            // Primary path: document_selection.selected_doc_id
+            if (phaseData.document_selection?.selected_doc_id) {
+              sopDoc = phaseData.document_selection.selected_doc_id;
+            }
+            // Fallback: check if there's a selected_doc_id directly in phaseData
+            else if ((phaseData as any).selected_doc_id) {
+              sopDoc = (phaseData as any).selected_doc_id;
+            }
+            // Another fallback: check loaded_document.doc_id
+            else if (phaseData.document_selection?.loaded_document?.doc_id) {
+              sopDoc = phaseData.document_selection.loaded_document.doc_id;
+            }
+            
+            const sopDocSuffix = sopDoc ? ` (${sopDoc})` : '';
+            
+            const statusBadge = (
+              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeColor(phaseData.status)}`}>
+                {phaseData.status}
+              </span>
+            );
+
+            const timingInfo = (
+              <div className="text-sm text-gray-500">
+                {formatTime(phaseData.start_time)} - {formatTime(phaseData.end_time)} 
+                ({calculateDuration(phaseData.start_time, phaseData.end_time)})
               </div>
+            );
+            
+            return (
+              <CollapsibleSection 
+                key={phaseName}
+                title={`${phaseIndex}. SOP Resolution${sopDocSuffix}`}
+                defaultExpanded={false}
+                statusBadge={statusBadge}
+                rightContent={timingInfo}
+              >
+                <SOPResolutionViewer phaseData={phaseData} />
+              </CollapsibleSection>
             );
           }
 
           // Special handling for task creation phase
           if (phaseName === 'task_creation' && 'sop_document' in phaseData) {
-            return (
-              <div key={phaseName} className="border rounded-md">
-                <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 rounded-t-md">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="font-medium text-gray-900">Task Creation</span>
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeColor(phaseData.status)}`}>
-                        {phaseData.status}
-                      </span>
-                    </div>
-                    <div className="text-sm text-gray-500">
-                      {formatTime(phaseData.start_time)} - {formatTime(phaseData.end_time)} 
-                      ({calculateDuration(phaseData.start_time, phaseData.end_time)})
-                    </div>
-                  </div>
-                </div>
-                <CollapsibleSection title="View Details" defaultExpanded={false}>
-                  <TaskCreationPhaseViewer phaseData={phaseData} />
-                </CollapsibleSection>
+            const inputFieldCount = Object.keys(phaseData.input_field_extractions || {}).length;
+            const inputFieldSuffix = inputFieldCount > 0 ? ` (${inputFieldCount} fields)` : '';
+            
+            const statusBadge = (
+              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeColor(phaseData.status)}`}>
+                {phaseData.status}
+              </span>
+            );
+
+            const timingInfo = (
+              <div className="text-sm text-gray-500">
+                {formatTime(phaseData.start_time)} - {formatTime(phaseData.end_time)} 
+                ({calculateDuration(phaseData.start_time, phaseData.end_time)})
               </div>
+            );
+            
+            return (
+              <CollapsibleSection 
+                key={phaseName}
+                title={`${phaseIndex}. Task Creation${inputFieldSuffix}`}
+                defaultExpanded={false}
+                statusBadge={statusBadge}
+                rightContent={timingInfo}
+              >
+                <TaskCreationPhaseViewer phaseData={phaseData} />
+              </CollapsibleSection>
+            );
+          }
+
+          // Special handling for new task generation phase
+          if (phaseName === 'new_task_generation' && 'task_generation' in phaseData) {
+            const newTaskGenPhase = phaseData as NewTaskGenerationPhase;
+            const taskCount = newTaskGenPhase.task_generation?.generated_tasks?.length || 0;
+            const titleSuffix = ` (${taskCount} task${taskCount === 1 ? '' : 's'} generated)`;
+            
+            const statusBadge = (
+              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeColor(newTaskGenPhase.status)}`}>
+                {newTaskGenPhase.status}
+              </span>
+            );
+
+            const timingInfo = (
+              <div className="text-sm text-gray-500">
+                {formatTime(newTaskGenPhase.start_time)} - {formatTime(newTaskGenPhase.end_time)} 
+                ({calculateDuration(newTaskGenPhase.start_time, newTaskGenPhase.end_time)})
+              </div>
+            );
+            
+            return (
+              <CollapsibleSection 
+                key={phaseName}
+                title={`${phaseIndex}. New Task Generation${titleSuffix}`}
+                defaultExpanded={false}
+                statusBadge={statusBadge}
+                rightContent={timingInfo}
+              >
+                <NewTaskGenerationViewer phaseData={newTaskGenPhase} />
+              </CollapsibleSection>
+            );
+          }
+
+          // Special handling for context update phase
+          if (phaseName === 'context_update' && 'context_before' in phaseData) {
+            const contextPhase = phaseData as ContextUpdatePhase;
+
+            const statusBadge = (
+              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeColor(contextPhase.status)}`}>
+                {contextPhase.status}
+              </span>
+            );
+
+            const timingInfo = (
+              <div className="text-sm text-gray-500">
+                {formatTime(contextPhase.start_time)} - {formatTime(contextPhase.end_time)} 
+                ({calculateDuration(contextPhase.start_time, contextPhase.end_time)})
+              </div>
+            );
+
+            return (
+              <CollapsibleSection 
+                key={phaseName}
+                title={`${phaseIndex}. Context Update`}
+                defaultExpanded={false}
+                statusBadge={statusBadge}
+                rightContent={timingInfo}
+              >
+                <ContextUpdateViewer phaseData={contextPhase} />
+              </CollapsibleSection>
+            );
+          }
+
+          // Special handling for task execution phase - structured display
+          if (phaseName === 'task_execution') {
+            const execPhase = phaseData as TaskExecutionPhase;
+            const toolId = execPhase.task?.tool?.tool_id || execPhase.tool_execution?.tool_id || '';
+            const toolSuffix = toolId ? ` (${toolId})` : '';
+
+            const statusBadge = (
+              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeColor(execPhase.status)}`}>
+                {execPhase.status}
+              </span>
+            );
+
+            const timingInfo = (
+              <div className="text-sm text-gray-500">
+                {formatTime(execPhase.start_time)} - {formatTime(execPhase.end_time)} 
+                ({calculateDuration(execPhase.start_time, execPhase.end_time)})
+              </div>
+            );
+
+            return (
+              <CollapsibleSection 
+                key={phaseName} 
+                title={`${phaseIndex}. Task Execution${toolSuffix}`} 
+                defaultExpanded={false}
+                statusBadge={statusBadge}
+                rightContent={timingInfo}
+              >
+                <div className="space-y-4">
+                  {/* Task Tool Info (collapsed by default) */}
+                  {execPhase.task && (
+                    <CollapsibleSection 
+                      title={`Tool Configuration - ${execPhase.task.tool?.tool_id || 'Unknown Tool'}`} 
+                      defaultExpanded={false}
+                    >
+                      <div className="text-sm space-y-4">
+                        <div>
+                          <span className="font-medium text-gray-700">Tool ID:</span>
+                          <span className="ml-2 font-mono text-blue-600">{execPhase.task.tool?.tool_id || 'N/A'}</span>
+                        </div>
+                        <div>
+                          <div className="font-medium text-gray-700 mb-3">Parameters:</div>
+                          <ParameterCards parameters={execPhase.task.tool?.parameters || {}} />
+                        </div>
+                      </div>
+                    </CollapsibleSection>
+                  )}
+
+                  {/* Tool Execution: if LLM then render LLM component, otherwise JSON */}
+                  <div>
+                    <div className="text-sm font-medium text-gray-700 mb-2">Tool Execution</div>
+                    {execPhase.tool_execution ? (
+                      execPhase.tool_execution.tool_id === 'LLM' || execPhase.task?.tool?.tool_id === 'LLM' ? (
+                        (() => {
+                          // Map ToolExecution to a temporary LLMCall shape for display
+                          const toolExec = execPhase.tool_execution as any;
+                          const syntheticLLM: LLMCall = {
+                            tool_call_id: toolExec.tool_call_id || 'unknown',
+                            prompt: (toolExec.parameters && (toolExec.parameters.prompt || toolExec.parameters['prompt'])) || '',
+                            response: toolExec.output.content,
+                            start_time: toolExec.start_time || execPhase.start_time || '',
+                            end_time: toolExec.end_time || execPhase.end_time || '',
+                            model: toolExec.parameters?.model || undefined,
+                            token_usage: toolExec.parameters?.token_usage || undefined,
+                          };
+
+                          return <ContextualLLMCall 
+                            llmCall={syntheticLLM} 
+                            context="field_extraction"
+                            relatedData={toolExec.parameters}
+                          />;
+                        })()
+                      ) : (
+                        <pre className="text-xs text-gray-700 bg-gray-50 p-3 rounded border overflow-x-auto">
+                          {JSON.stringify(execPhase.tool_execution, null, 2)}
+                        </pre>
+                      )
+                    ) : (
+                      <div className="text-sm text-gray-500">No tool execution recorded</div>
+                    )}
+                  </div>
+
+                  {/* Output Path Generation - display prefixed_path and collapsible call details */}
+                  {(execPhase.prefixed_path || execPhase.output_path_generation) && (
+                    <div>
+                      <div className="text-sm font-medium text-gray-700 mb-2">Output Path Generation</div>
+                      <div className="p-3 bg-gray-50 border rounded text-sm space-y-2">
+                        <div>
+                          <span className="font-medium text-gray-700">Prefixed Path:</span>
+                          <code className="ml-2 font-mono bg-white px-2 py-1 rounded">{execPhase.prefixed_path || execPhase.output_path_generation?.prefixed_path || 'N/A'}</code>
+                        </div>
+                        {execPhase.output_path_generation && (
+                          <CollapsibleSection title="View Path Generation Call" defaultExpanded={false}>
+                            {execPhase.output_path_generation.path_generation_call ? (
+                              <ContextualLLMCall 
+                                llmCall={execPhase.output_path_generation.path_generation_call} 
+                                context="output_generation"
+                              />
+                            ) : (
+                              <div className="text-sm text-gray-500">No path generation call recorded.</div>
+                            )}
+                          </CollapsibleSection>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Phase-level error display */}
+                  {execPhase.error && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                      <div className="text-red-700 text-sm">{execPhase.error}</div>
+                    </div>
+                  )}
+                </div>
+              </CollapsibleSection>
             );
           }
 
@@ -189,32 +412,49 @@ export const TaskPhases: React.FC<TaskPhasesProps> = ({ task }) => {
           const detailsData = stripMetaFields(phaseData);
           const hasDetails = Object.keys(detailsData).length > 0;
 
-          return (
-            <div key={phaseName} className="border rounded-md">
-              <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 rounded-t-md">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <span className="font-medium text-gray-900">{formatPhaseName(phaseName)}</span>
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeColor(phaseData.status)}`}>
-                      {phaseData.status}
-                    </span>
-                  </div>
-                  <div className="text-sm text-gray-500">
-                    {formatTime(phaseData.start_time)} - {formatTime(phaseData.end_time)} 
-                    ({calculateDuration(phaseData.start_time, phaseData.end_time)})
+          const statusBadge = (
+            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeColor(phaseData.status)}`}>
+              {phaseData.status}
+            </span>
+          );
+
+          const timingInfo = (
+            <div className="text-sm text-gray-500">
+              {formatTime(phaseData.start_time)} - {formatTime(phaseData.end_time)} 
+              ({calculateDuration(phaseData.start_time, phaseData.end_time)})
+            </div>
+          );
+
+          if (hasDetails) {
+            return (
+              <CollapsibleSection 
+                key={phaseName}
+                title={`${phaseIndex}. ${formatPhaseName(phaseName)}`}
+                defaultExpanded={false}
+                statusBadge={statusBadge}
+                rightContent={timingInfo}
+              >
+                <pre className="text-xs text-gray-700 bg-gray-50 p-3 rounded border overflow-x-auto">
+                  {JSON.stringify(detailsData, null, 2)}
+                </pre>
+              </CollapsibleSection>
+            );
+          } else {
+            // If no details, still show the phase header but without expandable content
+            return (
+              <div key={phaseName} className="border rounded-md">
+                <div className="px-4 py-3 bg-gray-50 rounded-md">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="font-medium text-gray-900">{phaseIndex}. {formatPhaseName(phaseName)}</span>
+                      {statusBadge}
+                    </div>
+                    {timingInfo}
                   </div>
                 </div>
               </div>
-
-              {hasDetails && (
-                <CollapsibleSection title="View Details (JSON)" defaultExpanded={false}>
-                  <pre className="text-xs text-gray-700 bg-gray-50 p-3 rounded border overflow-x-auto">
-                    {JSON.stringify(detailsData, null, 2)}
-                  </pre>
-                </CollapsibleSection>
-              )}
-            </div>
-          );
+            );
+          }
         })}
       </div>
     </div>

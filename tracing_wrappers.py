@@ -25,23 +25,21 @@ class TracingToolWrapper:
             result = await self.tool.execute(parameters)
             
             # Log successful tool execution
-            if self.tracer.enabled:
-                self.tracer.log_tool_call(
-                    tool_id=self.tool_id,
-                    parameters=parameters,
-                    output=result
-                )
+            self.tracer.log_tool_call(
+                tool_id=self.tool_id,
+                parameters=parameters,
+                output=result
+            )
             
             return result
         except Exception as e:
             # Log failed tool execution
-            if self.tracer.enabled:
-                self.tracer.log_tool_call(
-                    tool_id=self.tool_id,
-                    parameters=parameters,
-                    output=None,
-                    error=e
-                )
+            self.tracer.log_tool_call(
+                tool_id=self.tool_id,
+                parameters=parameters,
+                output=None,
+                error=e
+            )
             raise
 
 
@@ -54,30 +52,33 @@ class TracingLLMTool(TracingToolWrapper):
             result = await self.tool.execute(parameters)
             
             # Log LLM call with prompt/response details
-            if self.tracer.enabled:
-                prompt = parameters.get('prompt', '')
-                model = getattr(self.tool, 'model', None)
-                
-                self.tracer.log_llm_call(
-                    prompt=prompt,
-                    response=result,
-                    model=model
-                )
-                
-                # Also log as tool call
-                self.tracer.log_tool_call(
-                    tool_id=self.tool_id,
-                    parameters=parameters,
-                    output=result
-                )
+            prompt = parameters.get('prompt', '')
+            model = getattr(self.tool, 'model', None)
+            
+            response_content = result.get('content', '')
+            tool_calls = result.get('tool_calls', [])
+            
+            self.tracer.log_llm_call(
+                prompt=prompt,
+                response=response_content,
+                model=model,
+                tool_calls=tool_calls,
+                all_parameters=parameters
+            )
+            
+            # Also log as tool call
+            self.tracer.log_tool_call(
+                tool_id=self.tool_id,
+                parameters=parameters,
+                output=result
+            )
             
             return result
         except Exception as e:
-            if self.tracer.enabled:
-                self.tracer.log_tool_call(
-                    tool_id=self.tool_id,
-                    parameters=parameters,
-                    output=None,
-                    error=e
-                )
+            self.tracer.log_tool_call(
+                tool_id=self.tool_id,
+                parameters=parameters,
+                output=None,
+                error=e
+            )
             raise

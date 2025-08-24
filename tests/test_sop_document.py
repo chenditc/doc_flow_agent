@@ -332,7 +332,10 @@ tool:
         """Test successful LLM validation"""
         # Create a mock LLMTool instance
         mock_llm_tool = AsyncMock()
-        mock_llm_tool.execute.return_value = "<doc_id>blog/generate_outline</doc_id>"
+        mock_llm_tool.execute.return_value = {
+            "content": "<doc_id>blog/generate_outline</doc_id>",
+            "tool_calls": []
+        }
         
         # Temporarily patch the LLMTool class
         with patch('tools.llm_tool.LLMTool', return_value=mock_llm_tool):
@@ -353,7 +356,10 @@ tool:
         """Test LLM validation returning NONE"""
         # Create a mock LLMTool instance
         mock_llm_tool = AsyncMock()
-        mock_llm_tool.execute.return_value = "<doc_id>NONE</doc_id>"
+        mock_llm_tool.execute.return_value = {
+            "content": "<doc_id>NONE</doc_id>",
+            "tool_calls": []
+        }
         
         # Temporarily patch the LLMTool class
         with patch('tools.llm_tool.LLMTool', return_value=mock_llm_tool):
@@ -374,7 +380,10 @@ tool:
         """Test LLM validation with invalid response"""
         # Create a mock LLMTool instance
         mock_llm_tool = AsyncMock()
-        mock_llm_tool.execute.return_value = "<doc_id>invalid/document</doc_id>"
+        mock_llm_tool.execute.return_value = {
+            "content": "<doc_id>invalid/document</doc_id>",
+            "tool_calls": []
+        }
         
         # Temporarily patch the LLMTool class
         with patch('tools.llm_tool.LLMTool', return_value=mock_llm_tool):
@@ -404,7 +413,10 @@ tool:
         """Test parsing with full path match"""
         # Create a mock LLMTool instance
         mock_llm_tool = AsyncMock()
-        mock_llm_tool.execute.return_value = "<doc_id>blog/generate_outline</doc_id>"
+        mock_llm_tool.execute.return_value = {
+            "content": "<doc_id>blog/generate_outline</doc_id>",
+            "tool_calls": []
+        }
         
         # Temporarily patch the LLMTool class
         with patch('tools.llm_tool.LLMTool', return_value=mock_llm_tool):
@@ -419,7 +431,10 @@ tool:
         """Test parsing with filename match"""
         # Create a mock LLMTool instance
         mock_llm_tool = AsyncMock()
-        mock_llm_tool.execute.return_value = "<doc_id>tools/bash</doc_id>"
+        mock_llm_tool.execute.return_value = {
+            "content": "<doc_id>tools/bash</doc_id>",
+            "tool_calls": []
+        }
         
         # Temporarily patch the LLMTool class
         with patch('tools.llm_tool.LLMTool', return_value=mock_llm_tool):
@@ -434,7 +449,10 @@ tool:
         """Test parsing with tracer enabled"""
         # Create a mock LLMTool instance
         mock_llm_tool = AsyncMock()
-        mock_llm_tool.execute.return_value = "<doc_id>blog/generate_outline</doc_id>"
+        mock_llm_tool.execute.return_value = {
+            "content": "<doc_id>blog/generate_outline</doc_id>",
+            "tool_calls": []
+        }
         
         # Mock tracer
         mock_tracer = MagicMock()
@@ -443,18 +461,20 @@ tool:
         mock_tracer.current_task_execution.phases.get.return_value = mock_phase
         mock_tracer._generate_id.return_value = "test-id"
         
+        # Create parser with mock tracer
+        parser_with_tracer = SOPDocumentParser(tracer=mock_tracer)
+        
         # Temporarily patch the LLMTool class
         with patch('tools.llm_tool.LLMTool', return_value=mock_llm_tool):
             async def run_test():
                 # Use a description that will match the document ID
-                result = await self.parser.parse_sop_doc_id_from_description("Use blog/generate_outline to create outline", mock_tracer)
+                result = await parser_with_tracer.parse_sop_doc_id_from_description("Use blog/generate_outline to create outline")
                 return result
             
             result = asyncio.run(run_test())
             self.assertEqual(result, "blog/generate_outline")
             
             # Verify tracer interactions
-            mock_tracer.current_task_execution.phases.get.assert_called_with("sop_resolution")
             self.assertIsNotNone(mock_phase.candidate_documents)
 
 

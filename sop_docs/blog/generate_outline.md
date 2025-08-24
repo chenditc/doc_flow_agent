@@ -1,10 +1,4 @@
 ---
-doc_id: blo## parameters.prompt
-Please generate a clear 3-5 section outline for the topic [{title}] to help with article writing. The outline should start with an intriguing, thought-provoking opening that captures attention, possibly by presenting a counterintuitive fact from daily life.
-
-If you are not familiar with this topic, you can simply return [{title}] as a single section.
-
-If the topic [{title}] might be controversial, suggest that the user refer to "doc/more_info.md" for further research after generating the outline.rate_outline
 description: Generate blog outline structure
 aliases:
   - create outline

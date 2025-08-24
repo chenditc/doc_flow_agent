@@ -11,6 +11,7 @@ from typing import Dict, Any, Optional, Tuple
 import uuid
 from genson import SchemaBuilder
 from jsonpath_ng import parse
+from contextlib import contextmanager
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -21,16 +22,23 @@ from tools import LLMTool
 class JsonPathGenerator:
     """Generate JSON paths for SOP documents using LLM"""
     
-    def __init__(self, llm_tool = None, tracer = None):
-        """Initialize JsonPathGenerator with an LLM tool instance
+    def __init__(self, llm_tool=None, tracer=None):
+        """Initialize JsonPathGenerator with an LLM tool instance and tracer
         
         Args:
             llm_tool: An instance of LLMTool or compatible tool for text generation
+            tracer: ExecutionTracer instance for observability (required for production use)
         """
         self.llm_tool = llm_tool
         if self.llm_tool is None:
             self.llm_tool = LLMTool()
         self.tracer = tracer
+        if self.tracer is None:
+            # For backwards compatibility in tests, create a minimal tracer
+            from tracing import ExecutionTracer
+            self.tracer = ExecutionTracer(enabled=False)
+    
+
     
     async def generate_input_json_paths(
         self, 
@@ -56,11 +64,8 @@ class JsonPathGenerator:
         
         # Process each input description through multi-step analysis
         for field_name, description in input_descriptions.items():
-            try:
-                # Start input field extraction tracing
-                if self.tracer and self.tracer.enabled:
-                    self.tracer.start_input_field_extraction(field_name, description)
-                
+            # Use input field extraction tracing context manager (no-op if tracer disabled)
+            with self.tracer.trace_input_field_extraction_step(field_name, description) as input_ctx:
                 # Step 1: Analyze context for candidate fields
                 candidate_fields = await self._analyze_context_candidates(
                     description, context, user_original_ask
@@ -79,14 +84,12 @@ class JsonPathGenerator:
                 temp_key = f"_temp_input_{str(uuid.uuid4())}"
                 extracted_content = self._execute_extraction_code(extraction_code, context)
                 if extracted_content == "<NOT_FOUND_IN_CANDIDATES>":
-                    # End tracing with error
-                    if self.tracer and self.tracer.enabled:
-                        error = TaskInputMissingError(field_name, description)
-                        self.tracer.end_input_field_extraction(
-                            candidate_fields=candidate_fields,
-                            generated_code=extraction_code,
-                            error=error
-                        )
+                    # Set error data in context (no-op if tracing disabled)
+                    error = TaskInputMissingError(field_name, description)
+                    input_ctx.set_result(
+                        candidate_fields=candidate_fields,
+                        generated_code=extraction_code
+                    )
                     # Raise exception without recovery task - that's the engine's job
                     raise TaskInputMissingError(field_name, description)
                 else:
@@ -99,20 +102,13 @@ class JsonPathGenerator:
                     print("Current context after processing:")
                     print(json.dumps(context, ensure_ascii=False, indent=2))
                     
-                    # End successful tracing
-                    if self.tracer and self.tracer.enabled:
-                        self.tracer.end_input_field_extraction(
-                            candidate_fields=candidate_fields,
-                            generated_code=extraction_code,
-                            extracted_value=extracted_content,
-                            generated_path=f"$.['{temp_key}']"
-                        )
-            except Exception as e:
-                print(f"[JSON_PATH_GEN] Error processing '{field_name}': {e}")
-                # End tracing with error if not already ended
-                if self.tracer and self.tracer.enabled and self.tracer._context.current_sub_step == "input_field_extraction":
-                    self.tracer.end_input_field_extraction(error=e)
-                raise e
+                    # Set successful data in context (no-op if tracing disabled)
+                    input_ctx.set_result(
+                        candidate_fields=candidate_fields,
+                        generated_code=extraction_code,
+                        extracted_value=extracted_content,
+                        generated_path=f"$.['{temp_key}']"
+                    )
         
         print(f"[JSON_PATH_GEN] Generated input paths: {result_paths}")
         return result_paths
@@ -154,15 +150,18 @@ class JsonPathGenerator:
             "prompt": prompt
         })
         
+        # Extract content from new response format
+        response_content = response["content"]
+        
         # Extract the generated path
         try:
-            if "```json" in response:
-                response = re.search(r'```json(.*?)```', response, re.DOTALL).group(1).strip()
-            path_data = json.loads(response)
+            if "```json" in response_content:
+                response_content = re.search(r'```json(.*?)```', response_content, re.DOTALL).group(1).strip()
+            path_data = json.loads(response_content)
             path = path_data.get("output_path", "$.output")
         except json.JSONDecodeError:
             # If content is not JSON, try to extract path from text
-            content = response.strip()
+            content = response_content.strip()
             if content.startswith("$.") or content.startswith("$["):
                 path = content
             else:
@@ -245,16 +244,19 @@ Analyze the current context to find fields that might contain information for th
             "prompt": prompt
         })
 
-        if "```json" in response:
+        # Extract content from new response format
+        response_content = response["content"]
+
+        if "```json" in response_content:
             # Extract JSON array from response
-            json_match = re.search(r'```json\n(.*?)\n```', response, re.DOTALL)
+            json_match = re.search(r'```json\n(.*?)\n```', response_content, re.DOTALL)
             if json_match:
-                response = json_match.group(1).strip()
+                response_content = json_match.group(1).strip()
             else:
                 raise ValueError("Response does not contain valid JSON array")
         
         # Parse the JSON response
-        candidates = json.loads(response)
+        candidates = json.loads(response_content)
         # Convert to dictionary with current values, use json_ng json path get
         candidates_objects = {}
         for candidate in candidates:
@@ -368,10 +370,14 @@ def extract_func(context):
             response = await self.llm_tool.execute({
                 "prompt": prompt
             })
+            
+            # Extract content from new response format
+            response_content = response["content"]
+            
             # Print think process for debugging
-            print(f"[JSON_PATH_GEN] Think process for '{input_description}': {response}")
+            print(f"[JSON_PATH_GEN] Think process for '{input_description}': {response_content}")
             # Parse using regex to extract the code block
-            code_match = re.search(r'```python\n(.*?)\n```', response, re.DOTALL)
+            code_match = re.search(r'```python\n(.*?)\n```', response_content, re.DOTALL)
             if code_match:
                 code = code_match.group(1).strip()
             else:

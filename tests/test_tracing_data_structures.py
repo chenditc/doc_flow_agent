@@ -9,9 +9,8 @@ def test_execution_status_enum():
     assert ExecutionStatus.RETRYING.value == "retrying"
 
 def test_llm_call_dataclass():
-    llm = LLMCall(tool_call_id="id1", step="step1", prompt="p", response="r", start_time="t1", end_time="t2", model="gpt", token_usage={"input": 10})
+    llm = LLMCall(tool_call_id="id1", prompt="p", response="r", start_time="t1", end_time="t2", model="gpt", token_usage={"input": 10})
     assert llm.tool_call_id == "id1"
-    assert llm.step == "step1"
     assert llm.prompt == "p"
     assert llm.response == "r"
     assert llm.start_time == "t1"
@@ -47,7 +46,8 @@ def test_task_creation_phase():
     tcp = TaskCreationPhase(start_time="t1")
     assert tcp.status == ExecutionStatus.STARTED
     assert tcp.start_time == "t1"
-    assert isinstance(tcp.json_path_generation, dict)
+    assert isinstance(tcp.input_field_extractions, dict)
+    assert tcp.output_path_generation is None
     assert tcp.error is None
 
 def test_task_execution_phase():

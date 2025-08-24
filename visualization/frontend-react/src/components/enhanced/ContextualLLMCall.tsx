@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import ReactMarkdown from 'react-markdown';
 import type { LLMCall } from '../../types/trace';
 
 interface ContextualLLMCallProps {
@@ -13,6 +14,82 @@ export const ContextualLLMCall: React.FC<ContextualLLMCallProps> = ({
   relatedData
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+  const [responseCopyFeedback, setResponseCopyFeedback] = useState<string | null>(null);
+
+  const handleCopyPrompt = async () => {
+    try {
+      await navigator.clipboard.writeText(llmCall.prompt || '');
+      setCopyFeedback('Copied!');
+      setTimeout(() => setCopyFeedback(null), 2000);
+    } catch (err) {
+      setCopyFeedback('Failed to copy');
+      setTimeout(() => setCopyFeedback(null), 2000);
+    }
+  };
+
+  const handleCopyResponse = async () => {
+    try {
+      await navigator.clipboard.writeText(llmCall.response || '');
+      setResponseCopyFeedback('Copied!');
+      setTimeout(() => setResponseCopyFeedback(null), 2000);
+    } catch (err) {
+      setResponseCopyFeedback('Failed to copy');
+      setTimeout(() => setResponseCopyFeedback(null), 2000);
+    }
+  };
+
+  const handleOpenTuningPage = () => {
+    // Collect all the parameters for the tuning page
+    const allParameters = {
+      model: llmCall.model,
+      temperature: 0.7, // default, can be overridden
+      max_tokens: 1000, // default, can be overridden
+      ...(llmCall.token_usage ? { token_usage: llmCall.token_usage } : {}),
+      start_time: llmCall.start_time,
+      end_time: llmCall.end_time,
+      ...(relatedData ? { related_data: relatedData } : {}),
+    };
+
+    // Prepare URL parameters - iterate through all_parameters if available
+    const params = new URLSearchParams();
+    
+    // If llmCall has all_parameters, use those directly
+    if (llmCall.all_parameters) {
+      Object.entries(llmCall.all_parameters).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          // For objects and arrays, stringify them
+          const stringValue = typeof value === 'object' ? JSON.stringify(value) : String(value);
+          params.set(key, encodeURIComponent(stringValue));
+        }
+      });
+    } else {
+      // Fallback: use individual fields if all_parameters is not available
+      if (llmCall.prompt) {
+        params.set('prompt', encodeURIComponent(llmCall.prompt));
+      }
+      
+      if (llmCall.tool_calls && llmCall.tool_calls.length > 0) {
+        // Convert tool calls to OpenAI function calling format
+        const tools = llmCall.tool_calls.map(toolCall => ({
+          type: "function",
+          function: {
+            name: toolCall.name,
+            description: `Tool call: ${toolCall.name}`,
+            parameters: toolCall.arguments || {}
+          }
+        }));
+        params.set('tools', encodeURIComponent(JSON.stringify(tools)));
+      }
+    }
+    
+    // Always add the additional parameters
+    params.set('all_parameters', encodeURIComponent(JSON.stringify(allParameters, null, 2)));
+
+    // Open the tuning page in a new tab
+    const tuningUrl = `/llm-tuning?${params.toString()}`;
+    window.open(tuningUrl, '_blank');
+  };
 
   const calculateDuration = (startTime: string, endTime: string): string => {
     if (!startTime || !endTime) return 'N/A';
@@ -69,11 +146,31 @@ export const ContextualLLMCall: React.FC<ContextualLLMCallProps> = ({
         </div>
       </button>
 
-      {isExpanded && (
+            {isExpanded && (
         <div className="space-y-3">
           {/* Prompt */}
           <div>
-            <div className="text-sm font-medium text-gray-700 mb-2">Prompt</div>
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-sm font-medium text-gray-700">Prompt</div>
+              <div className="flex items-center space-x-2">
+                {copyFeedback && (
+                  <span className={`text-xs ${
+                    copyFeedback === 'Copied!' ? 'text-green-600' : 'text-red-600'
+                  }`}>
+                    {copyFeedback}
+                  </span>
+                )}
+                <button
+                  onClick={handleCopyPrompt}
+                  className="text-gray-500 hover:text-gray-700 focus:outline-none focus:text-gray-700 p-1"
+                  title="Copy prompt to clipboard"
+                >
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                </button>
+              </div>
+            </div>
             <div className="bg-white border rounded p-3">
               <div className="text-sm text-gray-700 whitespace-pre-wrap max-h-64 overflow-y-auto">
                 {llmCall.prompt || 'No prompt available'}
@@ -83,12 +180,151 @@ export const ContextualLLMCall: React.FC<ContextualLLMCallProps> = ({
 
           {/* Response */}
           <div>
-            <div className="text-sm font-medium text-gray-700 mb-2">Response</div>
-            <div className="bg-white border rounded p-3">
-              <div className="text-sm text-gray-700 whitespace-pre-wrap max-h-64 overflow-y-auto">
-                {llmCall.response || 'No response available'}
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-sm font-medium text-gray-700">Response</div>
+              <div className="flex items-center space-x-2">
+                {responseCopyFeedback && (
+                  <span className={`text-xs ${
+                    responseCopyFeedback === 'Copied!' ? 'text-green-600' : 'text-red-600'
+                  }`}>
+                    {responseCopyFeedback}
+                  </span>
+                )}
+                <button
+                  onClick={handleCopyResponse}
+                  className="text-gray-500 hover:text-gray-700 focus:outline-none focus:text-gray-700 p-1"
+                  title="Copy response to clipboard"
+                >
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                </button>
               </div>
             </div>
+            <div className="bg-white border rounded p-3">
+              <div className="prose prose-sm max-w-none max-h-64 overflow-y-auto">
+                <ReactMarkdown
+                  components={{
+                    // Custom styling for code blocks
+                    code: (props) => {
+                      const { children, ...rest } = props;
+                      return (
+                        <code
+                          className="bg-gray-100 text-gray-800 px-1 py-0.5 rounded text-xs font-mono"
+                          {...rest}
+                        >
+                          {children}
+                        </code>
+                      );
+                    },
+                    pre: (props) => {
+                      const { children, ...rest } = props;
+                      return (
+                        <pre 
+                          className="bg-gray-100 p-2 rounded-md overflow-x-auto mb-2 text-xs"
+                          {...rest}
+                        >
+                          {children}
+                        </pre>
+                      );
+                    },
+                    // Custom styling for headings
+                    h1: (props) => {
+                      const { children, ...rest } = props;
+                      return (
+                        <h1 className="text-base font-bold text-gray-900 mb-2 mt-3 first:mt-0" {...rest}>
+                          {children}
+                        </h1>
+                      );
+                    },
+                    h2: (props) => {
+                      const { children, ...rest } = props;
+                      return (
+                        <h2 className="text-sm font-semibold text-gray-800 mb-2 mt-2 first:mt-0" {...rest}>
+                          {children}
+                        </h2>
+                      );
+                    },
+                    h3: (props) => {
+                      const { children, ...rest } = props;
+                      return (
+                        <h3 className="text-sm font-semibold text-gray-800 mb-1 mt-2 first:mt-0" {...rest}>
+                          {children}
+                        </h3>
+                      );
+                    },
+                    // Custom styling for lists
+                    ul: (props) => {
+                      const { children, ...rest } = props;
+                      return (
+                        <ul className="list-disc pl-4 mb-2 space-y-0.5 text-sm" {...rest}>
+                          {children}
+                        </ul>
+                      );
+                    },
+                    ol: (props) => {
+                      const { children, ...rest } = props;
+                      return (
+                        <ol className="list-decimal pl-4 mb-2 space-y-0.5 text-sm" {...rest}>
+                          {children}
+                        </ol>
+                      );
+                    },
+                    // Custom styling for paragraphs
+                    p: (props) => {
+                      const { children, ...rest } = props;
+                      return (
+                        <p className="mb-2 text-sm text-gray-700 leading-relaxed" {...rest}>
+                          {children}
+                        </p>
+                      );
+                    },
+                    // Custom styling for blockquotes
+                    blockquote: (props) => {
+                      const { children, ...rest } = props;
+                      return (
+                        <blockquote className="border-l-2 border-gray-300 pl-3 italic text-gray-600 mb-2 text-sm" {...rest}>
+                          {children}
+                        </blockquote>
+                      );
+                    },
+                  }}
+                >
+                  {llmCall.response || 'No response available'}
+                </ReactMarkdown>
+              </div>
+            </div>
+          </div>
+
+          {/* Tool Calls */}
+          <div>
+            <div className="text-sm font-medium text-gray-700 mb-2">Tool Calls</div>
+            {llmCall.tool_calls && llmCall.tool_calls.length > 0 ? (
+              <div className="space-y-2">
+                {llmCall.tool_calls.map((toolCall, index) => (
+                  <div key={toolCall.id || index} className="bg-blue-50 border border-blue-200 rounded p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-semibold text-blue-800">
+                        {toolCall.name}
+                      </span>
+                      <span className="text-xs text-blue-600 font-mono">
+                        {toolCall.id}
+                      </span>
+                    </div>
+                    <div className="text-sm text-gray-700">
+                      <span className="font-medium">Arguments:</span>
+                      <pre className="mt-1 bg-white border border-blue-200 rounded p-2 text-xs overflow-x-auto">
+                        {JSON.stringify(toolCall.arguments, null, 2)}
+                      </pre>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="bg-gray-50 border rounded p-3">
+                <div className="text-sm text-gray-400 italic">No tool call</div>
+              </div>
+            )}
           </div>
 
           {/* Token Usage */}
@@ -114,6 +350,16 @@ export const ContextualLLMCall: React.FC<ContextualLLMCallProps> = ({
               </div>
             </div>
           )}
+
+          {/* Tune in LLM Tuning Page Button */}
+          <div className="pt-3 border-t border-gray-200">
+            <button
+              onClick={handleOpenTuningPage}
+              className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 text-white font-medium rounded-md transition-colors text-sm"
+            >
+              🔧 Tune in LLM Tuning Page
+            </button>
+          </div>
         </div>
       )}
     </div>

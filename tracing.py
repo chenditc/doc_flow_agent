@@ -8,9 +8,10 @@ import json
 import uuid
 from dataclasses import dataclass, asdict, field
 from datetime import datetime, timezone
-from typing import Dict, List, Any, Optional, Union, Callable
+from typing import Dict, List, Any, Optional, Union, Callable, Generator
 from pathlib import Path
 from enum import Enum
+from contextlib import contextmanager
 
 
 class ExecutionStatus(Enum):
@@ -32,6 +33,8 @@ class LLMCall:
     end_time: str
     model: Optional[str] = None
     token_usage: Optional[Dict[str, int]] = None
+    tool_calls: Optional[List[Dict[str, Any]]] = None
+    all_parameters: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -188,6 +191,7 @@ class ContextUpdatePhase:
     updated_paths: List[str] = field(default_factory=list)
     removed_temp_keys: List[str] = field(default_factory=list)
     error: Optional[str] = None
+    output_path_generation: Optional[OutputPathGeneration] = None
 
 
 @dataclass
@@ -252,19 +256,17 @@ class ExecutionTracer:
         self.enabled = enabled
         self.output_dir = Path(output_dir)  # Always set output_dir regardless of enabled status
         
+        # Always initialize attributes to avoid AttributeError
+        self.session: Optional[ExecutionSession] = None
+        self.current_task_execution: Optional[TaskExecutionRecord] = None
+        self._context = TracingContext()
+        self.tool_call_counter: int = 0
+        self.current_session_file: Optional[str] = None  # Track current session file path
+        
         if not enabled:
             return
             
         self.output_dir.mkdir(exist_ok=True)
-        
-        self.session: Optional[ExecutionSession] = None
-        self.current_task_execution: Optional[TaskExecutionRecord] = None
-        
-        # New: Internal tracing context
-        self._context = TracingContext()
-        
-        self.tool_call_counter: int = 0
-        self.current_session_file: Optional[str] = None  # Track current session file path
         
     def _current_time(self) -> str:
         """Get current timestamp in ISO format"""
@@ -359,78 +361,9 @@ class ExecutionTracer:
                 start_time=self._current_time()
             )
     
-    # New: Sub-step methods for structured tracing
-    def start_document_selection(self) -> None:
-        """Start SOP document selection sub-step"""
-        if not self.enabled or self._context.current_phase != "sop_resolution":
-            return
-        
-        phase = self.current_task_execution.phases.get("sop_resolution")
-        if phase:
-            phase.document_selection = DocumentSelection(start_time=self._current_time())
-            self._context.current_sub_step = "document_selection"
-            # Set up storage callback
-            self._context.llm_call_storage = lambda call: setattr(phase.document_selection, 'validation_call', call)
-    
-    def start_input_field_extraction(self, field_name: str, description: str) -> None:
-        """Start input field value extraction sub-step"""
-        if not self.enabled or self._context.current_phase != "task_creation":
-            return
-        
-        phase = self.current_task_execution.phases.get("task_creation")
-        if phase:
-            extraction = InputFieldExtraction(
-                field_name=field_name,
-                description=description,
-                start_time=self._current_time()
-            )
-            phase.input_field_extractions[field_name] = extraction
-            self._context.current_sub_step = "input_field_extraction"
-            self._context.current_field_name = field_name
-            
-            # Set up storage callback that routes to appropriate LLM call field
-            def store_llm_call(call: LLMCall):
-                if not extraction.context_analysis_call:
-                    extraction.context_analysis_call = call
-                else:
-                    extraction.extraction_code_generation_call = call
-            
-            self._context.llm_call_storage = store_llm_call
-    
-    def start_output_path_generation(self) -> None:
-        """Start output path generation sub-step"""
-        if not self.enabled:
-            return
-        
-        current_time = self._current_time()
-        
-        if self._context.current_phase == "task_creation":
-            phase = self.current_task_execution.phases.get("task_creation")
-            if phase:
-                phase.output_path_generation = OutputPathGeneration(start_time=current_time)
-                self._context.current_sub_step = "output_path_generation"
-                self._context.llm_call_storage = lambda call: setattr(phase.output_path_generation, 'path_generation_call', call)
-        
-        elif self._context.current_phase == "task_execution":
-            phase = self.current_task_execution.phases.get("task_execution")
-            if phase:
-                phase.output_path_generation = OutputPathGeneration(start_time=current_time)
-                self._context.current_sub_step = "output_path_generation"
-                self._context.llm_call_storage = lambda call: setattr(phase.output_path_generation, 'path_generation_call', call)
-    
-    def start_new_task_generation_step(self) -> None:
-        """Start new task generation sub-step"""
-        if not self.enabled or self._context.current_phase != "new_task_generation":
-            return
-        
-        phase = self.current_task_execution.phases.get("new_task_generation")
-        if phase:
-            phase.task_generation = NewTaskGeneration(start_time=self._current_time())
-            self._context.current_sub_step = "new_task_generation_step"
-            self._context.llm_call_storage = lambda call: setattr(phase.task_generation, 'task_generation_call', call)
-    
     def log_llm_call(self, prompt: str, response: str, model: str = None, 
-                     token_usage: Dict[str, int] = None) -> str:
+                     token_usage: Dict[str, int] = None, tool_calls: List[Dict[str, Any]] = None,
+                     all_parameters: Dict[str, Any] = None) -> str:
         """Log an LLM interaction - simplified interface"""
         if not self.enabled:
             return ""
@@ -443,7 +376,9 @@ class ExecutionTracer:
             start_time=self._current_time(),
             end_time=self._current_time(),
             model=model,
-            token_usage=token_usage
+            token_usage=token_usage,
+            tool_calls=tool_calls,
+            all_parameters=all_parameters
         )
         
         # Use context-aware storage
@@ -454,109 +389,6 @@ class ExecutionTracer:
         
         print(f"[TRACER] Logged LLM call in {self._context.current_phase}.{self._context.current_sub_step or 'main'}")
         return call_id
-    
-    # Sub-step completion methods
-    def end_document_selection(self, candidate_docs: List[str] = None, selected_doc: str = None, 
-                             loaded_doc: Dict[str, Any] = None, error: Exception = None) -> None:
-        """End document selection sub-step"""
-        if not self.enabled or self._context.current_sub_step != "document_selection":
-            return
-        
-        phase = self.current_task_execution.phases.get("sop_resolution")
-        if phase and phase.document_selection:
-            phase.document_selection.end_time = self._current_time()
-            phase.document_selection.status = ExecutionStatus.FAILED if error else ExecutionStatus.COMPLETED
-            if error:
-                phase.document_selection.error = str(error)
-            if candidate_docs:
-                phase.document_selection.candidate_documents = candidate_docs
-            if selected_doc:
-                phase.document_selection.selected_doc_id = selected_doc
-            if loaded_doc:
-                phase.document_selection.loaded_document = loaded_doc
-        
-        self._context.current_sub_step = None
-        self._context.llm_call_storage = None
-    
-    def end_input_field_extraction(self, generated_code: str = None, extracted_value: Any = None,
-                                 generated_path: str = None, candidate_fields: Dict[str, Any] = None,
-                                 error: Exception = None) -> None:
-        """End input field extraction sub-step"""
-        if not self.enabled or self._context.current_sub_step != "input_field_extraction":
-            return
-        
-        phase = self.current_task_execution.phases.get("task_creation")
-        if phase and self._context.current_field_name:
-            extraction = phase.input_field_extractions.get(self._context.current_field_name)
-            if extraction:
-                extraction.end_time = self._current_time()
-                extraction.status = ExecutionStatus.FAILED if error else ExecutionStatus.COMPLETED
-                if error:
-                    extraction.error = str(error)
-                if generated_code:
-                    extraction.generated_extraction_code = generated_code
-                if extracted_value is not None:
-                    extraction.extracted_value = extracted_value
-                if generated_path:
-                    extraction.generated_path = generated_path
-                if candidate_fields:
-                    extraction.candidate_fields = candidate_fields
-        
-        self._context.current_sub_step = None
-        self._context.current_field_name = None
-        self._context.llm_call_storage = None
-    
-    def end_output_path_generation(self, generated_path: str = None, prefixed_path: str = None,
-                                 error: Exception = None) -> None:
-        """End output path generation sub-step"""
-        if not self.enabled or self._context.current_sub_step != "output_path_generation":
-            return
-        
-        # Find the appropriate phase
-        output_gen = None
-        if self._context.current_phase == "task_creation":
-            phase = self.current_task_execution.phases.get("task_creation")
-            if phase:
-                output_gen = phase.output_path_generation
-        elif self._context.current_phase == "task_execution":
-            phase = self.current_task_execution.phases.get("task_execution")
-            if phase:
-                output_gen = phase.output_path_generation
-        
-        if output_gen:
-            output_gen.end_time = self._current_time()
-            output_gen.status = ExecutionStatus.FAILED if error else ExecutionStatus.COMPLETED
-            if error:
-                output_gen.error = str(error)
-            if generated_path:
-                output_gen.generated_path = generated_path
-            if prefixed_path:
-                output_gen.prefixed_path = prefixed_path
-        
-        self._context.current_sub_step = None
-        self._context.llm_call_storage = None
-    
-    def end_new_task_generation_step(self, generated_tasks: List[str] = None, tool_output: Any = None,
-                              task_description: str = None, error: Exception = None) -> None:
-        """End new task generation sub-step"""
-        if not self.enabled or self._context.current_sub_step != "new_task_generation_step":
-            return
-        
-        phase = self.current_task_execution.phases.get("new_task_generation")
-        if phase and phase.task_generation:
-            phase.task_generation.end_time = self._current_time()
-            phase.task_generation.status = ExecutionStatus.FAILED if error else ExecutionStatus.COMPLETED
-            if error:
-                phase.task_generation.error = str(error)
-            if generated_tasks:
-                phase.task_generation.generated_tasks = generated_tasks
-            if tool_output is not None:
-                phase.task_generation.tool_output = tool_output
-            if task_description:
-                phase.task_generation.current_task_description = task_description
-        
-        self._context.current_sub_step = None
-        self._context.llm_call_storage = None
     
     def log_tool_call(self, tool_id: str, parameters: Dict[str, Any], output: Any, 
                      error: Exception = None) -> str:
@@ -651,6 +483,307 @@ class ExecutionTracer:
         
         return filename
     
+    @contextmanager
+    def trace_phase(self, phase_name: str) -> Generator[None, None, None]:
+        """Context manager for tracing execution phases with automatic error handling
+        
+        Usage:
+            with tracer.trace_phase("task_execution"):
+                # do work
+                # if exception occurs, it will be automatically captured
+                pass
+        """
+        if not self.enabled:
+            yield
+            return
+            
+        self.start_phase(phase_name)
+        exception = None
+        try:
+            yield
+        except Exception as e:
+            exception = e
+            raise  # Re-raise the exception
+        finally:
+            # Always end phase, passing exception if one occurred
+            self.end_phase(error=exception)
+    
+    @contextmanager  
+    def trace_phase_with_data(self, phase_name: str) -> Generator['PhaseContext', None, None]:
+        """Context manager for tracing phases with data collection and automatic error handling
+        
+        Usage:
+            with tracer.trace_phase_with_data("task_execution") as phase_ctx:
+                # do work
+                result = some_operation()
+                phase_ctx.set_data({"result": result})
+                # Data will be automatically passed to end_phase
+        """
+        if not self.enabled:
+            yield PhaseContext()
+            return
+            
+        self.start_phase(phase_name)
+        phase_ctx = PhaseContext()
+        exception = None
+        try:
+            yield phase_ctx
+        except Exception as e:
+            exception = e
+            raise
+        finally:
+            # Always end phase, passing phase data and exception if one occurred
+            self.end_phase(phase_ctx.data, error=exception)
+    
+    @contextmanager
+    def trace_new_task_generation_step(self) -> Generator['NewTaskGenerationContext', None, None]:
+        """Context manager for tracing new task generation steps
+        
+        Usage:
+            with tracer.trace_new_task_generation_step() as step_ctx:
+                # do task generation work
+                new_tasks = some_task_generation()
+                step_ctx.set_result(
+                    generated_tasks=new_tasks,
+                    tool_output=output,
+                    task_description=description
+                )
+                # Results will be automatically passed to end_new_task_generation_step
+        """
+        if not self.enabled:
+            yield NewTaskGenerationContext()
+            return
+        
+        # Start new task generation step (inline logic from start_new_task_generation_step)
+        if self._context.current_phase != "new_task_generation":
+            yield NewTaskGenerationContext()
+            return
+            
+        phase = self.current_task_execution.phases.get("new_task_generation")
+        if not phase:
+            yield NewTaskGenerationContext()
+            return
+            
+        # Initialize the sub-step
+        phase.task_generation = NewTaskGeneration(start_time=self._current_time())
+        self._context.current_sub_step = "new_task_generation_step"
+        self._context.llm_call_storage = lambda call: setattr(phase.task_generation, 'task_generation_call', call)
+        
+        step_ctx = NewTaskGenerationContext()
+        exception = None
+        try:
+            yield step_ctx
+        except Exception as e:
+            exception = e
+            raise
+        finally:
+            # End new task generation step (inline logic from end_new_task_generation_step)
+            if phase and phase.task_generation:
+                phase.task_generation.end_time = self._current_time()
+                phase.task_generation.status = ExecutionStatus.FAILED if exception else ExecutionStatus.COMPLETED
+                if exception:
+                    phase.task_generation.error = str(exception)
+                if step_ctx.generated_tasks:
+                    phase.task_generation.generated_tasks = step_ctx.generated_tasks
+                if step_ctx.tool_output is not None:
+                    phase.task_generation.tool_output = step_ctx.tool_output
+                if step_ctx.task_description:
+                    phase.task_generation.current_task_description = step_ctx.task_description
+            
+            self._context.current_sub_step = None
+            self._context.llm_call_storage = None
+    
+    @contextmanager
+    def trace_document_selection_step(self) -> Generator['DocumentSelectionContext', None, None]:
+        """Context manager for tracing document selection steps
+        
+        Usage:
+            with tracer.trace_document_selection_step() as step_ctx:
+                # do document selection work
+                docs = find_candidate_documents()
+                selected = select_document(docs)
+                loaded = load_document(selected)
+                step_ctx.set_result(
+                    candidate_docs=docs,
+                    selected_doc=selected,
+                    loaded_doc=loaded
+                )
+        """
+        if not self.enabled:
+            yield DocumentSelectionContext()
+            return
+        
+        # Start document selection step (inline logic from start_document_selection)
+        if self._context.current_phase != "sop_resolution":
+            yield DocumentSelectionContext()
+            return
+            
+        phase = self.current_task_execution.phases.get("sop_resolution")
+        if not phase:
+            yield DocumentSelectionContext()
+            return
+            
+        # Initialize the sub-step
+        phase.document_selection = DocumentSelection(start_time=self._current_time())
+        self._context.current_sub_step = "document_selection"
+        self._context.llm_call_storage = lambda call: setattr(phase.document_selection, 'validation_call', call)
+        
+        step_ctx = DocumentSelectionContext()
+        exception = None
+        try:
+            yield step_ctx
+        except Exception as e:
+            exception = e
+            raise
+        finally:
+            # End document selection step (inline logic from end_document_selection)
+            if phase and phase.document_selection:
+                phase.document_selection.end_time = self._current_time()
+                phase.document_selection.status = ExecutionStatus.FAILED if exception else ExecutionStatus.COMPLETED
+                if exception:
+                    phase.document_selection.error = str(exception)
+                if step_ctx.candidate_docs:
+                    phase.document_selection.candidate_documents = step_ctx.candidate_docs
+                if step_ctx.selected_doc:
+                    phase.document_selection.selected_doc_id = step_ctx.selected_doc
+                if step_ctx.loaded_doc:
+                    phase.document_selection.loaded_document = step_ctx.loaded_doc
+            
+            self._context.current_sub_step = None
+            self._context.llm_call_storage = None
+    
+    @contextmanager
+    def trace_input_field_extraction_step(self, field_name: str, description: str) -> Generator['InputFieldExtractionContext', None, None]:
+        """Context manager for tracing input field extraction steps
+        
+        Usage:
+            with tracer.trace_input_field_extraction_step('field_name', 'description') as step_ctx:
+                # do field extraction work
+                code = generate_extraction_code()
+                value = extract_value(code)
+                path = generate_path()
+                step_ctx.set_result(
+                    generated_code=code,
+                    extracted_value=value,
+                    generated_path=path
+                )
+        """
+        if not self.enabled:
+            yield InputFieldExtractionContext(field_name, description)
+            return
+        
+        # Start input field extraction step (inline logic from start_input_field_extraction)
+        if self._context.current_phase != "task_creation":
+            yield InputFieldExtractionContext(field_name, description)
+            return
+            
+        phase = self.current_task_execution.phases.get("task_creation")
+        if not phase:
+            yield InputFieldExtractionContext(field_name, description)
+            return
+            
+        # Initialize the sub-step
+        extraction = InputFieldExtraction(
+            field_name=field_name,
+            description=description,
+            start_time=self._current_time()
+        )
+        phase.input_field_extractions[field_name] = extraction
+        self._context.current_sub_step = "input_field_extraction"
+        self._context.current_field_name = field_name
+        
+        # Set up storage callback that routes to appropriate LLM call field
+        def store_llm_call(call: LLMCall):
+            if not extraction.context_analysis_call:
+                extraction.context_analysis_call = call
+            else:
+                extraction.extraction_code_generation_call = call
+        
+        self._context.llm_call_storage = store_llm_call
+        
+        step_ctx = InputFieldExtractionContext(field_name, description)
+        exception = None
+        try:
+            yield step_ctx
+        except Exception as e:
+            exception = e
+            raise
+        finally:
+            # End input field extraction step (inline logic from end_input_field_extraction)
+            if phase and extraction:
+                extraction.end_time = self._current_time()
+                extraction.status = ExecutionStatus.FAILED if exception else ExecutionStatus.COMPLETED
+                if exception:
+                    extraction.error = str(exception)
+                if step_ctx.generated_code:
+                    extraction.generated_extraction_code = step_ctx.generated_code
+                if step_ctx.extracted_value is not None:
+                    extraction.extracted_value = step_ctx.extracted_value
+                if step_ctx.generated_path:
+                    extraction.generated_path = step_ctx.generated_path
+                if step_ctx.candidate_fields:
+                    extraction.candidate_fields = step_ctx.candidate_fields
+            
+            self._context.current_sub_step = None
+            self._context.current_field_name = None
+            self._context.llm_call_storage = None
+    
+    @contextmanager
+    def trace_output_path_generation_step(self) -> Generator['OutputPathGenerationContext', None, None]:
+        """Context manager for tracing output path generation steps
+        
+        Usage:
+            with tracer.trace_output_path_generation_step() as step_ctx:
+                # do path generation work
+                path = generate_output_path()
+                prefixed = add_prefix(path)
+                step_ctx.set_result(
+                    generated_path=path,
+                    prefixed_path=prefixed
+                )
+        """
+        if not self.enabled:
+            yield OutputPathGenerationContext()
+            return
+        
+        # Start output path generation step (inline logic from start_output_path_generation)
+        current_time = self._current_time()
+        output_gen = None
+        
+        assert(self._context.current_phase == "context_update")
+
+        phase = self.current_task_execution.phases.get("context_update")
+        assert(phase is not None)
+
+        phase.output_path_generation = OutputPathGeneration(start_time=current_time)
+        output_gen = phase.output_path_generation
+        self._context.current_sub_step = "output_path_generation"
+        self._context.llm_call_storage = lambda call: setattr(phase.output_path_generation, 'path_generation_call', call)
+
+        assert(output_gen is not None)
+        
+        step_ctx = OutputPathGenerationContext()
+        exception = None
+        try:
+            yield step_ctx
+        except Exception as e:
+            exception = e
+            raise
+        finally:
+            # End output path generation step (inline logic from end_output_path_generation)
+            if output_gen:
+                output_gen.end_time = self._current_time()
+                output_gen.status = ExecutionStatus.FAILED if exception else ExecutionStatus.COMPLETED
+                if exception:
+                    output_gen.error = str(exception)
+                if step_ctx.generated_path:
+                    output_gen.generated_path = step_ctx.generated_path
+                if step_ctx.prefixed_path:
+                    output_gen.prefixed_path = step_ctx.prefixed_path
+            
+            self._context.current_sub_step = None
+            self._context.llm_call_storage = None
+    
     def _save_session(self) -> str:
         """Save session data to JSON file"""
         if not self.session:
@@ -682,6 +815,93 @@ class ExecutionTracer:
             json.dump(session_dict, f, ensure_ascii=False, indent=2)
         
         return self.current_session_file
+
+
+class PhaseContext:
+    """Helper class to collect phase data for context manager"""
+    def __init__(self):
+        self.data = {}
+    
+    def set_data(self, data: Dict[str, Any]):
+        """Set the phase data to be passed to end_phase"""
+        self.data = data
+    
+    def update_data(self, data: Dict[str, Any]):
+        """Update the phase data"""
+        self.data.update(data)
+
+
+class NewTaskGenerationContext:
+    """Helper class to collect new task generation step data for context manager"""
+    def __init__(self):
+        self.generated_tasks: Optional[List[str]] = None
+        self.tool_output: Any = None
+        self.task_description: Optional[str] = None
+    
+    def set_result(self, generated_tasks: List[str] = None, tool_output: Any = None, 
+                   task_description: str = None):
+        """Set the task generation results"""
+        if generated_tasks is not None:
+            self.generated_tasks = generated_tasks
+        if tool_output is not None:
+            self.tool_output = tool_output
+        if task_description is not None:
+            self.task_description = task_description
+
+
+class DocumentSelectionContext:
+    """Helper class to collect document selection step data for context manager"""
+    def __init__(self):
+        self.candidate_docs: Optional[List[str]] = None
+        self.selected_doc: Optional[str] = None
+        self.loaded_doc: Optional[Dict[str, Any]] = None
+    
+    def set_result(self, candidate_docs: List[str] = None, selected_doc: str = None, 
+                   loaded_doc: Dict[str, Any] = None):
+        """Set the document selection results"""
+        if candidate_docs is not None:
+            self.candidate_docs = candidate_docs
+        if selected_doc is not None:
+            self.selected_doc = selected_doc
+        if loaded_doc is not None:
+            self.loaded_doc = loaded_doc
+
+
+class InputFieldExtractionContext:
+    """Helper class to collect input field extraction step data for context manager"""
+    def __init__(self, field_name: str, description: str):
+        self.field_name = field_name
+        self.description = description
+        self.generated_code: Optional[str] = None
+        self.extracted_value: Any = None
+        self.generated_path: Optional[str] = None
+        self.candidate_fields: Optional[Dict[str, Any]] = None
+    
+    def set_result(self, generated_code: str = None, extracted_value: Any = None,
+                   generated_path: str = None, candidate_fields: Dict[str, Any] = None):
+        """Set the input field extraction results"""
+        if generated_code is not None:
+            self.generated_code = generated_code
+        if extracted_value is not None:
+            self.extracted_value = extracted_value
+        if generated_path is not None:
+            self.generated_path = generated_path
+        if candidate_fields is not None:
+            self.candidate_fields = candidate_fields
+
+
+class OutputPathGenerationContext:
+    """Helper class to collect output path generation step data for context manager"""
+    def __init__(self):
+        self.generated_path: Optional[str] = None
+        self.prefixed_path: Optional[str] = None
+    
+    def set_result(self, generated_path: str = None, prefixed_path: str = None):
+        """Set the output path generation results"""
+        if generated_path is not None:
+            self.generated_path = generated_path
+        if prefixed_path is not None:
+            self.prefixed_path = prefixed_path
 
 
 class StateReconstructor:

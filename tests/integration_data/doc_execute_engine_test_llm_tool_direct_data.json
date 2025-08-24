@@ -1,16 +1,19 @@
 {
   "test_name": "doc_execute_engine_test_llm_tool_direct",
   "mode": "real",
-  "timestamp": "2025-08-21T15:47:18.657776",
+  "timestamp": "2025-08-25T14:54:37.032941",
   "tool_calls": [
     {
       "tool_id": "LLM",
       "parameters": {
         "prompt": "Generate a simple Python function that adds two numbers"
       },
-      "output": "Sure! Here's a simple Python function that takes two numbers as input and returns their sum:\n\n```python\ndef add_numbers(a, b):\n    \"\"\"\n    This function takes two numbers and returns their sum.\n    \"\"\"\n    return a + b\n\n# Example usage:\nresult = add_numbers(5, 3)\nprint(\"The sum is:\", result)\n```\n\nThis function is straightforward and can be used to add any two numbers passed as arguments.",
-      "timestamp": "2025-08-21T15:47:18.654585",
-      "execution_time_ms": 3994.8138870004186,
+      "output": {
+        "content": "Here's a simple Python function that adds two numbers:\n\n```python\ndef add_numbers(a, b):\n    \"\"\"\n    Adds two numbers and returns the result.\n    \n    Args:\n        a: First number\n        b: Second number\n    \n    Returns:\n        The sum of a and b\n    \"\"\"\n    return a + b\n\n# Example usage:\nresult = add_numbers(5, 3)\nprint(result)  # Output: 8\n\n# Works with different number types\nprint(add_numbers(2.5, 1.7))  # Output: 4.2\nprint(add_numbers(-10, 15))   # Output: 5\n```\n\nThis function:\n- Takes two parameters `a` and `b`\n- Returns their sum using the `+` operator\n- Works with integers, floats, and even negative numbers\n- Includes a docstring explaining what the function does",
+        "tool_calls": []
+      },
+      "timestamp": "2025-08-25T14:54:37.029869",
+      "execution_time_ms": 7244.522866996704,
       "parameters_hash": "10dc17b9bb71a431"
     }
   ],
@@ -20,5 +23,5 @@
       "LLM"
     ]
   },
-  "saved_at": "2025-08-21T15:47:18.658007"
+  "saved_at": "2025-08-25T14:54:37.033092"
 }
