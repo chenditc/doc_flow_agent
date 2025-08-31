@@ -1,6 +1,7 @@
 import React from 'react';
 import type { TaskCreationPhase } from '../../types/trace';
 import { InputFieldExtractionViewer } from './InputFieldExtractionViewer';
+import { BatchInputFieldExtractionViewer } from './BatchInputFieldExtractionViewer';
 import { InfoIconWithTooltip } from '../common/Tooltip';
 
 interface TaskCreationPhaseViewerProps {
@@ -13,6 +14,7 @@ export const TaskCreationPhaseViewer: React.FC<TaskCreationPhaseViewerProps> = (
   const { 
     sop_document, 
     input_field_extractions, 
+    batch_input_field_extraction,
     created_task, 
     error 
   } = phaseData;
@@ -78,7 +80,26 @@ export const TaskCreationPhaseViewer: React.FC<TaskCreationPhaseViewerProps> = (
         </div>
       )}
 
-      {/* Input Field Extraction */}
+      {/* Batch Input Field Extraction */}
+      {batch_input_field_extraction && (
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
+            <svg className="h-5 w-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+            </svg>
+            <h4 className="text-lg font-medium text-gray-900">
+              Batch Input Field Extraction
+            </h4>
+            <InfoIconWithTooltip 
+              tooltip="Batch extraction processes all input fields simultaneously using LLM tool schema, providing better efficiency and consistency than individual field extraction."
+            />
+          </div>
+          
+          <BatchInputFieldExtractionViewer batchExtraction={batch_input_field_extraction} />
+        </div>
+      )}
+
+      {/* Individual Input Field Extraction (Legacy) */}
       {input_field_extractions && Object.keys(input_field_extractions).length > 0 && (
         <div className="space-y-4">
           <div className="flex items-center gap-2">
@@ -86,10 +107,16 @@ export const TaskCreationPhaseViewer: React.FC<TaskCreationPhaseViewerProps> = (
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
             </svg>
             <h4 className="text-lg font-medium text-gray-900">
-              Input Field Extraction ({Object.keys(input_field_extractions).length} fields)
+              Individual Input Field Extraction ({Object.keys(input_field_extractions).length} fields)
+              {batch_input_field_extraction && (
+                <span className="ml-2 text-sm text-gray-500 font-normal">(Legacy Method)</span>
+              )}
             </h4>
             <InfoIconWithTooltip 
-              tooltip="This phase extracts input values from context and creates an executable task based on the selected SOP document."
+              tooltip={batch_input_field_extraction 
+                ? "This is the legacy individual field extraction method, replaced by the more efficient batch extraction approach."
+                : "This phase extracts input values from context and creates an executable task based on the selected SOP document."
+              }
             />
           </div>
           

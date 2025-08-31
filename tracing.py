@@ -72,6 +72,26 @@ class InputFieldExtraction:
 
 
 @dataclass
+class BatchInputFieldExtraction:
+    """Container for batch input field extraction process using LLM tool schema"""
+    input_descriptions: Dict[str, str]
+    start_time: str
+    end_time: Optional[str] = None
+    status: ExecutionStatus = ExecutionStatus.STARTED
+    
+    # LLM calls in the batch extraction process
+    context_analysis_call: Optional[LLMCall] = None
+    batch_extraction_call: Optional[LLMCall] = None
+    
+    # Results
+    candidate_fields: Dict[str, Any] = field(default_factory=dict)
+    tool_schema: Optional[Dict[str, Any]] = None
+    extracted_values: Dict[str, str] = field(default_factory=dict)  # field_name -> extracted_value
+    generated_paths: Dict[str, str] = field(default_factory=dict)   # field_name -> json_path
+    error: Optional[str] = None
+
+
+@dataclass
 class OutputPathGeneration:
     """Container for output path generation process"""
     start_time: str
@@ -156,6 +176,7 @@ class TaskCreationPhase:
     
     # Sub-step containers
     input_field_extractions: Dict[str, InputFieldExtraction] = field(default_factory=dict)
+    batch_input_field_extraction: Optional[BatchInputFieldExtraction] = None
     output_path_generation: Optional[OutputPathGeneration] = None
     
     created_task: Optional[Dict[str, Any]] = None
@@ -174,6 +195,8 @@ class TaskExecutionPhase:
     
     # Sub-step containers
     output_path_generation: Optional[OutputPathGeneration] = None
+    # Capture any nested LLM calls that happen during the tool execution
+    llm_calls: List[LLMCall] = field(default_factory=list)
     
     generated_path: Optional[str] = None
     prefixed_path: Optional[str] = None
@@ -484,6 +507,112 @@ class ExecutionTracer:
         return filename
     
     @contextmanager
+    def trace_task_execution(self, task_description: str, engine_state_provider: Optional[Callable[[], Dict[str, Any]]] = None) -> Generator['TaskExecutionContext', None, None]:
+        """Context manager for tracing a full task execution lifecycle.
+
+        Automatically starts a task execution on enter and ends it on exit.
+        Status is inferred (COMPLETED/FAILED) unless explicitly overridden via context.set_status.
+
+        Args:
+            task_description: Description of the task being executed
+            engine_state_provider: Callable to fetch the current engine state; called at enter and exit
+        """
+        if not self.enabled:
+            yield TaskExecutionContext()
+            return
+
+        # Compute engine state before and start execution
+        engine_state_before = engine_state_provider() if engine_state_provider else {}
+        self.start_task_execution(task_description, engine_state_before)
+
+        ctx = TaskExecutionContext()
+        exception: Optional[Exception] = None
+        try:
+            yield ctx
+        except Exception as e:
+            exception = e
+            raise
+        finally:
+            # Determine status/error: prefer explicitly set status else infer from exception
+            if ctx._status is not None:
+                status = ctx._status
+                err = ctx._error
+            else:
+                status = ExecutionStatus.FAILED if exception else ExecutionStatus.COMPLETED
+                err = exception
+
+            engine_state_after = engine_state_provider() if engine_state_provider else {}
+            self.end_task_execution(engine_state_after, status, err)
+
+    @contextmanager
+    def trace_session(self, initial_task: Optional[str] = None, engine_state_provider: Optional[Callable[[], Dict[str, Any]]] = None) -> Generator['SessionContext', None, None]:
+        """Context manager for tracing an execution session with automatic start/end and snapshots.
+
+        On enter: starts a session and captures a "start" engine snapshot if provider is supplied.
+        On normal exit: captures an "end" snapshot and ends the session (COMPLETED by default, override with ctx.set_status).
+        On exception: captures an "error" snapshot and ends the session as FAILED, then re-raises.
+        """
+        if not self.enabled:
+            yield SessionContext()
+            return
+
+        # Start session
+        self.start_session(initial_task)
+
+        # Optional start snapshot
+        if engine_state_provider:
+            try:
+                state = engine_state_provider() or {}
+                self.capture_engine_state(
+                    "start",
+                    state.get("task_stack", []),
+                    state.get("context", {}),
+                    state.get("task_execution_counter", 0),
+                )
+            except Exception as e:
+                # Snapshot failures shouldn't crash; log and continue
+                print(f"[TRACER] Warning: failed to capture start snapshot: {e}")
+
+        ctx = SessionContext()
+        exception: Optional[Exception] = None
+        try:
+            yield ctx
+        except Exception as e:
+            exception = e
+            # Optional error snapshot
+            if engine_state_provider:
+                try:
+                    state = engine_state_provider() or {}
+                    self.capture_engine_state(
+                        "error",
+                        state.get("task_stack", []),
+                        state.get("context", {}),
+                        state.get("task_execution_counter", 0),
+                    )
+                except Exception as snap_err:
+                    print(f"[TRACER] Warning: failed to capture error snapshot: {snap_err}")
+            # End session as failed
+            self.end_session(ExecutionStatus.FAILED)
+            raise
+        finally:
+            if exception is None:
+                # Optional end snapshot
+                if engine_state_provider:
+                    try:
+                        state = engine_state_provider() or {}
+                        self.capture_engine_state(
+                            "end",
+                            state.get("task_stack", []),
+                            state.get("context", {}),
+                            state.get("task_execution_counter", 0),
+                        )
+                    except Exception as e:
+                        print(f"[TRACER] Warning: failed to capture end snapshot: {e}")
+                # Respect explicit status, default to COMPLETED
+                final_status = ctx._status or ExecutionStatus.COMPLETED
+                self.end_session(final_status)
+
+    @contextmanager
     def trace_phase(self, phase_name: str) -> Generator[None, None, None]:
         """Context manager for tracing execution phases with automatic error handling
         
@@ -729,6 +858,81 @@ class ExecutionTracer:
             self._context.llm_call_storage = None
     
     @contextmanager
+    def batch_extract_input_field(self, input_descriptions: Dict[str, str]) -> Generator['BatchInputFieldExtractionContext', None, None]:
+        """Context manager for tracing batch input field extraction steps
+        
+        Usage:
+            with tracer.batch_extract_input_field(input_descriptions) as batch_ctx:
+                # do batch field extraction work
+                candidates = analyze_context_candidates()
+                schema = create_tool_schema()
+                values = extract_all_fields_with_llm()
+                paths = generate_paths()
+                batch_ctx.set_result(
+                    candidate_fields=candidates,
+                    tool_schema=schema,
+                    extracted_values=values,
+                    generated_paths=paths
+                )
+        """
+        if not self.enabled:
+            yield BatchInputFieldExtractionContext(input_descriptions)
+            return
+        
+        # Start batch input field extraction step
+        if self._context.current_phase != "task_creation":
+            yield BatchInputFieldExtractionContext(input_descriptions)
+            return
+            
+        phase = self.current_task_execution.phases.get("task_creation")
+        if not phase:
+            yield BatchInputFieldExtractionContext(input_descriptions)
+            return
+            
+        # Initialize the sub-step
+        batch_extraction = BatchInputFieldExtraction(
+            input_descriptions=input_descriptions,
+            start_time=self._current_time()
+        )
+        phase.batch_input_field_extraction = batch_extraction
+        self._context.current_sub_step = "batch_input_field_extraction"
+        
+        # Set up storage callback that routes to appropriate LLM call field
+        def store_llm_call(call: LLMCall):
+            if not batch_extraction.context_analysis_call:
+                batch_extraction.context_analysis_call = call
+            else:
+                batch_extraction.batch_extraction_call = call
+        
+        self._context.llm_call_storage = store_llm_call
+        
+        step_ctx = BatchInputFieldExtractionContext(input_descriptions)
+        exception = None
+        try:
+            yield step_ctx
+        except Exception as e:
+            exception = e
+            raise
+        finally:
+            # End batch input field extraction step
+            if phase and batch_extraction:
+                batch_extraction.end_time = self._current_time()
+                batch_extraction.status = ExecutionStatus.FAILED if exception else ExecutionStatus.COMPLETED
+                if exception:
+                    batch_extraction.error = str(exception)
+                if step_ctx.candidate_fields:
+                    batch_extraction.candidate_fields = step_ctx.candidate_fields
+                if step_ctx.tool_schema:
+                    batch_extraction.tool_schema = step_ctx.tool_schema
+                if step_ctx.extracted_values:
+                    batch_extraction.extracted_values = step_ctx.extracted_values
+                if step_ctx.generated_paths:
+                    batch_extraction.generated_paths = step_ctx.generated_paths
+            
+            self._context.current_sub_step = None
+            self._context.llm_call_storage = None
+    
+    @contextmanager
     def trace_output_path_generation_step(self) -> Generator['OutputPathGenerationContext', None, None]:
         """Context manager for tracing output path generation steps
         
@@ -781,6 +985,43 @@ class ExecutionTracer:
                 if step_ctx.prefixed_path:
                     output_gen.prefixed_path = step_ctx.prefixed_path
             
+            self._context.current_sub_step = None
+            self._context.llm_call_storage = None
+
+    @contextmanager
+    def trace_tool_execution_step(self) -> Generator['ToolExecutionContext', None, None]:
+        """Context manager to capture LLM calls that occur during tool execution.
+
+        Use this within the task_execution phase around the actual tool invocation so that
+        any LLM calls made by the tool (or nested tools) are recorded under the current
+        TaskExecutionPhase.
+
+        Usage:
+            with tracer.trace_tool_execution_step():
+                output = await tool.execute(params)
+        """
+        if not self.enabled:
+            yield ToolExecutionContext()
+            return
+
+        # Only active during task_execution phase
+        if self._context.current_phase != "task_execution":
+            yield ToolExecutionContext()
+            return
+
+        phase = self.current_task_execution.phases.get("task_execution")
+        if not isinstance(phase, TaskExecutionPhase):
+            yield ToolExecutionContext()
+            return
+
+        # Set up storage to append any LLM calls to the phase.llm_calls list
+        self._context.current_sub_step = "tool_execution"
+        self._context.llm_call_storage = lambda call: phase.llm_calls.append(call)
+
+        step_ctx = ToolExecutionContext()
+        try:
+            yield step_ctx
+        finally:
             self._context.current_sub_step = None
             self._context.llm_call_storage = None
     
@@ -890,6 +1131,28 @@ class InputFieldExtractionContext:
             self.candidate_fields = candidate_fields
 
 
+class BatchInputFieldExtractionContext:
+    """Helper class to collect batch input field extraction step data for context manager"""
+    def __init__(self, input_descriptions: Dict[str, str]):
+        self.input_descriptions = input_descriptions
+        self.candidate_fields: Optional[Dict[str, Any]] = None
+        self.tool_schema: Optional[Dict[str, Any]] = None
+        self.extracted_values: Optional[Dict[str, str]] = None
+        self.generated_paths: Optional[Dict[str, str]] = None
+    
+    def set_result(self, candidate_fields: Dict[str, Any] = None, tool_schema: Dict[str, Any] = None,
+                   extracted_values: Dict[str, str] = None, generated_paths: Dict[str, str] = None):
+        """Set the batch input field extraction results"""
+        if candidate_fields is not None:
+            self.candidate_fields = candidate_fields
+        if tool_schema is not None:
+            self.tool_schema = tool_schema
+        if extracted_values is not None:
+            self.extracted_values = extracted_values
+        if generated_paths is not None:
+            self.generated_paths = generated_paths
+
+
 class OutputPathGenerationContext:
     """Helper class to collect output path generation step data for context manager"""
     def __init__(self):
@@ -902,6 +1165,41 @@ class OutputPathGenerationContext:
             self.generated_path = generated_path
         if prefixed_path is not None:
             self.prefixed_path = prefixed_path
+
+
+class ToolExecutionContext:
+    """Helper context for tool execution tracing.
+
+    Currently a placeholder in case we want to attach extra metadata later.
+    """
+    def __init__(self):
+        pass
+
+
+class TaskExecutionContext:
+    """Helper to control the final status of a task within trace_task_execution.
+
+    If not set explicitly, status is inferred based on exception presence.
+    """
+    def __init__(self):
+        self._status: Optional[ExecutionStatus] = None
+        self._error: Optional[Exception] = None
+
+    def set_status(self, status: ExecutionStatus, error: Exception = None):
+        self._status = status
+        self._error = error
+
+
+class SessionContext:
+    """Helper to choose final session status within trace_session.
+
+    If not set explicitly, status defaults to COMPLETED unless an exception occurs.
+    """
+    def __init__(self):
+        self._status: Optional[ExecutionStatus] = None
+
+    def set_status(self, status: ExecutionStatus):
+        self._status = status
 
 
 class StateReconstructor:

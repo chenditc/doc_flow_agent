@@ -1,0 +1,166 @@
+import json
+import subprocess
+import uuid
+from typing import Any, Dict
+import os
+
+from dotenv import load_dotenv
+from tools.base_tool import BaseTool
+from tools.llm_tool import LLMTool
+
+# Load environment variables from .env file
+load_dotenv()
+
+
+class PythonExecutorTool(BaseTool):
+    def __init__(self, llm_tool: LLMTool):
+        super().__init__("PYTHON_EXECUTOR")
+        self.llm_tool = llm_tool
+
+    async def execute(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        task_description = parameters.get("task_description")
+        related_context_content = parameters.get("related_context_content", {})
+
+        # Create tool schema for Python code generation
+        tool_schema = self._create_python_code_tool_schema()
+
+        prompt = f"""
+You are a Python code generation assistant.
+Your task is to write a single Python function named `process_step` that takes one argument: `context: dict`.
+This function will be executed to perform following specific task. Import necessary library if you used any.
+The context object will contain all the necessary data. The json serialized context object has been attached here for you to understand the input data structure.
+The function should return a JSON-serializable value.
+
+<Task Description>
+{task_description}
+</Task Description>
+
+<Json serialized context object>
+{json.dumps(related_context_content, indent=2, ensure_ascii=False)}
+</Json serialized context object>
+"""
+
+        llm_params = {
+            "prompt": prompt,
+            "temperature": 0.0,
+            "tools": [tool_schema]
+        }
+        response = await self.llm_tool.execute(llm_params)
+        
+        # Extract generated code from tool call response
+        generated_code = self._extract_python_code_from_response(response)
+
+        # Ensure the generated code is a string
+        if not isinstance(generated_code, str):
+            generated_code = str(generated_code)
+
+        # Prepare for subprocess
+        run_id = uuid.uuid4()
+        context_file = f"/tmp/context_{run_id}.json"
+        code_file = f"/tmp/code_{run_id}.py"
+        output_file = f"/tmp/result_{run_id}.json"
+
+        with open(context_file, "w") as f:
+            json.dump(related_context_content, f)
+
+        with open(code_file, "w") as f:
+            f.write(generated_code)
+
+        try:
+            # Run subprocess
+            command = [
+                "python",
+                "tools/executor_runner.py",
+                "--code-file",
+                code_file,
+                "--context-file",
+                context_file,
+                "--output-file",
+                output_file,
+            ]
+            process = subprocess.run(
+                command, capture_output=True, text=True, check=False
+            )
+
+            # Process results
+            if os.path.exists(output_file):
+                with open(output_file, "r") as f:
+                    result_data = json.load(f)
+            else:
+                result_data = {"return_value": None, "exception": "Output file not found."}
+
+            return_value = result_data.get("return_value")
+            exception_details = result_data.get("exception")
+
+        finally:
+            # Clean up temporary files
+            for file_path in [context_file, code_file, output_file]:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+
+        return {
+            "generated_code": generated_code,
+            "return_value": return_value,
+            "stdout": process.stdout,
+            "stderr": process.stderr,
+            "exception": exception_details,
+        }
+
+    def _create_python_code_tool_schema(self) -> Dict[str, Any]:
+        """Create tool schema for Python code generation
+        
+        Returns:
+            Tool schema dictionary for use with LLMTool
+        """
+        tool_schema = {
+            "type": "function",
+            "function": {
+                "name": "generate_python_code",
+                "description": "Generate Python code for the process_step function",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "python_code": {
+                            "type": "string",
+                            "description": "Complete Python function definition for process_step(context: dict) that performs the requested task"
+                        }
+                    },
+                    "required": ["python_code"]
+                }
+            }
+        }
+        
+        return tool_schema
+
+    def _extract_python_code_from_response(self, response) -> str:
+        """Extract Python code from LLM response with tool calls
+        
+        Args:
+            response: LLM response containing tool calls
+            
+        Returns:
+            Generated Python code as string
+        """
+        # Handle both string response (legacy) and tool call response
+        if isinstance(response, str):
+            return response
+            
+        # Extract tool calls from response
+        tool_calls = response.get("tool_calls", [])
+        if not tool_calls:
+            # Fallback to direct response if no tool calls
+            return str(response)
+        
+        # Get the first (and should be only) tool call
+        tool_call = tool_calls[0]
+        if tool_call.get("name") != "generate_python_code":
+            raise ValueError(f"Unexpected tool call: {tool_call.get('name')}")
+        
+        # Extract arguments
+        arguments = tool_call.get("arguments", {})
+        python_code = arguments.get("python_code", "")
+        
+        if not python_code:
+            raise ValueError("No Python code generated by LLM")
+            
+        return python_code

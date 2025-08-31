@@ -21,6 +21,7 @@ from integration_test_framework import IntegrationTestBase, IntegrationTestMode,
 from tools.llm_tool import LLMTool
 from tools.cli_tool import CLITool
 from tools.user_communicate_tool import UserCommunicateTool
+from tools.python_executor_tool import PythonExecutorTool
 from doc_execute_engine import DocExecuteEngine, Task
 from sop_document import SOPDocument
 from exceptions import TaskInputMissingError, TaskCreationError
@@ -48,6 +49,7 @@ class TestDocExecuteEngineIntegration:
         self.llm_tool = self.integration_test.wrap_tool(LLMTool())
         self.cli_tool = self.integration_test.wrap_tool(CLITool())
         self.user_tool = self.integration_test.wrap_tool(UserCommunicateTool())
+        self.python_tool = self.integration_test.wrap_tool(PythonExecutorTool(llm_tool=self.llm_tool))
         
         # Create temporary directories for test
         self.temp_dir = Path(tempfile.mkdtemp())
@@ -72,12 +74,13 @@ class TestDocExecuteEngineIntegration:
         self.engine.tools = {
             "LLM": self.llm_tool,
             "CLI": self.cli_tool,
-            "USER_COMMUNICATE": self.user_tool
+            "USER_COMMUNICATE": self.user_tool,
+            "PYTHON_EXECUTOR": self.python_tool
         }
         
         # Recreate JsonPathGenerator with the wrapped LLM tool
-        from tools.json_path_generator import JsonPathGenerator
-        self.engine.json_path_generator = JsonPathGenerator(self.llm_tool)
+        from tools.json_path_generator import OnebyOneJsonPathGenerator
+        self.engine.json_path_generator = OnebyOneJsonPathGenerator(self.llm_tool)
         
         # Recreate SOPDocumentParser with the wrapped LLM tool
         from sop_document import SOPDocumentParser
@@ -136,7 +139,7 @@ class TestDocExecuteEngineIntegration:
         """Test tool registration and get_available_tools functionality"""
         # Test initial tools
         available_tools = self.engine.get_available_tools()
-        expected_tools = {"LLM", "CLI", "USER_COMMUNICATE"}
+        expected_tools = {"LLM", "CLI", "USER_COMMUNICATE", "PYTHON_EXECUTOR"}
         assert set(available_tools.keys()) == expected_tools
         
         # Test tool registration

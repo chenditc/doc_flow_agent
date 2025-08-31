@@ -17,6 +17,7 @@ from integration_test_framework import IntegrationTestBase, IntegrationTestMode,
 from tools.llm_tool import LLMTool
 from tools.cli_tool import CLITool
 from tools.user_communicate_tool import UserCommunicateTool
+from tools.python_executor_tool import PythonExecutorTool
 from doc_execute_engine import DocExecuteEngine
 from sop_document import SOPDocumentParser
 
@@ -42,6 +43,7 @@ class TestDocExecuteEngineIntegration:
         self.llm_tool = self.integration_test.wrap_tool(LLMTool())
         self.cli_tool = self.integration_test.wrap_tool(CLITool())
         self.user_tool = self.integration_test.wrap_tool(UserCommunicateTool())
+        self.python_tool = self.integration_test.wrap_tool(PythonExecutorTool(llm_tool=self.llm_tool))
         
         # Create DocExecuteEngine with wrapped tools
         self.engine = DocExecuteEngine()
@@ -50,12 +52,13 @@ class TestDocExecuteEngineIntegration:
         self.engine.tools = {
             "LLM": self.llm_tool,
             "CLI": self.cli_tool,
-            "USER_COMMUNICATE": self.user_tool
+            "USER_COMMUNICATE": self.user_tool,
+            "PYTHON_EXECUTOR": self.python_tool
         }
         
         # Recreate JsonPathGenerator with the wrapped LLM tool
-        from tools.json_path_generator import JsonPathGenerator
-        self.engine.json_path_generator = JsonPathGenerator(self.llm_tool)
+        from tools.json_path_generator import SmartJsonPathGenerator
+        self.engine.json_path_generator = SmartJsonPathGenerator(self.llm_tool)
 
         # Inject SOP document parser
         self.engine.sop_parser = SOPDocumentParser(llm_tool=self.llm_tool, tracer=self.engine.tracer)
@@ -125,8 +128,7 @@ class TestDocExecuteEngineIntegration:
         
         # Verify response
         assert result is not None
-        if self.test_mode == IntegrationTestMode.REAL:
-            assert "Hello from CLI tool" in result
+        assert "Hello from CLI tool" in result["stdout"]
         
         print(f"✅ CLI tool test completed")
         print(f"   Result: {result}")

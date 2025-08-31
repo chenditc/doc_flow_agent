@@ -19,8 +19,8 @@ from exceptions import TaskInputMissingError
 from tools import LLMTool
 
 
-class JsonPathGenerator:
-    """Generate JSON paths for SOP documents using LLM"""
+class BaseJsonPathGenerator:
+    """Base class providing shared logic for JSON path generation using LLM"""
     
     def __init__(self, llm_tool=None, tracer=None):
         """Initialize JsonPathGenerator with an LLM tool instance and tracer
@@ -40,78 +40,7 @@ class JsonPathGenerator:
     
 
     
-    async def generate_input_json_paths(
-        self, 
-        input_descriptions: Dict[str, str], 
-        context: Dict[str, Any],
-        user_original_ask: str = ""
-    ) -> Dict[str, str]:
-        """Generate input JSON paths using multi-step process with content extraction
-        
-        Args:
-            input_descriptions: Dictionary of field_name -> description
-            context: Current context dictionary for analysis and extraction
-            user_original_ask: Original user request for context
-            
-        Returns:
-            Dictionary mapping field_name -> json_path, where content is extracted/generated 
-            and stored in temporary context keys for later use
-        """
-        if not input_descriptions:
-            return {}
-        
-        result_paths = {}
-        
-        # Process each input description through multi-step analysis
-        for field_name, description in input_descriptions.items():
-            # Use input field extraction tracing context manager (no-op if tracer disabled)
-            with self.tracer.trace_input_field_extraction_step(field_name, description) as input_ctx:
-                # Step 1: Analyze context for candidate fields
-                candidate_fields = await self._analyze_context_candidates(
-                    description, context, user_original_ask
-                )
-
-                # Make sure "current_task" is always included
-                if "current_task" not in candidate_fields:
-                    candidate_fields["current_task"] = context.get("current_task", "")
-                
-                # Step 2: Generate extraction code
-                extraction_code = await self._generate_extraction_code(
-                    description, candidate_fields, context, user_original_ask
-                )
-                
-                # Step 3: Execute code and store in temporary context
-                temp_key = f"_temp_input_{str(uuid.uuid4())}"
-                extracted_content = self._execute_extraction_code(extraction_code, context)
-                if extracted_content == "<NOT_FOUND_IN_CANDIDATES>":
-                    # Set error data in context (no-op if tracing disabled)
-                    error = TaskInputMissingError(field_name, description)
-                    input_ctx.set_result(
-                        candidate_fields=candidate_fields,
-                        generated_code=extraction_code
-                    )
-                    # Raise exception without recovery task - that's the engine's job
-                    raise TaskInputMissingError(field_name, description)
-                else:
-                    context[temp_key] = extracted_content
-                    # Create JSON path for the temporary key
-                    result_paths[field_name] = f"$.['{temp_key}']"
-
-                    print(f"[JSON_PATH_GEN] Generated input for '{field_name}': {extracted_content}")
-
-                    print("Current context after processing:")
-                    print(json.dumps(context, ensure_ascii=False, indent=2))
-                    
-                    # Set successful data in context (no-op if tracing disabled)
-                    input_ctx.set_result(
-                        candidate_fields=candidate_fields,
-                        generated_code=extraction_code,
-                        extracted_value=extracted_content,
-                        generated_path=f"$.['{temp_key}']"
-                    )
-        
-        print(f"[JSON_PATH_GEN] Generated input paths: {result_paths}")
-        return result_paths
+    # Intentionally left without generate_input_json_paths; implemented by subclasses
     
     async def generate_output_json_path(
         self, 
@@ -137,6 +66,9 @@ class JsonPathGenerator:
         # Generate context schema representation
         context_schema = self._generate_context_schema(context)
         
+        # Create tool schema for generating output path
+        tool_schema = self._create_output_path_tool_schema()
+        
         # Create prompt for LLM
         prompt = self._create_output_path_prompt(
             output_description, 
@@ -145,27 +77,25 @@ class JsonPathGenerator:
             tool_output
         )
         
-        # Call LLM
+        # Call LLM with tool schema
         response = await self.llm_tool.execute({
-            "prompt": prompt
+            "prompt": prompt,
+            "tools": [tool_schema]
         })
         
-        # Extract content from new response format
-        response_content = response["content"]
+        # Extract tool calls from response
+        tool_calls = response.get("tool_calls", [])
+        if not tool_calls or len(tool_calls) == 0:
+            raise ValueError("LLM did not return any tool calls for output path generation")
         
-        # Extract the generated path
-        try:
-            if "```json" in response_content:
-                response_content = re.search(r'```json(.*?)```', response_content, re.DOTALL).group(1).strip()
-            path_data = json.loads(response_content)
-            path = path_data.get("output_path", "$.output")
-        except json.JSONDecodeError:
-            # If content is not JSON, try to extract path from text
-            content = response_content.strip()
-            if content.startswith("$.") or content.startswith("$["):
-                path = content
-            else:
-                raise ValueError("Invalid output path format for output json path extraction: {}".format(content))
+        # Get the first (and should be only) tool call
+        tool_call = tool_calls[0]
+        if tool_call.get("name") != "generate_output_path":
+            raise ValueError(f"Unexpected tool call: {tool_call.get('name')}")
+        
+        # Extract arguments
+        arguments = tool_call.get("arguments", {})
+        path = arguments.get("output_path", "$.output")
 
         print(f"[JSON_PATH_GEN] Generated output path: {path}")
         return path
@@ -191,6 +121,9 @@ class JsonPathGenerator:
 
         builder.add_object(context_to_builder)
         properties_str = builder.to_schema()["properties"]
+
+        # Remove all "required" field from 
+
         return json.dumps(properties_str, ensure_ascii=False, indent=2)
     
     async def _analyze_context_candidates(
@@ -210,7 +143,7 @@ class JsonPathGenerator:
             Dictionary of candidate field_name -> field_value pairs
         """
         # If the context length is not too large, just return all fields.
-        if len(str(context)) < 1000 and len(context) < 10:
+        if len(str(context)) < 10000 and len(context) < 10:
             return {f"$.['{key}']": value for key, value in context.items()}
 
         context_schema = self._generate_context_schema(context)
@@ -272,6 +205,120 @@ Analyze the current context to find fields that might contain information for th
                 candidates_objects[candidate] = None
         print(f"[JSON_PATH_GEN] Found candidates for '{input_description}': {candidates_objects}")
         return candidates_objects            
+
+
+    def _execute_extraction_code(self, code: str, context: Dict[str, Any]) -> Any:
+        """Step 3: Execute the generated extraction code
+        
+        Args:
+            code: Python code string to execute
+            context: Current context dictionary
+            
+        Returns:
+            Extracted content
+        """
+        try:
+            # TODO: use sandbox environment for safety
+            # Execute the code
+            namespace = {}
+            exec(code, namespace)
+            functions = {name: obj for name, obj in namespace.items() if callable(obj) and not name.startswith('__')}
+            if len(functions) != 1:
+                raise ValueError("Generated code did not produce a single extraction function")
+            extraction_func = functions.popitem()[1]
+            result = extraction_func(context)
+            
+            print(f"[JSON_PATH_GEN] Extracted content: {result}")
+            return result
+            
+        except Exception as e:
+            print(f"[JSON_PATH_GEN] Error executing extraction code: {e}")
+            print(f"[JSON_PATH_GEN] Code was: {code}")
+            # Fallback: return a default value
+            raise e
+
+    def cleanup_temp_inputs(self, context: Dict[str, Any]) -> None:
+        """Clean up temporary input keys from context
+        
+        Args:
+            context: Context dictionary to clean up
+        """
+        temp_keys = [key for key in context.keys() if key.startswith('_temp_input_')]
+        for key in temp_keys:
+            del context[key]
+        print(f"[JSON_PATH_GEN] Cleaned up {len(temp_keys)} temporary input keys")
+    
+    def _create_output_path_tool_schema(self) -> Dict[str, Any]:
+        """Create tool schema for generating output JSON path
+        
+        Returns:
+            Tool schema dictionary for use with LLMTool
+        """
+        tool_schema = {
+            "type": "function",
+            "function": {
+                "name": "generate_output_path",
+                "description": "Generate appropriate JSON path for storing tool output in context",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "output_path": {
+                            "type": "string",
+                            "description": "JSON path using JSONPath syntax (e.g., $.generated_outline_for_xxx_topic_blog, $.['action_plan_to_create_blog_for_xxx']). Should be semantically meaningful and discriminate within the context."
+                        }
+                    },
+                    "required": ["output_path"]
+                }
+            }
+        }
+        
+        return tool_schema
+    
+    def _create_output_path_prompt(
+        self, 
+        output_description: str, 
+        context_schema: str, 
+        user_original_ask: str,
+        tool_output: Any = ""
+    ) -> str:
+        """Create prompt for generating output JSON path"""
+        
+        tool_output_str = str(tool_output)
+        
+        return f"""## Task Description
+Given the following workspace context schema and output description, you MUST use the generate_output_path tool to return the appropriate output JSON path where the result should be stored.
+
+## User Original Request
+{user_original_ask}
+
+## Current Workspace Context Schema
+{context_schema}
+
+## Output Description
+{output_description}
+
+## Tool Output
+{tool_output_str}
+
+## Instructions
+1. Analyze the output description, user original request and tool output to determine the best field name in english snakecase style.
+2. Consider the existing context schema to avoid conflicts
+3. Return a JSON path using JSONPath syntax (e.g., "$.generated_outline_for_xxx_topic_blog", "$.['action_plan_to_create_blog_for_xxx']")
+4. The path should be semantically meaningful and discriminate within the context. If a similar path already exists, add more word to discriminate it.
+
+## Example 1
+
+If the output description is "The outcome of the current task and the remaining tasks", and the user original request is "Raise 5 questions about machine learning ".
+
+The output can be stored at the path "$.action_plan_for_raising_five_questions_about_machine_learning"
+
+or if the content already generated in the output, the output path might be "$.five_questions_about_machine_learning"
+
+## IMPORTANT: You MUST use the generate_output_path tool function call to provide your response. Do not put the path in your text response."""
+
+
+class OnebyOneJsonPathGenerator(BaseJsonPathGenerator):
+    """Generate JSON paths with a one-by-one, multi-step extraction process"""
 
     async def _generate_extraction_code(
         self, 
@@ -375,7 +422,7 @@ def extract_func(context):
             response_content = response["content"]
             
             # Print think process for debugging
-            print(f"[JSON_PATH_GEN] Think process for '{input_description}': {response_content}")
+            print(f"[JSON_PATH_GEN] Think process for '{input_description}': \n{response_content}")
             # Parse using regex to extract the code block
             code_match = re.search(r'```python\n(.*?)\n```', response_content, re.DOTALL)
             if code_match:
@@ -389,108 +436,283 @@ def extract_func(context):
             print(f"[JSON_PATH_GEN] Error generating extraction code: {e}")
             # Fallback: return lambda that returns description
             return f'lambda context: "{input_description}"'
+
+    async def generate_input_json_paths(
+        self,
+        input_descriptions: Dict[str, str],
+        context: Dict[str, Any],
+        user_original_ask: str = ""
+    ) -> Dict[str, str]:
+        """Generate input JSON paths using multi-step process with content extraction
+
+        Args:
+            input_descriptions: Dictionary of field_name -> description
+            context: Current context dictionary for analysis and extraction
+            user_original_ask: Original user request for context
+
+        Returns:
+            Dictionary mapping field_name -> json_path, where content is extracted/generated
+            and stored in temporary context keys for later use
+        """
+        if not input_descriptions:
+            return {}
+
+        result_paths = {}
+
+        # Process each input description through multi-step analysis
+        for field_name, description in input_descriptions.items():
+            # Use input field extraction tracing context manager (no-op if tracer disabled)
+            with self.tracer.trace_input_field_extraction_step(field_name, description) as input_ctx:
+                # Step 1: Analyze context for candidate fields
+                candidate_fields = await self._analyze_context_candidates(
+                    description, context, user_original_ask
+                )
+
+                # Make sure "current_task" is always included
+                if "current_task" not in candidate_fields:
+                    candidate_fields["current_task"] = context.get("current_task", "")
+
+                # Step 2: Generate extraction code
+                extraction_code = await self._generate_extraction_code(
+                    description, candidate_fields, context, user_original_ask
+                )
+
+                # Step 3: Execute code and store in temporary context
+                temp_key = f"_temp_input_{str(uuid.uuid4())}"
+                extracted_content = self._execute_extraction_code(extraction_code, context)
+                if extracted_content == "<NOT_FOUND_IN_CANDIDATES>":
+                    # Set error data in context (no-op if tracing disabled)
+                    input_ctx.set_result(
+                        candidate_fields=candidate_fields,
+                        generated_code=extraction_code
+                    )
+                    # Raise exception without recovery task - that's the engine's job
+                    raise TaskInputMissingError(field_name, description)
+                else:
+                    context[temp_key] = extracted_content
+                    # Create JSON path for the temporary key
+                    result_paths[field_name] = f"$.['{temp_key}']"
+
+                    print(f"[JSON_PATH_GEN] Generated input for '{field_name}': {extracted_content}")
+
+                    print("Current context after processing:")
+                    print(json.dumps(context, ensure_ascii=False, indent=2))
+
+                    # Set successful data in context (no-op if tracing disabled)
+                    input_ctx.set_result(
+                        candidate_fields=candidate_fields,
+                        generated_code=extraction_code,
+                        extracted_value=extracted_content,
+                        generated_path=f"$.['{temp_key}']"
+                    )
+
+        print(f"[JSON_PATH_GEN] Generated input paths: {result_paths}")
+        return result_paths
+
+
+class BatchJsonPathGenerator(BaseJsonPathGenerator):
+    """Simplified JSON Path Generator that extracts all input fields at once using LLM tool schema"""
     
-    def _execute_extraction_code(self, code: str, context: Dict[str, Any]) -> Any:
-        """Step 3: Execute the generated extraction code
+    async def generate_input_json_paths(
+        self, 
+        input_descriptions: Dict[str, str], 
+        context: Dict[str, Any],
+        user_original_ask: str = ""
+    ) -> Dict[str, str]:
+        """Generate input JSON paths using simplified single-step extraction with LLM tool schema
         
         Args:
-            code: Python code string to execute
-            context: Current context dictionary
+            input_descriptions: Dictionary of field_name -> description
+            context: Current context dictionary for analysis and extraction
+            user_original_ask: Original user request for context
             
         Returns:
-            Extracted content
+            Dictionary mapping field_name -> json_path, where content is extracted
+            and stored in temporary context keys for later use
         """
-        try:
-            # TODO: use sandbox environment for safety
-            # Execute the code
-            namespace = {}
-            exec(code, namespace)
-            functions = {name: obj for name, obj in namespace.items() if callable(obj) and not name.startswith('__')}
-            if len(functions) != 1:
-                raise ValueError("Generated code did not produce a single extraction function")
-            extraction_func = functions.popitem()[1]
-            result = extraction_func(context)
+        if not input_descriptions:
+            return {}
             
-            print(f"[JSON_PATH_GEN] Extracted content: {result}")
-            return result
+        result_paths = {}
+        
+        # Use batch extraction tracing context manager
+        with self.tracer.batch_extract_input_field(input_descriptions) as batch_ctx:
+            # Step 1: Analyze context for ALL candidate fields at once
+            # Get all field descriptions for context analysis
+            all_descriptions = "\n".join([f"- {field_name}: {description}" 
+                                        for field_name, description in input_descriptions.items()])
             
-        except Exception as e:
-            print(f"[JSON_PATH_GEN] Error executing extraction code: {e}")
-            print(f"[JSON_PATH_GEN] Code was: {code}")
-            # Fallback: return a default value
-            raise e
+            candidate_fields = await self._analyze_context_candidates(
+                all_descriptions, context, user_original_ask
+            )
+            
+            # Make sure "current_task" is always included
+            if "current_task" not in candidate_fields:
+                candidate_fields["current_task"] = context.get("current_task", "")
+            
+            # Step 2: Create tool schema for extracting all fields
+            tool_schema = self._create_extraction_tool_schema(input_descriptions)
+            
+            # Step 3: Use LLM tool to extract all fields at once
+            extracted_values = await self._extract_all_fields_with_llm(
+                input_descriptions, candidate_fields, user_original_ask, tool_schema
+            )
+            
+            # Step 4: Process results and create JSON paths
+            generated_paths = {}
+            for field_name, extracted_content in extracted_values.items():
+                if extracted_content == "<NOT_FOUND_IN_CANDIDATES>":
+                    # Record data for debugging and raise exception
+                    batch_ctx.set_result(
+                        candidate_fields=candidate_fields,
+                        tool_schema=tool_schema,
+                        extracted_values=extracted_values
+                    )
+                    raise TaskInputMissingError(field_name, input_descriptions[field_name])
+                else:
+                    # Create temporary key and store content
+                    temp_key = f"_temp_input_{str(uuid.uuid4())}"
+                    context[temp_key] = extracted_content
+                    json_path = f"$.['{temp_key}']"
+                    result_paths[field_name] = json_path
+                    generated_paths[field_name] = json_path
 
-    def cleanup_temp_inputs(self, context: Dict[str, Any]) -> None:
-        """Clean up temporary input keys from context
+                    print(f"[SIMPLE_JSON_PATH_GEN] Generated input for '{field_name}': {extracted_content}")
+            
+            # Set successful data in tracer context (no-op if tracer disabled)
+            batch_ctx.set_result(
+                candidate_fields=candidate_fields,
+                tool_schema=tool_schema,
+                extracted_values=extracted_values,
+                generated_paths=generated_paths
+            )
+        
+        print(f"[SIMPLE_JSON_PATH_GEN] Generated input paths: {result_paths}")
+        return result_paths
+    
+    def _create_extraction_tool_schema(self, input_descriptions: Dict[str, str]) -> Dict[str, Any]:
+        """Create tool schema for extracting all input fields
         
         Args:
-            context: Context dictionary to clean up
+            input_descriptions: Dictionary of field_name -> description
+            
+        Returns:
+            Tool schema dictionary for use with LLMTool
         """
-        temp_keys = [key for key in context.keys() if key.startswith('_temp_input_')]
-        for key in temp_keys:
-            del context[key]
-        print(f"[JSON_PATH_GEN] Cleaned up {len(temp_keys)} temporary input keys")
+        # Create properties for each field
+        properties = {}
+        required_fields = []
+        
+        for field_name, description in input_descriptions.items():
+            properties[field_name] = {
+                "type": "string",
+                "description": description
+            }
+            required_fields.append(field_name)
+        
+        tool_schema = {
+            "type": "function",
+            "function": {
+                "name": "extract_request_parameters",
+                "description": "Extract and reformat request parameters from candidate fields in context",
+                "parameters": {
+                    "type": "object",
+                    "properties": properties,
+                    "required": required_fields
+                }
+            }
+        }
+        
+        return tool_schema
     
-    def _create_output_path_prompt(
-        self, 
-        output_description: str, 
-        context_schema: str, 
+    async def _extract_all_fields_with_llm(
+        self,
+        input_descriptions: Dict[str, str],
+        candidate_fields: Dict[str, Any], 
         user_original_ask: str,
-        tool_output: Any = ""
-    ) -> str:
-        """Create prompt for generating output JSON path"""
+        tool_schema: Dict[str, Any]
+    ) -> Dict[str, str]:
+        """Extract all input fields at once using LLM with tool schema
         
-        tool_output_str = str(tool_output)
+        Args:
+            input_descriptions: Dictionary of field_name -> description
+            candidate_fields: Candidate fields from context analysis
+            user_original_ask: Original user request
+            tool_schema: Tool schema for extraction
+            
+        Returns:
+            Dictionary mapping field_name -> extracted_content
+        """
+        # Format candidate fields for display
+        candidates_text = "\n".join([
+            f"<{field_path}>\n{value}\n</{field_path}>\n\n" 
+            for field_path, value in candidate_fields.items()
+        ])
         
-        return f"""## Task Description
-Given the following workspace context schema and output description, return the appropriate output JSON path where the result should be stored.
+        # Format input descriptions for display  
+        input_description_list = "\n".join([
+            f"- {field_name}: {description}"
+            for field_name, description in input_descriptions.items()
+        ])
+        
+        # Create prompt using the template from requirements
+        prompt = f"""## Task: Extract request parameter
+User has raise a request and we need to extract and reformat the parameter from the candidate fields in the context. These parameter will be used for a tool: {getattr(self, 'tool_description', 'General purpose tool')}
 
 ## User Original Request
 {user_original_ask}
 
-## Current Workspace Context Schema
-{context_schema}
+## Required Request Parameter Description
+{input_description_list}
 
-## Output Description
-{output_description}
-
-## Tool Output
-{tool_output_str}
+## Candidate Fields from Context
+Context object is a dictionary, here we represent them using json_path syntax:
+{candidates_text}
 
 ## Instructions
-1. Analyze the output description, user original request and tool output to determine the best field name in english snakecase style.
-2. Consider the existing context schema to avoid conflicts
-3. Return a JSON path using JSONPath syntax (e.g., "$.generated_outline_for_xxx_topic_blog", "$.['action_plan_to_create_blog_for_xxx']")
-4. The path should be semantically meaningful and discriminate within the context. If a similar path already exists, add more word to discriminate it.
+1. Extract the request parameter from candidate fields from text. You can rephrase the wording to make it more suitable for this task.
+2. The parameter should only be "extracted" or "rephrased", not inferred. This means different people should get the same parameter value if they have the same context, if there is uncertainty, do not rephrase it.
+3. If there is no perfect match, put string "<NOT_FOUND_IN_CANDIDATES>" in corresponding field.
+4. If you rephrase the information, make sure you use the same language as the input_description.
 
-## Example 1
+## Return the parameter using tool schema"""
+        
+        # Call LLM with tool schema
+        response = await self.llm_tool.execute({
+            "prompt": prompt,
+            "tools": [tool_schema]
+        })
+        
+        # Extract tool calls from response
+        tool_calls = response.get("tool_calls", [])
+        if not tool_calls:
+            # Fallback: return NOT_FOUND for all fields
+            return {field_name: "<NOT_FOUND_IN_CANDIDATES>" 
+                   for field_name in input_descriptions.keys()}
+        
+        # Get the first (and should be only) tool call
+        tool_call = tool_calls[0]
+        if tool_call.get("name") != "extract_request_parameters":
+            raise ValueError(f"Unexpected tool call: {tool_call.get('name')}")
+        
+        # Extract arguments
+        arguments = tool_call.get("arguments", {})
+        
+        print(f"[SIMPLE_JSON_PATH_GEN] LLM extracted fields: {arguments}")
+        
+        # Ensure all required fields are present
+        result = {}
+        for field_name in input_descriptions.keys():
+            result[field_name] = arguments.get(field_name, "<NOT_FOUND_IN_CANDIDATES>")
+        
+        return result
 
-If the output description is "The outcome of the current task and the remaining tasks", and the user original request is "Raise 5 questions about machine learning ".
-
-The output can be stored at the path:
-```json
-{{
-   "output_path": "$.action_plan_for_raising_five_questions_about_machine_learning"
-}}
-```
-
-or if the content already generated in the output, the output path might be:
-```json
-{{
-   "output_path": "$.five_questions_about_machine_learning"
-}}
-```
-
-## Return Format (JSON only, no other text)
-{{
-   "output_path": "$.appropriate_path"
-}}"""
 
 
 # Example usage and testing
 async def test_json_path_generator():
     """Test the JSON path generator with multi-step content extraction"""
-    generator = JsonPathGenerator()
+    generator = OnebyOneJsonPathGenerator()
     
     # Test context
     test_context = {
@@ -537,5 +759,98 @@ async def test_json_path_generator():
     print(json.dumps(test_context, ensure_ascii=False, indent=2))
 
 
+async def test_simple_json_path_generator():
+    """Test the simplified JSON path generator"""
+    generator = BatchJsonPathGenerator()
+    
+    # Test context
+    test_context = {
+        "current_task": "Please generate a blog outline for a blog titled 'The Future of Artificial Intelligence'",
+        "user_learning_purpose": "Understand AI technology development"
+    }
+    
+    print("Initial context:")
+    print(json.dumps(test_context, ensure_ascii=False, indent=2))
+    
+    # Test input path generation with simplified process
+    input_descriptions = {
+        "title": "The title of the blog for which we want to generate an outline",
+        "user_ask": "Task requirements or user's original input",
+        "topic": "The main topic of the blog"
+    }
+    
+    print("\nTesting simplified input path generation...")
+    input_paths = await generator.generate_input_json_paths(
+        input_descriptions, 
+        test_context, 
+        test_context["current_task"]
+    )
+    print(f"Generated input paths: {input_paths}")
+    
+    print("\nContext after input processing:")
+    print(json.dumps(test_context, ensure_ascii=False, indent=2))
+    
+    # Test cleanup
+    print("\nTesting cleanup...")
+    generator.cleanup_temp_inputs(test_context)
+    print("Context after cleanup:")
+    print(json.dumps(test_context, ensure_ascii=False, indent=2))
+
+
+class SmartJsonPathGenerator(BaseJsonPathGenerator):
+    """Smart JSON Path Generator that routes between OneByOneJsonPathGenerator and BatchJsonPathGenerator
+    based on the input criteria."""
+    
+    def __init__(self, llm_tool=None, tracer=None):
+        """Initialize SmartJsonPathGenerator with generator instances
+        
+        Args:
+            llm_tool: An instance of LLMTool or compatible tool for text generation
+            tracer: ExecutionTracer instance for observability (required for production use)
+        """
+        super().__init__(llm_tool, tracer)
+        
+        # Initialize both generator instances to avoid code duplication
+        self.one_by_one_generator = OnebyOneJsonPathGenerator(llm_tool, tracer)
+        self.batch_generator = BatchJsonPathGenerator(llm_tool, tracer)
+    
+    async def generate_input_json_paths(
+        self,
+        input_descriptions: Dict[str, str],
+        context: Dict[str, Any],
+        user_original_ask: str = ""
+    ) -> Dict[str, str]:
+        """Generate input JSON paths by routing to appropriate generator
+        
+        Args:
+            input_descriptions: Dictionary of field_name -> description
+            context: Current context dictionary for analysis and extraction
+            user_original_ask: Original user request for context
+            
+        Returns:
+            Dictionary mapping field_name -> json_path
+        """
+        if not input_descriptions:
+            return {}
+        
+        # Route based on input criteria:
+        # 1. If len(input_descriptions) == 1, use OneByOneJsonPathGenerator
+        # 2. Others use BatchJsonPathGenerator
+        if len(input_descriptions) == 1:
+            print(f"[SMART_JSON_PATH_GEN] Using OneByOneJsonPathGenerator for single input")
+            return await self.one_by_one_generator.generate_input_json_paths(
+                input_descriptions, context, user_original_ask
+            )
+        else:
+            print(f"[SMART_JSON_PATH_GEN] Using BatchJsonPathGenerator for {len(input_descriptions)} inputs")
+            return await self.batch_generator.generate_input_json_paths(
+                input_descriptions, context, user_original_ask
+            )
+
+
 if __name__ == "__main__":
+    print("=== Testing OnebyOneJsonPathGenerator ===")
     asyncio.run(test_json_path_generator())
+
+    print("\n=== Testing BatchJsonPathGenerator ===")
+    asyncio.run(test_simple_json_path_generator())

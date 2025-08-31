@@ -65,6 +65,9 @@
             resize: vertical;
             font-family: 'Courier New', monospace;
         }
+        #prompt {
+            min-height: 450px;
+        }
         .tools-container {
             border: 1px solid #ddd;
             border-radius: 4px;
@@ -289,6 +292,22 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+        .collapsible-header {
+            cursor: pointer;
+            user-select: none;
+            transition: color 0.3s ease;
+        }
+        .collapsible-header:hover {
+            color: #3498db;
+        }
+        .collapsible-content {
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+        }
+        #example-arrow {
+            font-size: 0.8em;
+            transition: transform 0.3s ease;
+        }
     </style>
 </head>
 <body>
@@ -315,8 +334,9 @@
                         <textarea id="tools" name="tools" placeholder='[{"type": "function", "function": {"name": "get_weather", "description": "Get weather info", "parameters": {"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"]}}}]'>[]</textarea>
                     </div>
                     <div class="examples">
-                        <h3>Example Tools Configuration:</h3>
-                        <pre>[
+                        <h3 class="collapsible-header" onclick="toggleExample()">Example Tools Configuration: <span id="example-arrow">▶</span></h3>
+                        <div id="example-content" class="collapsible-content" style="display: none;">
+                            <pre>[
   {
     "type": "function",
     "function": {
@@ -335,14 +355,17 @@
     }
   }
 ]</pre>
+                        </div>
                     </div>
                 </div>
 
                 <div class="form-section">
-                    <h3>Additional Parameters</h3>
-                    <div class="form-group">
-                        <label for="allParameters">All Parameters (JSON format, optional):</label>
-                        <textarea id="allParameters" name="allParameters" placeholder='{"temperature": 0.7, "max_tokens": 1000, "model": "gpt-4"}'></textarea>
+                    <h3 class="collapsible-header" onclick="toggleAdditionalParams()">Additional Parameters <span id="params-arrow">▶</span></h3>
+                    <div id="additional-params-content" class="collapsible-content" style="display: none;">
+                        <div class="form-group">
+                            <label for="allParameters">All Parameters (JSON format, optional):</label>
+                            <textarea id="allParameters" name="allParameters" placeholder='{"temperature": 0.7, "max_tokens": 1000, "model": "gpt-4"}'></textarea>
+                        </div>
                     </div>
                 </div>
 
@@ -417,6 +440,38 @@
         document.addEventListener('DOMContentLoaded', function() {
             loadFromUrlParams();
         });
+
+        // Toggle example section
+        function toggleExample() {
+            const content = document.getElementById('example-content');
+            const arrow = document.getElementById('example-arrow');
+            
+            if (content.style.display === 'none') {
+                content.style.display = 'block';
+                arrow.textContent = '▼';
+                arrow.style.transform = 'rotate(90deg)';
+            } else {
+                content.style.display = 'none';
+                arrow.textContent = '▶';
+                arrow.style.transform = 'rotate(0deg)';
+            }
+        }
+
+        // Toggle additional parameters section
+        function toggleAdditionalParams() {
+            const content = document.getElementById('additional-params-content');
+            const arrow = document.getElementById('params-arrow');
+            
+            if (content.style.display === 'none') {
+                content.style.display = 'block';
+                arrow.textContent = '▼';
+                arrow.style.transform = 'rotate(90deg)';
+            } else {
+                content.style.display = 'none';
+                arrow.textContent = '▶';
+                arrow.style.transform = 'rotate(0deg)';
+            }
+        }
 
         // Initialize markdown-it
         const md = window.markdownit({

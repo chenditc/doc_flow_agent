@@ -7,6 +7,7 @@ interface TimelineItemProps {
   totalTasks: number;
   onClick: (task: TaskExecution) => void;
   isNew?: boolean;
+  isCurrentlyExecuting?: boolean;
 }
 
 export const TimelineItem: React.FC<TimelineItemProps> = ({
@@ -14,7 +15,8 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
   index,
   totalTasks,
   onClick,
-  isNew = false
+  isNew = false,
+  isCurrentlyExecuting = false
 }) => {
   const getStatusColor = (status: string): string => {
     switch (status) {
@@ -115,6 +117,12 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
   const output = extractTaskOutput(task);
   const hasConnector = index < totalTasks - 1;
 
+  const containerStatusClass = isCurrentlyExecuting
+    ? 'border-orange-400 bg-orange-50'
+    : getStatusColor(task.status);
+
+  const shouldShowStatusBadge = !(isCurrentlyExecuting && task.status === 'completed');
+
   return (
     <div 
       className={`timeline-item relative cursor-pointer group ${isNew ? 'animate-pulse' : ''}`}
@@ -122,10 +130,10 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
     >
       {/* Connector line */}
       {hasConnector && (
-        <div className="absolute left-6 top-16 w-0.5 h-8 bg-gray-300 z-0" />
+        <div className="absolute left-6 top-full w-0.5 h-8 bg-gray-300 z-0 pointer-events-none" />
       )}
 
-      <div className={`bg-gray-50 rounded-lg p-4 border-l-4 transition-all duration-200 group-hover:shadow-md ${getStatusColor(task.status)}`}>
+  <div className={`relative z-10 bg-gray-50 rounded-lg p-4 border-l-4 transition-all duration-200 group-hover:shadow-md ${containerStatusClass} ${isCurrentlyExecuting ? 'ring-2 ring-orange-300' : ''}`}>
         {/* Task Header */}
         <div className="flex justify-between items-start mb-2">
           <div className="flex-1 min-w-0 pr-4">
@@ -137,9 +145,18 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
             </p>
           </div>
           <div className="flex-shrink-0 text-right">
-            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeColor(task.status)}`}>
-              {task.status}
-            </span>
+            <div className="flex items-center gap-1 flex-wrap justify-end">
+              {shouldShowStatusBadge && (
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeColor(task.status)}`}>
+                  {task.status}
+                </span>
+              )}
+              {isCurrentlyExecuting && (
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                  currently executing
+                </span>
+              )}
+            </div>
           </div>
         </div>
 

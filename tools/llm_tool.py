@@ -45,6 +45,7 @@ class LLMTool(BaseTool):
         
         prompt = parameters.get('prompt', '')
         tools = parameters.get('tools', None)
+        max_tokens = parameters.get('max_tokens', 20000)
         
         # Log the prompt being sent
         print(f"[LLM CALL] Prompt: {prompt}...")
@@ -61,14 +62,16 @@ class LLMTool(BaseTool):
                 }
             ],
             "temperature": 0.7,
-            "max_tokens": 4000,
+            "max_tokens": max_tokens,
             "stream": True,
         }
         
         # Add tools if provided
         if tools:
             api_params["tools"] = tools
-            api_params["tool_choice"] = "auto"
+            api_params["tool_choice"] = "required"
+            #api_params["tool_choice"] = "auto"
+            #api_params["tool_choice"] = "auto" if len(tools) != 1 else tools[0]["function"]["name"]
         
         # Make streaming OpenAI API call
         stream = await self.client.chat.completions.create(**api_params)

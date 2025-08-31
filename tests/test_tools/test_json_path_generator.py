@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test cases for JsonPathGenerator
+Test cases for SmartJsonPathGenerator
 """
 
 import unittest
@@ -13,19 +13,19 @@ from unittest.mock import patch, AsyncMock, MagicMock
 # Add parent directories to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from tools.json_path_generator import JsonPathGenerator
+from tools.json_path_generator import SmartJsonPathGenerator
 from exceptions import TaskInputMissingError
 
 
 class TestJsonPathGenerator(unittest.TestCase):
-    """Test cases for JsonPathGenerator class"""
+    """Test cases for SmartJsonPathGenerator class"""
     
     def setUp(self):
         """Set up test fixtures"""
-        self.generator = JsonPathGenerator()
+        self.generator = SmartJsonPathGenerator()
     
     def test_init(self):
-        """Test JsonPathGenerator initialization"""
+        """Test SmartJsonPathGenerator initialization"""
         self.assertIsNotNone(self.generator.llm_tool)
     
     def test_generate_context_schema_empty(self):
@@ -216,8 +216,8 @@ def extract_func(context):
         error_call = [call for call in mock_print.call_args_list if "Error executing extraction code" in str(call)]
         self.assertTrue(len(error_call) > 0)
     
-    @patch('tools.json_path_generator.JsonPathGenerator._generate_extraction_code')
-    @patch('tools.json_path_generator.JsonPathGenerator._analyze_context_candidates')
+    @patch('tools.json_path_generator.OnebyOneJsonPathGenerator._generate_extraction_code')
+    @patch('tools.json_path_generator.SmartJsonPathGenerator._analyze_context_candidates')
     @patch('builtins.print')
     def test_generate_input_json_paths_empty_descriptions(self, mock_print, mock_candidates, mock_extraction):
         """Test generate_input_json_paths with empty input descriptions"""
@@ -232,9 +232,9 @@ def extract_func(context):
         mock_candidates.assert_not_called()
         mock_extraction.assert_not_called()
     
-    @patch('tools.json_path_generator.JsonPathGenerator._execute_extraction_code')
-    @patch('tools.json_path_generator.JsonPathGenerator._generate_extraction_code')
-    @patch('tools.json_path_generator.JsonPathGenerator._analyze_context_candidates')
+    @patch('tools.json_path_generator.OnebyOneJsonPathGenerator._execute_extraction_code')
+    @patch('tools.json_path_generator.OnebyOneJsonPathGenerator._generate_extraction_code')
+    @patch('tools.json_path_generator.OnebyOneJsonPathGenerator._analyze_context_candidates')
     @patch('builtins.print')
     def test_generate_input_json_paths_success(self, mock_print, mock_candidates, mock_extraction, mock_execute):
         """Test successful input JSON path generation"""
@@ -262,9 +262,9 @@ def extract_func(context):
         self.assertEqual(len(temp_keys), 1)
         self.assertEqual(updated_context[temp_keys[0]], "extracted_value")
     
-    @patch('tools.json_path_generator.JsonPathGenerator._execute_extraction_code')
-    @patch('tools.json_path_generator.JsonPathGenerator._generate_extraction_code')
-    @patch('tools.json_path_generator.JsonPathGenerator._analyze_context_candidates')
+    @patch('tools.json_path_generator.OnebyOneJsonPathGenerator._execute_extraction_code')
+    @patch('tools.json_path_generator.OnebyOneJsonPathGenerator._generate_extraction_code')
+    @patch('tools.json_path_generator.OnebyOneJsonPathGenerator._analyze_context_candidates')
     @patch('builtins.print')
     def test_generate_input_json_paths_missing_input_error(self, mock_print, mock_candidates, mock_extraction, mock_execute):
         """Test TaskInputMissingError when extraction fails"""
@@ -284,7 +284,7 @@ def extract_func(context):
         self.assertIn("field1", error_message)
         self.assertIn("Test field description", error_message)
     
-    @patch.object(JsonPathGenerator, '_create_output_path_prompt')
+    @patch.object(SmartJsonPathGenerator, '_create_output_path_prompt')
     @patch('builtins.print')
     def test_generate_output_json_path_empty_description(self, mock_print, mock_prompt):
         """Test generate_output_json_path with empty description"""
@@ -302,9 +302,15 @@ def extract_func(context):
     @patch('tools.llm_tool.LLMTool.execute')
     @patch('builtins.print')
     def test_generate_output_json_path_json_response(self, mock_print, mock_llm_execute):
-        """Test generate_output_json_path with valid JSON response"""
-        # Mock LLM response with JSON
-        mock_llm_execute.return_value = {"content": '{"output_path": "$.results.data"}', "tool_calls": []}
+        """Test generate_output_json_path with tool call response (no longer supports JSON fallback)"""
+        # Mock LLM response with tool call (updated to use tool calls instead of JSON fallback)
+        mock_llm_execute.return_value = {
+            "content": "I'll generate the path using the tool", 
+            "tool_calls": [{
+                "name": "generate_output_path",
+                "arguments": {"output_path": "$.results.data"}
+            }]
+        }
         
         async def run_test():
             result = await self.generator.generate_output_json_path(
@@ -319,9 +325,15 @@ def extract_func(context):
     @patch('tools.llm_tool.LLMTool.execute')
     @patch('builtins.print')
     def test_generate_output_json_path_text_response(self, mock_print, mock_llm_execute):
-        """Test generate_output_json_path with text response containing path"""
-        # Mock LLM response with plain text path
-        mock_llm_execute.return_value = {"content": '$.custom.path', "tool_calls": []}
+        """Test generate_output_json_path with tool call response (no longer supports text fallback)"""
+        # Mock LLM response with tool call (updated to use tool calls instead of text fallback)
+        mock_llm_execute.return_value = {
+            "content": "I'll generate the custom path using the tool", 
+            "tool_calls": [{
+                "name": "generate_output_path", 
+                "arguments": {"output_path": "$.custom.path"}
+            }]
+        }
         
         async def run_test():
             result = await self.generator.generate_output_json_path(
@@ -335,10 +347,10 @@ def extract_func(context):
     
     @patch('tools.llm_tool.LLMTool.execute')
     @patch('builtins.print')
-    def test_generate_output_json_path_invalid_response(self, mock_print, mock_llm_execute):
-        """Test generate_output_json_path with invalid response"""
-        # Mock LLM response that's neither valid JSON nor a path
-        mock_llm_execute.return_value = {"content": 'invalid response', "tool_calls": []}
+    def test_generate_output_json_path_no_tool_calls(self, mock_print, mock_llm_execute):
+        """Test generate_output_json_path when LLM doesn't return tool calls"""
+        # Mock LLM response without tool calls (should raise error)
+        mock_llm_execute.return_value = {"content": 'some response', "tool_calls": []}
         
         async def run_test():
             result = await self.generator.generate_output_json_path(
@@ -347,10 +359,382 @@ def extract_func(context):
             )
             return result
         
-        # Should raise and ValueError
+        # Should raise ValueError when no tool calls are returned
         with self.assertRaises(ValueError) as context:
             result = asyncio.run(run_test())
-        self.assertIn("Invalid output path format for output json path extraction", str(context.exception))
+        self.assertIn("LLM did not return any tool calls for output path generation", str(context.exception))
+    
+    @patch('tools.llm_tool.LLMTool.execute')
+    @patch('builtins.print')
+    def test_generate_output_json_path_missing_arguments(self, mock_print, mock_llm_execute):
+        """Test generate_output_json_path when tool call is missing required arguments"""
+        # Mock LLM response with tool call but missing arguments
+        mock_llm_execute.return_value = {
+            "content": 'I forgot to include the path',
+            "tool_calls": [{
+                "name": "generate_output_path",
+                "arguments": {}  # Missing output_path
+            }]
+        }
+        
+        async def run_test():
+            result = await self.generator.generate_output_json_path(
+                "test output description",
+                {"existing": "data"}
+            )
+            return result
+        
+        # Should use default fallback path when argument is missing
+        result = asyncio.run(run_test())
+        self.assertEqual(result, "$.output")
+
+    @patch('tools.llm_tool.LLMTool.execute')
+    @patch('builtins.print')
+    def test_generate_output_json_path_with_tool_call(self, mock_print, mock_llm_execute):
+        """Test generate_output_json_path with tool call response"""
+        # Mock LLM response with tool call
+        mock_llm_execute.return_value = {
+            "content": "I'll generate the appropriate output path",
+            "tool_calls": [{
+                "name": "generate_output_path",
+                "arguments": {"output_path": "$.generated_blog_outline"}
+            }]
+        }
+        
+        async def run_test():
+            result = await self.generator.generate_output_json_path(
+                "Blog outline generated based on title",
+                {"current_task": "Generate a blog outline"}
+            )
+            return result
+        
+        result = asyncio.run(run_test())
+        self.assertEqual(result, "$.generated_blog_outline")
+        
+        # Verify that LLM was called with tools parameter
+        mock_llm_execute.assert_called_once()
+        call_args = mock_llm_execute.call_args[0][0]
+        self.assertIn("tools", call_args)
+        self.assertEqual(len(call_args["tools"]), 1)
+        self.assertEqual(call_args["tools"][0]["function"]["name"], "generate_output_path")
+
+    @patch('tools.llm_tool.LLMTool.execute')
+    @patch('builtins.print')
+    def test_generate_output_json_path_wrong_tool_call(self, mock_print, mock_llm_execute):
+        """Test generate_output_json_path with wrong tool call name"""
+        # Mock LLM response with wrong tool call
+        mock_llm_execute.return_value = {
+            "content": "I'll use a different tool",
+            "tool_calls": [{
+                "name": "wrong_tool_name",
+                "arguments": {"output_path": "$.some_path"}
+            }]
+        }
+        
+        async def run_test():
+            result = await self.generator.generate_output_json_path(
+                "test description",
+                {"existing": "data"}
+            )
+            return result
+        
+        # Should raise ValueError
+        with self.assertRaises(ValueError) as context:
+            result = asyncio.run(run_test())
+        self.assertIn("Unexpected tool call: wrong_tool_name", str(context.exception))
+
+    def test_create_output_path_tool_schema(self):
+        """Test _create_output_path_tool_schema method"""
+        schema = self.generator._create_output_path_tool_schema()
+        
+        # Verify schema structure
+        self.assertIn("type", schema)
+        self.assertEqual(schema["type"], "function")
+        self.assertIn("function", schema)
+        
+        function_def = schema["function"]
+        self.assertEqual(function_def["name"], "generate_output_path")
+        self.assertIn("description", function_def)
+        self.assertIn("parameters", function_def)
+        
+        parameters = function_def["parameters"]
+        self.assertEqual(parameters["type"], "object")
+        self.assertIn("properties", parameters)
+        self.assertIn("required", parameters)
+        
+        properties = parameters["properties"]
+        self.assertIn("output_path", properties)
+        self.assertEqual(properties["output_path"]["type"], "string")
+        self.assertIn("description", properties["output_path"])
+        
+        self.assertEqual(parameters["required"], ["output_path"])
+
+
+class TestBatchJsonPathGenerator(unittest.TestCase):
+    """Test cases for BatchJsonPathGenerator class"""
+    
+    def setUp(self):
+        """Set up test fixtures"""
+        from tools.json_path_generator import BatchJsonPathGenerator
+        
+        # Create mock LLM tool
+        self.mock_llm_tool = AsyncMock()
+        self.mock_tracer = MagicMock()
+        
+        self.generator = BatchJsonPathGenerator(
+            llm_tool=self.mock_llm_tool,
+            tracer=self.mock_tracer
+        )
+    
+    def test_inheritance(self):
+        """Test that BatchJsonPathGenerator properly inherits from BaseJsonPathGenerator"""
+        from tools.json_path_generator import BaseJsonPathGenerator, BatchJsonPathGenerator
+        
+        generator = BatchJsonPathGenerator()
+        self.assertIsInstance(generator, BaseJsonPathGenerator)
+    
+    def test_create_extraction_tool_schema(self):
+        """Test tool schema creation for extraction"""
+        input_descriptions = {
+            "title": "The title of the blog",
+            "topic": "The main topic",
+            "user_request": "What the user wants"
+        }
+        
+        schema = self.generator._create_extraction_tool_schema(input_descriptions)
+        
+        # Verify schema structure
+        self.assertEqual(schema["type"], "function")
+        self.assertEqual(schema["function"]["name"], "extract_request_parameters")
+        self.assertIn("description", schema["function"])
+        
+        parameters = schema["function"]["parameters"]
+        self.assertEqual(parameters["type"], "object")
+        self.assertIn("properties", parameters)
+        self.assertIn("required", parameters)
+        
+        # Verify all fields are included
+        properties = parameters["properties"]
+        required = parameters["required"]
+        
+        for field_name, description in input_descriptions.items():
+            self.assertIn(field_name, properties)
+            self.assertIn(field_name, required)
+            self.assertEqual(properties[field_name]["type"], "string")
+            self.assertIn(description, properties[field_name]["description"])
+    
+    def test_create_extraction_tool_schema_empty(self):
+        """Test tool schema creation with empty input descriptions"""
+        input_descriptions = {}
+        
+        schema = self.generator._create_extraction_tool_schema(input_descriptions)
+        
+        parameters = schema["function"]["parameters"]
+        self.assertEqual(len(parameters["properties"]), 0)
+        self.assertEqual(len(parameters["required"]), 0)
+    
+    @patch('tools.json_path_generator.BatchJsonPathGenerator._analyze_context_candidates')
+    def test_extract_all_fields_with_llm_success(self, mock_analyze):
+        """Test successful field extraction with LLM"""
+        # Setup
+        input_descriptions = {
+            "title": "Blog title",
+            "topic": "Main topic"
+        }
+        candidate_fields = {
+            "$.current_task": "Generate blog about AI",
+            "$.user_purpose": "Learning"
+        }
+        context = {"current_task": "Generate blog about AI"}
+        user_ask = "Create AI blog"
+        
+        # Mock LLM response
+        self.mock_llm_tool.execute.return_value = {
+            "content": "Extraction completed",
+            "tool_calls": [
+                {
+                    "name": "extract_request_parameters",
+                    "arguments": {
+                        "title": "AI Blog Title",
+                        "topic": "Artificial Intelligence"
+                    }
+                }
+            ]
+        }
+        
+        # Create tool schema
+        tool_schema = self.generator._create_extraction_tool_schema(input_descriptions)
+        
+        async def run_test():
+            return await self.generator._extract_all_fields_with_llm(
+                input_descriptions, candidate_fields, user_ask, tool_schema
+            )
+        
+        # Execute
+        result = asyncio.run(run_test())
+        
+        # Verify
+        self.assertEqual(result["title"], "AI Blog Title")
+        self.assertEqual(result["topic"], "Artificial Intelligence")
+        
+        # Verify LLM was called with correct parameters
+        self.mock_llm_tool.execute.assert_called_once()
+        call_args = self.mock_llm_tool.execute.call_args[0][0]
+        self.assertIn("prompt", call_args)
+        self.assertIn("tools", call_args)
+        self.assertEqual(len(call_args["tools"]), 1)
+    
+    @patch('tools.json_path_generator.BatchJsonPathGenerator._analyze_context_candidates')
+    def test_extract_all_fields_with_llm_no_tool_calls(self, mock_analyze):
+        """Test LLM response with no tool calls"""
+        input_descriptions = {"title": "Blog title"}
+        candidate_fields = {}
+        context = {}
+        user_ask = "test"
+        tool_schema = self.generator._create_extraction_tool_schema(input_descriptions)
+        
+        # Mock LLM response without tool calls
+        self.mock_llm_tool.execute.return_value = {
+            "content": "No extraction possible",
+            "tool_calls": []
+        }
+        
+        async def run_test():
+            return await self.generator._extract_all_fields_with_llm(
+                input_descriptions, candidate_fields, user_ask, tool_schema
+            )
+        
+        result = asyncio.run(run_test())
+        
+        # Should return NOT_FOUND for all fields
+        self.assertEqual(result["title"], "<NOT_FOUND_IN_CANDIDATES>")
+    
+    @patch('tools.json_path_generator.BatchJsonPathGenerator._analyze_context_candidates')
+    def test_extract_all_fields_with_llm_wrong_tool_call(self, mock_analyze):
+        """Test LLM response with wrong tool call name"""
+        input_descriptions = {"title": "Blog title"}
+        candidate_fields = {}
+        context = {}
+        user_ask = "test"
+        tool_schema = self.generator._create_extraction_tool_schema(input_descriptions)
+        
+        # Mock LLM response with wrong tool call
+        self.mock_llm_tool.execute.return_value = {
+            "content": "Wrong tool call",
+            "tool_calls": [
+                {
+                    "name": "wrong_function_name",
+                    "arguments": {"title": "Test"}
+                }
+            ]
+        }
+        
+        async def run_test():
+            return await self.generator._extract_all_fields_with_llm(
+                input_descriptions, candidate_fields, user_ask, tool_schema
+            )
+        
+        # Should raise ValueError
+        with self.assertRaises(ValueError) as context:
+            result = asyncio.run(run_test())
+        self.assertIn("Unexpected tool call", str(context.exception))
+    
+    @patch('tools.json_path_generator.BatchJsonPathGenerator._analyze_context_candidates')
+    @patch('tools.json_path_generator.BatchJsonPathGenerator._extract_all_fields_with_llm')
+    def test_generate_input_json_paths_success(self, mock_extract, mock_analyze):
+        """Test successful input path generation"""
+        # Setup
+        input_descriptions = {
+            "title": "Blog title",
+            "topic": "Main topic"
+        }
+        context = {"current_task": "Generate AI blog"}
+        user_ask = "Create blog"
+        
+        # Mock dependencies
+        mock_analyze.return_value = {"$.current_task": "Generate AI blog"}
+        mock_extract.return_value = {
+            "title": "AI in 2024",
+            "topic": "Artificial Intelligence"
+        }
+        
+        async def run_test():
+            return await self.generator.generate_input_json_paths(
+                input_descriptions, context, user_ask
+            )
+        
+        result = asyncio.run(run_test())
+        
+        # Verify paths were generated
+        self.assertEqual(len(result), 2)
+        self.assertIn("title", result)
+        self.assertIn("topic", result)
+        
+        # Verify paths have correct format
+        for field_name, path in result.items():
+            self.assertTrue(path.startswith("$."))
+            self.assertIn("_temp_input_", path)
+        
+        # Verify temp values were added to context
+        temp_keys = [key for key in context.keys() if key.startswith("_temp_input_")]
+        self.assertEqual(len(temp_keys), 2)
+    
+    @patch('tools.json_path_generator.BatchJsonPathGenerator._analyze_context_candidates')
+    @patch('tools.json_path_generator.BatchJsonPathGenerator._extract_all_fields_with_llm')
+    def test_generate_input_json_paths_missing_field(self, mock_extract, mock_analyze):
+        """Test input path generation with missing field"""
+        # Setup
+        input_descriptions = {"title": "Blog title"}
+        test_context = {}
+        user_ask = "test"
+        
+        # Mock missing field
+        mock_analyze.return_value = {}
+        mock_extract.return_value = {"title": "<NOT_FOUND_IN_CANDIDATES>"}
+        
+        async def run_test():
+            return await self.generator.generate_input_json_paths(
+                input_descriptions, test_context, user_ask
+            )
+        
+        # Should raise TaskInputMissingError
+        with self.assertRaises(TaskInputMissingError) as ctx:
+            result = asyncio.run(run_test())
+    
+    def test_generate_input_json_paths_empty(self):
+        """Test input path generation with empty descriptions"""
+        async def run_test():
+            return await self.generator.generate_input_json_paths(
+                {}, {}, ""
+            )
+        
+        result = asyncio.run(run_test())
+        self.assertEqual(result, {})
+    
+    @patch('tools.json_path_generator.BatchJsonPathGenerator._analyze_context_candidates')
+    @patch('tools.json_path_generator.BatchJsonPathGenerator._extract_all_fields_with_llm')
+    def test_generate_input_json_paths_ensures_current_task(self, mock_extract, mock_analyze):
+        """Test that current_task is always included in candidates"""
+        input_descriptions = {"title": "Blog title"}
+        context = {"current_task": "Generate blog", "other_field": "value"}
+        user_ask = "test"
+        
+        # Mock that analyze doesn't return current_task
+        mock_analyze.return_value = {"$.other_field": "value"}
+        mock_extract.return_value = {"title": "Test Title"}
+        
+        async def run_test():
+            return await self.generator.generate_input_json_paths(
+                input_descriptions, context, user_ask
+            )
+        
+        result = asyncio.run(run_test())
+        
+        # Verify extract was called with current_task included
+        call_args = mock_extract.call_args[0]
+        candidate_fields = call_args[1]  # second argument
+        self.assertIn("current_task", candidate_fields)
+        self.assertEqual(candidate_fields["current_task"], "Generate blog")
 
 
 if __name__ == '__main__':

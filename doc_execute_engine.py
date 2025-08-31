@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, asdict
 import subprocess
+import json_repair
 
 import yaml
 from dotenv import load_dotenv
@@ -21,7 +22,8 @@ load_dotenv()
 
 from sop_document import SOPDocument, SOPDocumentLoader, SOPDocumentParser
 from tools import BaseTool, LLMTool, CLITool, UserCommunicateTool
-from tools.json_path_generator import JsonPathGenerator
+from tools.python_executor_tool import PythonExecutorTool
+from tools.json_path_generator import SmartJsonPathGenerator
 import jsonpath_ng
 from jsonpath_ng.ext import parse
 from utils import set_json_path_value
@@ -75,29 +77,29 @@ class DocExecuteEngine:
         # Initialize tracing
         self.tracer = ExecutionTracer(output_dir=trace_output_dir, enabled=enable_tracing)
         
-        # Initialize tools as instances of tool classes
-        base_tools = {
-            "LLM": LLMTool(),
-            "CLI": CLITool(),
-            "USER_COMMUNICATE": UserCommunicateTool()
-        }
-        
         # Wrap tools with tracing if enabled
         if enable_tracing:
+            llm_tool = TracingLLMTool(LLMTool(), self.tracer)
             self.tools = {
-                "LLM": TracingLLMTool(base_tools["LLM"], self.tracer),
-                "CLI": TracingToolWrapper(base_tools["CLI"], self.tracer),
-                "USER_COMMUNICATE": TracingToolWrapper(base_tools["USER_COMMUNICATE"], self.tracer)
+                "LLM": llm_tool,
+                "CLI": TracingToolWrapper(CLITool(), self.tracer),
+                "USER_COMMUNICATE": TracingToolWrapper(UserCommunicateTool(), self.tracer),
+                "PYTHON_EXECUTOR": TracingToolWrapper(PythonExecutorTool(llm_tool=llm_tool), self.tracer)
             }
         else:
-            self.tools = base_tools
+            self.tools = {
+                "LLM": LLMTool(),
+                "CLI": CLITool(),
+                "USER_COMMUNICATE": UserCommunicateTool(),
+                "PYTHON_EXECUTOR": PythonExecutorTool(llm_tool=LLMTool())
+            }
         
         # Initialize SOPDocument components
         self.sop_loader = SOPDocumentLoader(docs_dir)
         self.sop_parser = SOPDocumentParser(docs_dir, llm_tool=self.tools.get("LLM"), tracer=self.tracer)
         
         # Initialize JSON path generator
-        self.json_path_generator = JsonPathGenerator(self.tools.get("LLM"), self.tracer)
+        self.json_path_generator = SmartJsonPathGenerator(self.tools.get("LLM"), self.tracer)
     
     def _get_engine_state(self) -> Dict[str, Any]:
         """Get current engine state for tracing"""
@@ -338,7 +340,9 @@ class DocExecuteEngine:
                 raise ValueError(f"Unknown tool: {tool_id}")
             
             tool_instance = self.tools[tool_id]
-            tool_output = await tool_instance.execute(tool_params)
+            # Capture nested LLM calls during actual tool execution
+            with self.tracer.trace_tool_execution_step():
+                tool_output = await tool_instance.execute(tool_params)
             print(f"Tool output: {tool_output}")
             
             # Set phase data with results
@@ -464,24 +468,17 @@ class DocExecuteEngine:
             List of task descriptions extracted from the output. Empty list if no tasks found.
         """
         # Convert output to string
-        if isinstance(output, dict) and "content" in output:
-            output_str = output["content"]
+        if isinstance(output, dict):
+            # Try to wrap each key using xml format, value as string
+            output_str = "\n".join([f"<{k}>\n{v}\n</{k}>" for k, v in output.items()])
         else:
             output_str = str(output)
 
         # Create prompt for LLM to extract task descriptions
         prompt = f"""
-An agent has completed a task from user, analyze the output of the following task and extract any new task descriptions that need to be executed by agent.
+An agent has completed a task from user, analyze the output of the following task and extract any new task descriptions that need to be executed by agent. If the output doesn't satisfy the current task requirement, generate a new task for agent to fix error or complete the remaining parts.
 
-<Current task description>
-{current_task_description}
-</Current task description>
-
-<Task output content>
-{output_str}
-</Task output content>
-
-Please carefully analyze the output content and identify if it explicitly contains any follow-up tasks that explicitly needed to be executed by agent. Only return the explicit task, do not infer task by yourself. 
+Please carefully analyze the output content and identify if it explicitly contains any follow-up tasks that explicitly needed to be executed by agent.
 
 **Analysis process:**
 1. Is the output satisfy the current task requirement?
@@ -489,15 +486,81 @@ Please carefully analyze the output content and identify if it explicitly contai
 
 **Important notes:**
 1. Only extract tasks that clearly need to be executed, do not speculate
-2. Task descriptions should be clear and specific, include any background information if needed. Make sure the task is understandable without additional context. Keep the reference documentation path as it is.
+2. Task descriptions should be clear and specific. Make sure the task is understandable without any additional context. Keep the reference documentation path as it is.
 3. Ideally, we should have in the task description: 
  - Why we need to do this: include any context like the current task description and how current task raised new task.
  - What is the expected output: what format or deliverable we expect.
  - How to do it: if there is reference documentation, include the path to it.
 4. There can be overlap between task description, make sure task description is comprehensive.
 5. Please use the original task description's language as your response language.
+6. If the output doesn't satisfy the current task requirement, you can add more context to the original task description to help avoid the error or missing part.
+
+<Example which should output new task>
+Current Task: We need to implement a landing page site for small business company. Draft a plan for implementation for agents to execute.
+Task output: 
+Agent should execute these tasks:
+ - Follow user_communicate.md. Ask user for requirement on landing page, including layout, style, language.
+ - Draft plan for frontend development.
+ - Draft plan for backend development.
+ - Implement frontend and backend site.
+
+extract_new_tasks:
+  think process: 
+  
+Let me analyze the task output to see if it contains explicit follow-up tasks:
+
+1. Is the output satisfy the current task requirement?
+The current task was to "Draft a plan for implementation for agents to execute" for a landing page site. The output does provide a high-level plan with 4 specific tasks that agents should execute, so it does satisfy the requirement.
+
+2. Does the output indicate any follow-up tasks that explicitly needed to be executed by agent?
+Yes, the output explicitly lists 4 tasks that "Agent should execute":
+- Follow user_communicate.md. Ask user for requirement on landing page, including layout, style, language.
+- Draft plan for frontend development.
+- Draft plan for backend development.
+- Implement frontend and backend site.
+
+tasks:
+[
+  "Background: We are implementing a landing page site for small business company and have drafted an implementation plan. The plan indicates we need to gather user requirements first.\n\nTask: Follow user_communicate.md documentation and ask user for requirements on landing page, including layout, style, and language preferences.\n\nExpected output: Clear documentation of user requirements covering layout preferences, visual style guidelines, and language specifications for the landing page.\n\nHow to do it: Follow the guidelines in user_communicate.md for proper user communication procedures.",
+  "Background: We are implementing a landing page site for small business company. After gathering user requirements, we need to create a detailed frontend development plan.\n\nTask: Draft a comprehensive plan for frontend development of the landing page site.\n\nExpected output: A detailed frontend development plan that includes technology stack, component structure, responsive design approach, and implementation timeline.\n\nHow to do it: Based on the user requirements gathered, create a structured plan covering all frontend development aspects.",
+  "Background: We are implementing a landing page site for small business company. Along with frontend, we need to plan the backend infrastructure and functionality.\n\nTask: Draft a comprehensive plan for backend development of the landing page site.\n\nExpected output: A detailed backend development plan including server architecture, database design (if needed), API endpoints, hosting requirements, and security considerations.\n\nHow to do it: Design backend architecture that supports the landing page functionality and integrates well with the frontend plan.",
+  "Background: We are implementing a landing page site for small business company. After completing the planning phase, we need to build the actual website.\n\nTask: Implement both frontend and backend components of the landing page site according to the drafted plans.\n\nExpected output: A fully functional landing page website with both frontend user interface and backend infrastructure deployed and ready for use.\n\nHow to do it: Follow the frontend and backend development plans created in previous tasks to build and deploy the complete landing page site."
+]
+</Example which should output new task>
+
+<Example which should not output new task>
+Current Task: We need to implement a landing page site for small business company. Draft a plan for implementation.
+Task output: 
+Here is a plan:
+ - Follow user_communicate.md. Ask user for requirement on landing page, including layout, style, language.
+ - Draft plan for frontend development.
+ - Draft plan for backend development.
+ - Implement frontend and backend site.
+
+extract_new_tasks:
+  think process: 
+
+Let me analyze the task output step by step:
+
+1. Is the output satisfy the current task requirement?
+The current task was to "Draft a plan for implementation" of a landing page site for a small business company. The output provides a high-level plan with 4 bullet points covering user requirements gathering, frontend planning, backend planning, and implementation. This satisfies the requirement of drafting a plan.
+
+2. Does the output indicate any follow-up tasks that explicitly needed to be executed by agent?
+Looking at the output, I can see explicit tasks mentioned, but they are not intended for agent to execute. User just need a plan, but no need for agent.
+
+tasks: []
+</Example which should not output new task>
 
 If you find new tasks that need to be executed, use the extract_new_tasks function to return them. If no new tasks are found, call the function with an empty task list.
+
+Here is the task that needs analysis:
+<Current task description>
+{current_task_description}
+</Current task description>
+
+<Task output content to analyze>
+{output_str}
+</Task output content to analyze>
 """
 
         # Define the function schema for extracting new tasks
@@ -509,9 +572,13 @@ If you find new tasks that need to be executed, use the extract_new_tasks functi
                 "parameters": {
                     "type": "object",
                     "properties": {
+                        "think_process": {
+                            "type": "string",
+                            "description": "The process of analyze if there is new task for agent to do."
+                        },
                         "tasks": {
                             "type": "array",
-                            "description": "List of new task descriptions that need to be executed, each task should be a valid json string, becareful when you escape newline and quotes. Empty array if no new tasks found."
+                            "description": "List of new task descriptions that need to be executed, each task should be a valid json string, be careful when you escape newline and quotes \". Empty array if no new tasks found."
                         }
                     },
                     "required": ["tasks"]
@@ -537,7 +604,10 @@ If you find new tasks that need to be executed, use the extract_new_tasks functi
                     task_list = tool_call.get("arguments", {}).get("tasks", [])
                     
                     # Validate that it's a list of strings
-                    if not isinstance(task_list, list):
+                    if isinstance(task_list, str):
+                        task_list = json_repair.loads(task_list)
+                        assert(isinstance(task_list, list))
+                    elif not isinstance(task_list, list):
                         raise ValueError(f"[TASK_PARSER] Tool call response is not a list: {task_list}")
                     
                     validated_tasks = []
@@ -618,11 +688,8 @@ Please return only the task description as a single paragraph, without additiona
         """
         print("[ENGINE] Starting execution engine...")
         
-        # Start tracing session
-        session_id = self.tracer.start_session(initial_task_description)
-        self.tracer.capture_engine_state("start", self.task_stack, self.context, self.task_execution_counter)
-        
-        try:
+        # Start tracing session using context manager
+        with self.tracer.trace_session(initial_task_description, engine_state_provider=self._get_engine_state):
             # Add initial task to stack if provided
             if initial_task_description:
                 self.task_stack.append(initial_task_description)
@@ -635,72 +702,44 @@ Please return only the task description as a single paragraph, without additiona
                 print(f"\n[ENGINE] Processing task from stack: {task_description}")
                 print(f"[ENGINE] Remaining tasks in stack: {len(self.task_stack)}")
                 
-                # Start task execution tracing
-                execution_id = self.tracer.start_task_execution(task_description, self._get_engine_state())
-                
-                try:
-                    # Create task object from description
-                    task = await self.create_task_from_description(task_description)
-                    
-                    # Execute the task
-                    new_tasks = await self.run_task(task)
-                    
-                    # Clear retry count on successful execution
-                    if task_description in self.task_retry_count:
-                        del self.task_retry_count[task_description]
-                    
-                    # Add any new tasks to the stack
-                    if new_tasks:
-                        await self.add_new_tasks(new_tasks)
-                    
-                    # End successful task execution
-                    self.tracer.end_task_execution(self._get_engine_state(), ExecutionStatus.COMPLETED)
-                        
-                except TaskInputMissingError as e:
-                    print(f"[ENGINE] Task creation failed due to missing input: {e}")
-                    
-                    # Check retry count
-                    retry_count = self.task_retry_count.get(task_description, 0)
-                    if retry_count >= self.max_retries:
-                        self.tracer.end_task_execution(self._get_engine_state(), ExecutionStatus.FAILED, e)
-                        raise TaskCreationError(task_description=task_description, original_error=TaskInputMissingError)
-                    
-                    # Increment retry count
-                    self.task_retry_count[task_description] = retry_count + 1
-                    
-                    # Put the original task back on the stack (it will be retried after recovery)
-                    self.task_stack.append(task_description)
-                    print(f"[ENGINE] Put failed task back on stack (attempt {retry_count + 1}/{self.max_retries}): {task_description}")
-                    
-                    # Generate and add recovery task to the top of the stack (it will be executed first)
+                # Use context-managed task execution tracing
+                with self.tracer.trace_task_execution(task_description, engine_state_provider=self._get_engine_state) as task_ctx:
                     try:
+                        # Create task object from description
+                        task = await self.create_task_from_description(task_description)
+                        # Execute the task
+                        new_tasks = await self.run_task(task)
+                        # Clear retry count on successful execution
+                        if task_description in self.task_retry_count:
+                            del self.task_retry_count[task_description]
+                        # Add any new tasks to the stack
+                        if new_tasks:
+                            await self.add_new_tasks(new_tasks)
+                        # Success path; no explicit status needed (defaults to COMPLETED)
+                    except TaskInputMissingError as e:
+                        print(f"[ENGINE] Task creation failed due to missing input: {e}")
+
+                        # Check retry count
+                        retry_count = self.task_retry_count.get(task_description, 0)
+                        if retry_count >= self.max_retries:
+                            task_ctx.set_status(ExecutionStatus.FAILED, e)
+                            raise TaskCreationError(task_description=task_description, original_error=TaskInputMissingError)
+
+                        # Increment retry count
+                        self.task_retry_count[task_description] = retry_count + 1
+
+                        # Put the original task back on the stack (it will be retried after recovery)
+                        self.task_stack.append(task_description)
+                        print(f"[ENGINE] Put failed task back on stack (attempt {retry_count + 1}/{self.max_retries}): {task_description}")
+
+                        # Generate and add recovery task to the top of the stack (it will be executed first)
                         recovery_task = await self.generate_recovery_task(e, task_description)
                         self.task_stack.append(recovery_task)
                         print(f"[ENGINE] Added recovery task to stack: {recovery_task}")
-                        
-                        # End with retry status
-                        self.tracer.end_task_execution(self._get_engine_state(), ExecutionStatus.RETRYING, e)
-                    except Exception as recovery_error:
-                        print(f"[ENGINE] Failed to generate recovery task: {recovery_error}")
-                        self.tracer.end_task_execution(self._get_engine_state(), ExecutionStatus.FAILED, recovery_error)
-                        raise TaskCreationError(task_description=task_description, original_error=recovery_error)      
-                                      
-                except Exception as e:
-                    print(f"[ENGINE] Unexpected error executing task '{task_description}': {e}")
-                    self.tracer.end_task_execution(self._get_engine_state(), ExecutionStatus.FAILED, e)
-                    raise e
-            
+                        # Mark as retrying for this execution
+                        task_ctx.set_status(ExecutionStatus.RETRYING, e)
+        
             print("[ENGINE] All tasks completed. Execution engine stopped.")
-            
-            # Capture final engine state and end session
-            self.tracer.capture_engine_state("end", self.task_stack, self.context, self.task_execution_counter)
-            trace_file = self.tracer.end_session(ExecutionStatus.COMPLETED)
-            
-        except Exception as e:
-            # End session with error status
-            self.tracer.capture_engine_state("error", self.task_stack, self.context, self.task_execution_counter)
-            self.tracer.end_session(ExecutionStatus.FAILED)
-            raise
 
 async def main():
     """Execute the blog outline generation document"""
@@ -712,6 +751,8 @@ async def main():
     
     
     task_description = "Follow write_xiaohongshu_ganhuo.md, 为一个初中男语文老师写关于作文的小红书笔记，对象是希望自己孩子作文能写好的家长，目的是推广他的作文精批服务。"
+
+    #task_description = "Follow python.md, 写一段代码输出当前的北京时间。"
 
     # Execute the task
     print("Executing...")

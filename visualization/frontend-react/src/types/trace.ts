@@ -87,6 +87,7 @@ export interface TaskCreationPhase {
   status: PhaseStatus;
   sop_document?: SOPDocument | null;
   input_field_extractions: Record<string, InputFieldExtraction>;
+  batch_input_field_extraction?: BatchInputFieldExtraction | null;
   output_path_generation?: OutputPathGeneration | null;
   created_task?: Task | null;
   error: string | null;
@@ -104,6 +105,20 @@ export interface InputFieldExtraction {
   generated_extraction_code?: string | null;
   extracted_value: any;
   generated_path?: string | null;
+  error: string | null;
+}
+
+export interface BatchInputFieldExtraction {
+  input_descriptions: Record<string, string>;
+  start_time: string;
+  end_time: string | null;
+  status: PhaseStatus;
+  context_analysis_call?: LLMCall | null;
+  batch_extraction_call?: LLMCall | null;
+  candidate_fields: Record<string, any>;
+  tool_schema?: Record<string, any> | null;
+  extracted_values: Record<string, string>;
+  generated_paths: Record<string, string>;
   error: string | null;
 }
 
@@ -151,6 +166,8 @@ export interface TaskExecutionPhase {
   } | null;
   tool_execution?: ToolExecution | null;
   output_path_generation?: OutputPathGeneration | null;
+  // Nested LLM calls that occurred during tool execution
+  llm_calls?: LLMCall[] | null;
   generated_path?: string | null;
   prefixed_path?: string | null;
   error: string | null;

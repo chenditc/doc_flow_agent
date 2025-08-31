@@ -201,7 +201,18 @@ export const TaskPhases: React.FC<TaskPhasesProps> = ({ task }) => {
           // Special handling for task creation phase
           if (phaseName === 'task_creation' && 'sop_document' in phaseData) {
             const inputFieldCount = Object.keys(phaseData.input_field_extractions || {}).length;
-            const inputFieldSuffix = inputFieldCount > 0 ? ` (${inputFieldCount} fields)` : '';
+            const batchFieldCount = phaseData.batch_input_field_extraction 
+              ? Object.keys(phaseData.batch_input_field_extraction.input_descriptions || {}).length 
+              : 0;
+            
+            let inputFieldSuffix = '';
+            if (batchFieldCount > 0 && inputFieldCount > 0) {
+              inputFieldSuffix = ` (${batchFieldCount} batch + ${inputFieldCount} individual fields)`;
+            } else if (batchFieldCount > 0) {
+              inputFieldSuffix = ` (${batchFieldCount} fields via batch)`;
+            } else if (inputFieldCount > 0) {
+              inputFieldSuffix = ` (${inputFieldCount} fields)`;
+            }
             
             const statusBadge = (
               <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeColor(phaseData.status)}`}>
@@ -371,6 +382,24 @@ export const TaskPhases: React.FC<TaskPhasesProps> = ({ task }) => {
                       <div className="text-sm text-gray-500">No tool execution recorded</div>
                     )}
                   </div>
+
+                  {/* Nested LLM calls during tool execution */}
+                  {execPhase.llm_calls && execPhase.llm_calls.length > 0 && (
+                    <div>
+                      <div className="text-sm font-medium text-gray-700 mb-2">Nested LLM Calls</div>
+                      <div className="space-y-3">
+                        {execPhase.llm_calls.map((call, idx) => (
+                          <div key={call.tool_call_id || idx} className="border rounded p-3">
+                            <ContextualLLMCall 
+                              llmCall={call} 
+                              context="field_extraction" 
+                              relatedData={execPhase.tool_execution?.parameters}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Output Path Generation - display prefixed_path and collapsible call details */}
                   {(execPhase.prefixed_path || execPhase.output_path_generation) && (

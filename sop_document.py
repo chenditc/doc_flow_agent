@@ -44,12 +44,12 @@ class SOPDocumentLoader:
         
         # Split YAML front matter and body
         if content.startswith('---\n'):
-            parts = content.split('---\n', 2)
+            parts = content.split('---', 2)
             if len(parts) >= 3:
                 yaml_content = parts[1]
                 body = parts[2]
             else:
-                raise ValueError(f"Invalid document format: {doc_path}")
+                raise ValueError(f"Invalid document format: {doc_path}, not enough parts --- splitter.")
         else:
             raise ValueError(f"Document missing YAML front matter: {doc_path}")
         

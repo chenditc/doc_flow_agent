@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TraceContextProvider, useTraceContext } from './context/TraceContext';
 import { Header } from './components/common/Header';
@@ -12,6 +12,7 @@ import { useTrace } from './hooks/useTraceData';
 import { useRealtime } from './hooks/useRealtime';
 import { useAnnouncement } from './utils/accessibility';
 import type { TaskExecution } from './types/trace';
+import { DebugPendingPage } from './debug/DebugPendingPage';
 
 // Create a client
 const queryClient = new QueryClient({
@@ -73,6 +74,23 @@ function AppContent() {
     setSelectedTask(null);
     announce('Closed task details', 'polite');
   };
+
+  // Lightweight debug route switch (driven by query string)
+  const debugMode = useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('debug');
+  }, []);
+
+  if (debugMode === 'pending') {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Header />
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <DebugPendingPage />
+        </main>
+      </div>
+    );
+  }
 
   return (
     <ErrorBoundary 

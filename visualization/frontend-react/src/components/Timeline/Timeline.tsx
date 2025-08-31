@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useCallback, memo } from 'react';
 import isEqual from 'fast-deep-equal';
 import type { TraceSession, TaskExecution } from '../../types/trace';
 import { TimelineItem } from './TimelineItem';
+import { PendingTaskItem } from './PendingTaskItem';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { useDebounce, usePerformanceMonitor } from '../../utils/performanceHooks';
 
@@ -25,6 +26,36 @@ const TimelineComponent: React.FC<TimelineProps> = ({
 
   // Debounce task updates to prevent excessive re-renders
   const debouncedTaskExecutions = useDebounce(trace?.task_executions, 100);
+
+  // Get pending tasks: prefer last execution's engine_state_before.task_stack; fallback to end snapshot
+  const getPendingTasks = (): string[] => {
+    if (!trace) return [];
+
+    const execs = debouncedTaskExecutions || trace.task_executions || [];
+    if (execs.length > 0) {
+      const lastExec = execs[execs.length - 1];
+      const beforeStack = (lastExec as any)?.engine_state_before?.task_stack;
+      if (Array.isArray(beforeStack)) {
+        return [...beforeStack].reverse();
+      }
+    }
+
+    const endStack = trace.engine_snapshots?.end?.task_stack;
+    if (Array.isArray(endStack)) {
+      return [...endStack].reverse();
+    }
+
+    return [];
+  };
+
+  const pendingTasks = getPendingTasks();
+
+  // Handle pending task clicks
+  const handlePendingTaskClick = useCallback((taskDescription: string, index: number) => {
+    // For now, pending tasks don't have full task execution objects
+    // We could create a synthetic one or handle differently
+    console.log(`Clicked pending task: ${taskDescription} at index ${index}`);
+  }, []);
 
   // Memoize the task click handler
   const handleTaskClick = useCallback((task: TaskExecution) => {
@@ -62,7 +93,7 @@ const TimelineComponent: React.FC<TimelineProps> = ({
     if (containerRef.current) {
       const container = containerRef.current;
       const lastItem = container.lastElementChild;
-      if (lastItem) {
+      if (lastItem && typeof lastItem.scrollIntoView === 'function') {
         lastItem.scrollIntoView({ 
           behavior: 'smooth', 
           block: 'end'
@@ -98,6 +129,78 @@ const TimelineComponent: React.FC<TimelineProps> = ({
   }
 
   if (!trace.task_executions || trace.task_executions.length === 0) {
+    // Check if there are pending tasks even when no executions yet
+    const pendingTasksForEmptyState = getPendingTasks();
+    
+    if (pendingTasksForEmptyState.length > 0) {
+      // Show pending tasks even when no executions have started yet
+      return (
+        <div className="bg-white border border-gray-200 rounded-lg">
+          {/* Header */}
+          <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 rounded-t-lg">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-medium text-gray-900">Execution Timeline</h2>
+                <p className="text-sm text-gray-600 mt-1">
+                  No tasks executed yet
+                  <span className="text-orange-600 ml-2">
+                    • {pendingTasksForEmptyState.length} pending task{pendingTasksForEmptyState.length !== 1 ? 's' : ''}
+                  </span>
+                </p>
+              </div>
+              
+              {/* Timeline info */}
+              <div className="text-right text-sm text-gray-600">
+                <div>Started: {new Date(trace.start_time).toLocaleString()}</div>
+                {trace.end_time && (
+                  <div>Completed: {new Date(trace.end_time).toLocaleString()}</div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Timeline content with only pending tasks */}
+          <div 
+            ref={containerRef}
+            className="max-h-[600px] overflow-y-auto p-6 space-y-4"
+            role="log"
+            aria-label="Task execution timeline"
+          >
+            {pendingTasksForEmptyState.map((taskDescription, index) => {
+              // With new rule, no pending task is "currently executing"
+              const isCurrentlyExecuting = false;
+              return (
+                <PendingTaskItem
+                  key={`empty-pending-${index}`}
+                  taskDescription={taskDescription}
+                  index={index}
+                  totalTasks={pendingTasksForEmptyState.length}
+                  isCurrentlyExecuting={isCurrentlyExecuting}
+                  onTaskClick={handlePendingTaskClick}
+                />
+              );
+            })}
+          </div>
+
+          {/* Scroll to bottom button */}
+          {pendingTasksForEmptyState.length > 3 && (
+            <div className="flex justify-center pb-4">
+              <button
+                onClick={scrollToLatest}
+                className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                aria-label="Scroll to latest task"
+              >
+                <svg className="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                </svg>
+                Scroll to Latest
+              </button>
+            </div>
+          )}
+        </div>
+      );
+    }
+    
     return (
       <div className="text-center py-12">
         <div className="text-gray-500">
@@ -122,6 +225,11 @@ const TimelineComponent: React.FC<TimelineProps> = ({
             <h2 className="text-lg font-medium text-gray-900">Execution Timeline</h2>
             <p className="text-sm text-gray-600 mt-1">
               {trace.task_executions.length} task{trace.task_executions.length !== 1 ? 's' : ''} executed
+              {pendingTasks.length > 0 && (
+                <span className="text-orange-600 ml-2">
+                  • {pendingTasks.length} pending task{pendingTasks.length !== 1 ? 's' : ''}
+                </span>
+              )}
             </p>
           </div>
           
@@ -142,20 +250,39 @@ const TimelineComponent: React.FC<TimelineProps> = ({
         role="log"
         aria-label="Task execution timeline"
       >
-        {(debouncedTaskExecutions || []).map((task, index) => (
+    {(debouncedTaskExecutions || []).map((task, index) => (
           <TimelineItem
             key={task.task_execution_id}
             task={task}
             index={index}
-            totalTasks={(debouncedTaskExecutions || []).length}
+            totalTasks={(debouncedTaskExecutions || []).length + pendingTasks.length}
             onClick={handleTaskClick}
             isNew={newTaskIndices.has(index)}
+      isCurrentlyExecuting={index === (debouncedTaskExecutions || []).length - 1}
           />
         ))}
+        
+        {/* Render pending tasks */}
+        {pendingTasks.map((taskDescription, index) => {
+          const absoluteIndex = (debouncedTaskExecutions || []).length + index;
+          // With new rule, pending tasks are not currently executing
+          const isCurrentlyExecuting = false;
+          
+          return (
+            <PendingTaskItem
+              key={`pending-${index}`}
+              taskDescription={taskDescription}
+              index={absoluteIndex}
+              totalTasks={(debouncedTaskExecutions || []).length + pendingTasks.length}
+              isCurrentlyExecuting={isCurrentlyExecuting}
+              onTaskClick={handlePendingTaskClick}
+            />
+          );
+        })}
       </div>
 
       {/* Scroll to bottom button */}
-      {(debouncedTaskExecutions || []).length > 3 && (
+      {((debouncedTaskExecutions || []).length + pendingTasks.length) > 3 && (
         <div className="flex justify-center pb-4">
           <button
             onClick={scrollToLatest}
