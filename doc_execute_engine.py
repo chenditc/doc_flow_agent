@@ -33,6 +33,33 @@ from tracing_wrappers import TracingToolWrapper, TracingLLMTool
 
 
 @dataclass
+class PendingTask:
+    """A reference to a task with metadata for stack management"""
+    description: str
+    task_id: str = None
+    short_name: str = None
+    parent_task_id: Optional[str] = None
+    generated_by_phase: Optional[str] = None
+    
+    def __post_init__(self):
+        # Auto-generate task_id if not provided
+        if self.task_id is None:
+            self.task_id = str(uuid.uuid4())
+        
+        # Auto-generate short_name if not provided
+        if self.short_name is None:
+            self.short_name = self._generate_simple_short_name(self.description)
+    
+    def _generate_simple_short_name(self, description: str) -> str:
+        """Generate a simple short name from task description"""
+        # Simple implementation: first 50 characters + "..." if truncated
+        if len(description) <= 50:
+            return description
+        else:
+            return description[:47] + "..."
+
+
+@dataclass
 class Task:
     """A task to be executed"""
     task_id: str
@@ -40,13 +67,30 @@ class Task:
     sop_doc_id: str
     tool: Dict[str, Any]
     input_json_path: Dict[str, str]
-    output_json_path: str  # Changed from Dict[str, str] to str - now holds jsonpath
+    output_json_path: str  # Holds jsonpath for output location
+    short_name: str = None  # Short name for visualization (auto-generated if None)
+    parent_task_id: Optional[str] = None  # Parent task relationship  
     output_description: str = None  # Store output description for dynamic path generation
+    
+    def __post_init__(self):
+        # Auto-generate short_name if not provided
+        if self.short_name is None:
+            self.short_name = self._generate_simple_short_name(self.description)
+    
+    def _generate_simple_short_name(self, description: str) -> str:
+        """Generate a simple short name from task description"""
+        # Simple implementation: first 50 characters + "..." if truncated
+        if len(description) <= 50:
+            return description
+        else:
+            return description[:47] + "..."
 
     def __str__(self):
         # Return all fields as a formatted string for easy logging
         return (f"Task ID: {self.task_id}\n"
                 f"Description: {self.description}\n"
+                f"Short Name: {self.short_name}\n"
+                f"Parent Task ID: {self.parent_task_id}\n"
                 f"SOP Document ID: {self.sop_doc_id}\n"
                 f"Tool: {self.tool.get('tool_id', 'N/A')}\n"
                 f"Input JSON Paths: {json.dumps(self.input_json_path, ensure_ascii=False)}\n"
@@ -56,6 +100,7 @@ class Task:
     def __repr__(self):
         # Return a concise representation for debugging
         return (f"Task(task_id={self.task_id}, description={self.description}, "
+                f"short_name={self.short_name}, parent_task_id={self.parent_task_id}, "
                 f"sop_doc_id={self.sop_doc_id}, tool={self.tool.get('tool_id', 'N/A')}, "
                 f"input_json_path={self.input_json_path}, output_json_path={self.output_json_path}, "
                 f"output_description={self.output_description})")
@@ -68,7 +113,8 @@ class DocExecuteEngine:
         self.docs_dir = Path(docs_dir)
         self.context_file = Path(context_file)
         self.context = {}
-        self.task_stack = []  # Stack of task description strings
+        self.task_stack: List[PendingTask] = []
+        self.pending_tasks: Dict[str, PendingTask] = {}  # Index by task_id for quick lookups
         self.task_execution_counter = 0  # Counter for executed tasks
         self.task_retry_count = {}  # Track retry attempts for failed tasks
         self.max_retries = 3  # Maximum retry attempts per task
@@ -104,7 +150,7 @@ class DocExecuteEngine:
     def _get_engine_state(self) -> Dict[str, Any]:
         """Get current engine state for tracing"""
         return {
-            "task_stack": self.task_stack.copy(),
+            "task_stack": [asdict(task) for task in self.task_stack],
             "context": json.loads(json.dumps(self.context)),  # Deep copy
             "task_execution_counter": self.task_execution_counter,
             "last_task_output": self.last_task_output
@@ -211,8 +257,8 @@ class DocExecuteEngine:
         else:
             return f"$.{new_first_part}"
     
-    async def create_task_from_sop(self, sop_doc: SOPDocument, description: str = None) -> Task:
-        """Create a task from a SOP document"""
+    async def create_task_from_sop(self, sop_doc: SOPDocument, pending_task: PendingTask) -> Task:
+        """Create a task from a SOP document and PendingTask"""
 
         # Generate input JSON paths if not provided but input_description exists, iterate through input_description and see if the fields has path defined.
         input_json_path = sop_doc.input_json_path
@@ -226,7 +272,7 @@ class DocExecuteEngine:
             update_input_json_path = await self.json_path_generator.generate_input_json_paths(
                 input_description_to_generate_path,
                 self.context,
-                description
+                pending_task.description
             )
             input_json_path.update(update_input_json_path)
 
@@ -235,8 +281,10 @@ class DocExecuteEngine:
         output_description = sop_doc.output_description
         
         return Task(
-            task_id=str(uuid.uuid4()),
-            description=description if description else sop_doc.description,
+            task_id=pending_task.task_id,
+            description=pending_task.description,
+            short_name=pending_task.short_name,
+            parent_task_id=pending_task.parent_task_id,
             sop_doc_id=sop_doc.doc_id,
             tool=sop_doc.tool,
             input_json_path=input_json_path,
@@ -244,8 +292,8 @@ class DocExecuteEngine:
             output_description=output_description
         )
     
-    async def create_task_from_description(self, description: str) -> Task:
-        """Create a task from natural language description
+    async def create_task_from_description(self, pending_task: PendingTask) -> Task:
+        """Create a task from a PendingTask with enhanced relationship tracking
         
         This is the main interface for creating tasks from natural language.
         Steps:
@@ -257,10 +305,10 @@ class DocExecuteEngine:
 
         # Trace SOP resolution phase
         with self.tracer.trace_phase_with_data("sop_resolution") as phase_ctx:
-            self.context["current_task"] = description
+            self.context["current_task"] = pending_task.description
             
             # Step 1: Parse sop_doc_id from natural language
-            sop_doc_id = await self.sop_parser.parse_sop_doc_id_from_description(description)
+            sop_doc_id = await self.sop_parser.parse_sop_doc_id_from_description(pending_task.description)
 
             if not sop_doc_id:
                 # Use general fallback SOP document if no specific doc_id found
@@ -275,7 +323,7 @@ class DocExecuteEngine:
             
             # Set phase data with results
             phase_ctx.set_data({
-                "input": {"description": description},
+                "input": {"description": pending_task.description, "pending_task": asdict(pending_task)},
                 "selected_doc_id": sop_doc_id,
                 "loaded_sop_document": asdict(sop_doc)
             })
@@ -283,15 +331,19 @@ class DocExecuteEngine:
         # Start task creation phase
         with self.tracer.trace_phase_with_data("task_creation") as phase_ctx:
             # Step 4: Create task with all fields populated
-            task = await self.create_task_from_sop(sop_doc, description)
+            task = await self.create_task_from_sop(sop_doc, pending_task)
             
             # Set phase data
             phase_ctx.set_data({
                 "sop_document": asdict(sop_doc),
+                "pending_task": asdict(pending_task),
                 "created_task": asdict(task)
             })
         
         print(f"[TASK_CREATION] Created task: {task.description}")
+        print(f"                Task ID: {task.task_id}")
+        print(f"                Short name: {task.short_name}")
+        print(f"                Parent task ID: {task.parent_task_id}")
         print(f"                SOP doc: {task.sop_doc_id}")
         print(f"                Tool: {task.tool.get('tool_id', 'N/A')}")
         print(f"                Input JSON paths: {task.input_json_path}")
@@ -301,7 +353,7 @@ class DocExecuteEngine:
         
         return task
     
-    async def execute_task(self, task: Task) -> List[str]:
+    async def execute_task(self, task: Task) -> List[PendingTask]:
         """Execute a single task"""
         # Increment task execution counter
         self.task_execution_counter += 1
@@ -411,23 +463,24 @@ class DocExecuteEngine:
             # Use new task generation context manager
             with self.tracer.trace_new_task_generation_step() as step_ctx:
                 # Use LLM to check the output, see if there is new task needed.
-                new_task_list = await self.parse_new_tasks_from_output(tool_output, task.description)
+                new_pending_tasks = await self.parse_new_tasks_from_output(tool_output, task)
                 
                 # Set results in context manager
                 step_ctx.set_result(
-                    generated_tasks=new_task_list,
+                    generated_tasks=[asdict(pending_task) for pending_task in new_pending_tasks],
                     tool_output=tool_output,
                     task_description=task.description
                 )
             
-            # Set phase data with results
+            # Set phase data with task generation results
             phase_ctx.set_data({
+                "parent_task": asdict(task),
                 "tool_output": tool_output,
                 "current_task_description": task.description,
-                "generated_tasks": new_task_list
+                "generated_tasks": [asdict(pending_task) for pending_task in new_pending_tasks]
             })
 
-        return new_task_list
+        return new_pending_tasks
     
     async def run_task(self, task: Task):
         """Run a single task and save context"""
@@ -437,35 +490,36 @@ class DocExecuteEngine:
         self.save_context()
         return new_task_list
 
-    async def add_new_tasks(self, new_tasks: List[str]) -> None:
-        """Add new tasks to the task stack
+    async def add_new_tasks(self, new_pending_tasks: List[PendingTask]) -> None:
+        """Add new task references to the task stack
         
         Args:
-            new_tasks: List of task description strings to add to the stack
+            new_pending_tasks: List of PendingTask objects to add to the stack
             
         Note:
             Tasks are added in reverse order so that the first task in the list
             is executed first (LIFO stack behavior)
         """
-        if not new_tasks:
+        if not new_pending_tasks:
             return
             
         # Add tasks in reverse order so first task is executed first
-        for task_description in reversed(new_tasks):
-            self.task_stack.append(task_description)
-            print(f"[TASK_STACK] Added task to stack: {task_description}")
+        for pending_task in reversed(new_pending_tasks):
+            self.task_stack.append(pending_task)
+            self.pending_tasks[pending_task.task_id] = pending_task
+            print(f"[TASK_STACK] Added task to stack: {pending_task.short_name} (ID: {pending_task.task_id})")
         
         print(f"[TASK_STACK] Stack size: {len(self.task_stack)}")
 
-    async def parse_new_tasks_from_output(self, output: Any, current_task_description: str) -> List[str]:
+    async def parse_new_tasks_from_output(self, output: Any, current_task: Task) -> List[PendingTask]:
         """Parse new task descriptions from tool output using LLM with function calling
         
         Args:
             output: The output from the previously executed task (any type, will be converted to string)
-            current_task_description: Description of the current task for context
+            current_task: The current Task object for context
             
         Returns:
-            List of task descriptions extracted from the output. Empty list if no tasks found.
+            List of PendingTask objects extracted from the output. Empty list if no tasks found.
         """
         # Convert output to string
         if isinstance(output, dict):
@@ -555,7 +609,7 @@ If you find new tasks that need to be executed, use the extract_new_tasks functi
 
 Here is the task that needs analysis:
 <Current task description>
-{current_task_description}
+{current_task.description}
 </Current task description>
 
 <Task output content to analyze>
@@ -617,8 +671,19 @@ Here is the task that needs analysis:
                         else:
                             print(f"[TASK_PARSER] Warning: Invalid task format: {task}")
                     
-                    print(f"[TASK_PARSER] Extracted {len(validated_tasks)} new tasks: {validated_tasks}")
-                    return validated_tasks
+                    # Convert extracted task descriptions to PendingTask objects
+                    pending_tasks = []
+                    for task_description in validated_tasks:
+                        pending_task = PendingTask(
+                            description=task_description,
+                            parent_task_id=current_task.task_id,
+                            generated_by_phase="new_task_generation"
+                            # task_id and short_name will be auto-generated
+                        )
+                        pending_tasks.append(pending_task)
+                    
+                    print(f"[TASK_PARSER] Extracted {len(pending_tasks)} new tasks: {[pt.short_name for pt in pending_tasks]}")
+                    return pending_tasks
             
             # No tool calls found with the expected function name
             print("[TASK_PARSER] No extract_new_tasks tool call found, returning empty task list")
@@ -628,15 +693,16 @@ Here is the task that needs analysis:
             print("[TASK_PARSER] No tool calls in response, returning empty task list")
             return []
 
-    async def generate_recovery_task(self, missing_error: TaskInputMissingError, task_description: str) -> str:
+    async def generate_recovery_task(self, missing_error: TaskInputMissingError, task_description: str, parent_task_id: str = None) -> PendingTask:
         """Generate a recovery task to obtain missing input
         
         Args:
             missing_error: The TaskInputMissingError that was raised
             task_description: The original task description that failed
+            parent_task_id: Optional parent task ID for relationship tracking
             
         Returns:
-            A task description that can be used to gather the missing information
+            A PendingTask that can be used to gather the missing information
         """
         prompt = f"""
 Some information seems missing or not clarified for following task. Please generate a task to generate or obtain necessary information.
@@ -670,9 +736,16 @@ Please return only the task description as a single paragraph, without additiona
         recovery_response = await llm_tool.execute({"prompt": prompt})
         
         # Extract content from new response format
-        recovery_task = recovery_response["content"]
-            
-        return recovery_task.strip()
+        recovery_task_description = recovery_response["content"].strip()
+        
+        # Create and return PendingTask
+        recovery_pending_task = PendingTask(
+            description=recovery_task_description,
+            parent_task_id=parent_task_id,
+            generated_by_phase="recovery_task_generation"
+        )
+        
+        return recovery_pending_task
 
     async def start(self, initial_task_description: str = None) -> None:
         """Start the execution engine with an optional initial task
@@ -692,50 +765,56 @@ Please return only the task description as a single paragraph, without additiona
         with self.tracer.trace_session(initial_task_description, engine_state_provider=self._get_engine_state):
             # Add initial task to stack if provided
             if initial_task_description:
-                self.task_stack.append(initial_task_description)
-                print(f"[ENGINE] Added initial task: {initial_task_description}")
+                initial_pending_task = PendingTask(
+                    description=initial_task_description
+                    # task_id, short_name auto-generated, parent_task_id remains None for root task
+                )
+                self.task_stack.append(initial_pending_task)
+                self.pending_tasks[initial_pending_task.task_id] = initial_pending_task
+                print(f"[ENGINE] Added initial task: {initial_pending_task.short_name} (ID: {initial_pending_task.task_id})")
             
             # Main execution loop
             while self.task_stack:
                 # Pop the next task from the stack
-                task_description = self.task_stack.pop()
-                print(f"\n[ENGINE] Processing task from stack: {task_description}")
+                pending_task = self.task_stack.pop()
+                print(f"\n[ENGINE] Processing task from stack: {pending_task.short_name} (ID: {pending_task.task_id})")
                 print(f"[ENGINE] Remaining tasks in stack: {len(self.task_stack)}")
                 
                 # Use context-managed task execution tracing
-                with self.tracer.trace_task_execution(task_description, engine_state_provider=self._get_engine_state) as task_ctx:
+                with self.tracer.trace_task_execution(pending_task, engine_state_provider=self._get_engine_state) as task_ctx:
                     try:
-                        # Create task object from description
-                        task = await self.create_task_from_description(task_description)
+                        # Create task object from PendingTask
+                        task = await self.create_task_from_description(pending_task)
                         # Execute the task
-                        new_tasks = await self.run_task(task)
+                        new_pending_tasks = await self.run_task(task)
                         # Clear retry count on successful execution
-                        if task_description in self.task_retry_count:
-                            del self.task_retry_count[task_description]
+                        if pending_task.task_id in self.task_retry_count:
+                            del self.task_retry_count[pending_task.task_id]
                         # Add any new tasks to the stack
-                        if new_tasks:
-                            await self.add_new_tasks(new_tasks)
+                        if new_pending_tasks:
+                            await self.add_new_tasks(new_pending_tasks)
                         # Success path; no explicit status needed (defaults to COMPLETED)
                     except TaskInputMissingError as e:
                         print(f"[ENGINE] Task creation failed due to missing input: {e}")
 
-                        # Check retry count
-                        retry_count = self.task_retry_count.get(task_description, 0)
+                        # Check retry count (using task_id as key)
+                        retry_count = self.task_retry_count.get(pending_task.task_id, 0)
                         if retry_count >= self.max_retries:
                             task_ctx.set_status(ExecutionStatus.FAILED, e)
-                            raise TaskCreationError(task_description=task_description, original_error=TaskInputMissingError)
+                            raise TaskCreationError(task_description=pending_task.description, original_error=TaskInputMissingError)
 
                         # Increment retry count
-                        self.task_retry_count[task_description] = retry_count + 1
+                        self.task_retry_count[pending_task.task_id] = retry_count + 1
 
                         # Put the original task back on the stack (it will be retried after recovery)
-                        self.task_stack.append(task_description)
-                        print(f"[ENGINE] Put failed task back on stack (attempt {retry_count + 1}/{self.max_retries}): {task_description}")
+                        self.task_stack.append(pending_task)
+                        print(f"[ENGINE] Put failed task back on stack (attempt {retry_count + 1}/{self.max_retries}): {pending_task.short_name}")
 
                         # Generate and add recovery task to the top of the stack (it will be executed first)
-                        recovery_task = await self.generate_recovery_task(e, task_description)
-                        self.task_stack.append(recovery_task)
-                        print(f"[ENGINE] Added recovery task to stack: {recovery_task}")
+                        recovery_pending_task = await self.generate_recovery_task(e, pending_task.description, pending_task.task_id)
+                        self.task_stack.append(recovery_pending_task)
+                        self.pending_tasks[recovery_pending_task.task_id] = recovery_pending_task
+                        print(f"[ENGINE] Added recovery task to stack: {recovery_pending_task.short_name} (ID: {recovery_pending_task.task_id})")
                         # Mark as retrying for this execution
                         task_ctx.set_status(ExecutionStatus.RETRYING, e)
         

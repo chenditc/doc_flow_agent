@@ -8,10 +8,13 @@ import json
 import uuid
 from dataclasses import dataclass, asdict, field
 from datetime import datetime, timezone
-from typing import Dict, List, Any, Optional, Union, Callable, Generator
+from typing import Dict, List, Any, Optional, Union, Callable, Generator, TYPE_CHECKING
 from pathlib import Path
 from enum import Enum
 from contextlib import contextmanager
+
+if TYPE_CHECKING:
+    from doc_execute_engine import PendingTask
 
 
 class ExecutionStatus(Enum):
@@ -240,6 +243,7 @@ class TaskExecutionRecord:
     end_time: Optional[str] = None
     status: ExecutionStatus = ExecutionStatus.STARTED
     error: Optional[str] = None
+    task_id: Optional[str] = None  # ID of the actual task being executed
     
     engine_state_before: Optional[Dict[str, Any]] = None
     engine_state_after: Optional[Dict[str, Any]] = None
@@ -330,7 +334,7 @@ class ExecutionTracer:
             "task_execution_counter": task_execution_counter
         }
     
-    def start_task_execution(self, task_description: str, engine_state: Dict[str, Any]) -> str:
+    def start_task_execution(self, pending_task: 'PendingTask', engine_state: Dict[str, Any]) -> str:
         """Start a new task execution"""
         if not self.enabled or not self.session:
             return ""
@@ -339,14 +343,16 @@ class ExecutionTracer:
         self.current_task_execution = TaskExecutionRecord(
             task_execution_id=execution_id,
             task_execution_counter=engine_state["task_execution_counter"],
-            task_description=task_description,
+            task_description=pending_task.description,
+            task_id=pending_task.task_id,
             start_time=self._current_time(),
             engine_state_before=json.loads(json.dumps(engine_state))  # Deep copy
         )
         
         self.session.task_executions.append(self.current_task_execution)
         
-        print(f"[TRACER] Started task execution: {task_description[:50]}...")
+        print(f"[TRACER] Started task execution: {pending_task.description[:50]}...")
+        print(f"[TRACER] Task ID: {pending_task.task_id}")
         
         # Save session file for real-time monitoring after task execution start
         self._save_session()
@@ -507,14 +513,14 @@ class ExecutionTracer:
         return filename
     
     @contextmanager
-    def trace_task_execution(self, task_description: str, engine_state_provider: Optional[Callable[[], Dict[str, Any]]] = None) -> Generator['TaskExecutionContext', None, None]:
+    def trace_task_execution(self, pending_task: 'PendingTask', engine_state_provider: Optional[Callable[[], Dict[str, Any]]] = None) -> Generator['TaskExecutionContext', None, None]:
         """Context manager for tracing a full task execution lifecycle.
 
         Automatically starts a task execution on enter and ends it on exit.
         Status is inferred (COMPLETED/FAILED) unless explicitly overridden via context.set_status.
 
         Args:
-            task_description: Description of the task being executed
+            pending_task: The PendingTask object being executed (contains description and task_id)
             engine_state_provider: Callable to fetch the current engine state; called at enter and exit
         """
         if not self.enabled:
@@ -523,7 +529,7 @@ class ExecutionTracer:
 
         # Compute engine state before and start execution
         engine_state_before = engine_state_provider() if engine_state_provider else {}
-        self.start_task_execution(task_description, engine_state_before)
+        self.start_task_execution(pending_task, engine_state_before)
 
         ctx = TaskExecutionContext()
         exception: Optional[Exception] = None
