@@ -411,12 +411,15 @@ export const TaskPhases: React.FC<TaskPhasesProps> = ({ task }) => {
                           <code className="ml-2 font-mono bg-white px-2 py-1 rounded">{execPhase.prefixed_path || execPhase.output_path_generation?.prefixed_path || 'N/A'}</code>
                         </div>
                         {execPhase.output_path_generation && (
-                          <CollapsibleSection title="View Path Generation Call" defaultExpanded={false}>
-                            {execPhase.output_path_generation.path_generation_call ? (
-                              <ContextualLLMCall 
-                                llmCall={execPhase.output_path_generation.path_generation_call} 
-                                context="output_generation"
-                              />
+                          <CollapsibleSection title="View Path Generation Calls" defaultExpanded={false}>
+                            {((execPhase.output_path_generation as any).llm_calls as any[] | undefined)?.length ? (
+                              <div className="space-y-3">
+                                {((execPhase.output_path_generation as any).llm_calls as any[]).map((call: any, idx: number) => (
+                                  <ContextualLLMCall key={call.tool_call_id || idx} llmCall={call} context="output_generation" />
+                                ))}
+                              </div>
+                            ) : (execPhase.output_path_generation as any).path_generation_call ? (
+                              <ContextualLLMCall llmCall={(execPhase.output_path_generation as any).path_generation_call} context="output_generation" />
                             ) : (
                               <div className="text-sm text-gray-500">No path generation call recorded.</div>
                             )}

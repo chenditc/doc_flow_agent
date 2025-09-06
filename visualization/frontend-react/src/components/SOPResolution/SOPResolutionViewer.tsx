@@ -80,8 +80,32 @@ export const SOPResolutionViewer: React.FC<SOPResolutionViewerProps> = ({ phaseD
               </div>
             )}
 
-            {/* LLM Validation Call */}
-            {documentSelection.validation_call && (
+            {/* LLM Validation Calls */}
+            {documentSelection.llm_calls && documentSelection.llm_calls.length > 0 && (
+              <div>
+                <div className="border border-purple-200 rounded-lg">
+                  <div className="px-3 py-2 bg-purple-50 border-b border-purple-200 rounded-t-lg">
+                    <span className="text-sm font-medium text-purple-900">Document Selection LLM Calls ({documentSelection.llm_calls.length})</span>
+                  </div>
+                  <div className="p-3 space-y-3">
+                    {documentSelection.llm_calls.map((call, idx) => (
+                      <ContextualLLMCall 
+                        key={call.tool_call_id || idx}
+                        llmCall={call}
+                        context="sop_validation"
+                        relatedData={{ 
+                          candidateDocuments: documentSelection.candidate_documents,
+                          selectedDocument: documentSelection.selected_doc_id,
+                          inputDescription: phaseData.input?.description
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+            {/* Backward compatibility: single validation_call */}
+            {!documentSelection.llm_calls && (documentSelection as any).validation_call && (
               <div>
                 <div className="border border-purple-200 rounded-lg">
                   <div className="px-3 py-2 bg-purple-50 border-b border-purple-200 rounded-t-lg">
@@ -89,7 +113,7 @@ export const SOPResolutionViewer: React.FC<SOPResolutionViewerProps> = ({ phaseD
                   </div>
                   <div className="p-3">
                     <ContextualLLMCall 
-                      llmCall={documentSelection.validation_call}
+                      llmCall={(documentSelection as any).validation_call}
                       context="sop_validation"
                       relatedData={{ 
                         candidateDocuments: documentSelection.candidate_documents,

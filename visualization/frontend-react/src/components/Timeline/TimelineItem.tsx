@@ -1,23 +1,20 @@
-import React from 'react';
+import React, { useState } from 'react';
 import type { TaskExecution } from '../../types/trace';
 
 interface TimelineItemProps {
-  task: TaskExecution;
-  index: number;
-  totalTasks: number;
-  onClick: (task: TaskExecution) => void;
+  item: TaskExecution;
+  onItemClick: (task: TaskExecution) => void;
   isNew?: boolean;
   isCurrentlyExecuting?: boolean;
 }
 
 export const TimelineItem: React.FC<TimelineItemProps> = ({
-  task,
-  index,
-  totalTasks,
-  onClick,
+  item,
+  onItemClick,
   isNew = false,
-  isCurrentlyExecuting = false
+  isCurrentlyExecuting = false,
 }) => {
+  const [showFullDescription, setShowFullDescription] = useState(false);
   const getStatusColor = (status: string): string => {
     switch (status) {
       case 'completed':
@@ -78,144 +75,130 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
     }
   };
 
-  const extractTaskOutput = (task: TaskExecution): string => {
-    // Try to get from engine_state_after.context.last_task_output
-    if (task.engine_state_after && 
-        task.engine_state_after.context && 
-        task.engine_state_after.context.last_task_output) {
-      
-      const output = task.engine_state_after.context.last_task_output;
-      
-      if (typeof output === 'string') {
-        return output;
-      } else if (typeof output === 'object' && output !== null) {
-        if (output.stdout || output.stderr) {
-          let result = '';
-          if (output.stdout) result += output.stdout;
-          if (output.stderr) result += (result ? '\n--- STDERR ---\n' : '') + output.stderr;
-          return result || 'No output';
-        } else {
-          return JSON.stringify(output, null, 2);
-        }
-      }
-    }
-    
-    return 'No output available';
+  const PHASE_DEFS: Array<{ key: keyof TaskExecution['phases']; label: string }> = [
+    { key: 'sop_resolution', label: 'Sop Resolution' },
+    { key: 'task_creation', label: 'Task Creation' },
+    { key: 'task_execution', label: 'Task Execution' },
+    { key: 'context_update', label: 'Context Update' },
+    { key: 'new_task_generation', label: 'New Task Generation' },
+  ];
+
+  const handleItemClick = () => {
+    onItemClick(item);
   };
 
-  const extractPhases = (task: TaskExecution): string[] => {
-    if (!task.phases) return [];
-    return Object.keys(task.phases);
-  };
+  const phases = PHASE_DEFS.map(def => {
+    const phase = item.phases?.[def.key as keyof typeof item.phases];
+    const status = phase?.status ?? 'pending';
+    const completed = status === 'completed';
+    // Use green for completed; grey for all others to keep it intuitive and compact
+    const chipClass = completed ? getStatusBadgeColor('completed') : 'bg-gray-100 text-gray-800';
+    const phaseDuration = phase ? calculateDuration(phase.start_time, phase.end_time) : '';
+    return { label: def.label, status, chipClass, completed, duration: phaseDuration };
+  });
+  const isCompleted = item.status === 'completed';
+  const duration = calculateDuration(item.start_time, item.end_time);
 
-  const handleClick = () => {
-    onClick(task);
-  };
+  const cardBaseClasses = "border rounded-lg p-3 shadow-sm transition-all duration-200 hover:shadow-md cursor-pointer";
+  const animationClass = isNew ? 'animate-slide-in-and-fade' : '';
+  const currentlyExecutingClass = isCurrentlyExecuting ? 'animate-pulse-border' : '';
+  const statusColor = isCurrentlyExecuting && item.status === 'completed'
+    ? getStatusColor('running') // Show as "running" if it's the last completed task
+    : getStatusColor(item.status);
 
-  const duration = calculateDuration(task.start_time, task.end_time);
-  const phases = extractPhases(task);
-  const output = extractTaskOutput(task);
-  const hasConnector = index < totalTasks - 1;
+  const shouldShowStatusBadge = !(isCurrentlyExecuting && item.status === 'completed');
 
-  const containerStatusClass = isCurrentlyExecuting
-    ? 'border-orange-400 bg-orange-50'
-    : getStatusColor(task.status);
-
-  const shouldShowStatusBadge = !(isCurrentlyExecuting && task.status === 'completed');
+  const titleText = item.short_name || (item.phases?.task_creation?.created_task?.short_name) || item.task_description || `Task ${item.task_execution_counter}`;
+  const fullDescription = item.task_description;
 
   return (
-    <div 
-      className={`timeline-item relative cursor-pointer group ${isNew ? 'animate-pulse' : ''}`}
-      onClick={handleClick}
-    >
-      {/* Connector line */}
-      {hasConnector && (
-        <div className="absolute left-6 top-full w-0.5 h-8 bg-gray-300 z-0 pointer-events-none" />
-      )}
-
-  <div className={`relative z-10 bg-gray-50 rounded-lg p-4 border-l-4 transition-all duration-200 group-hover:shadow-md ${containerStatusClass} ${isCurrentlyExecuting ? 'ring-2 ring-orange-300' : ''}`}>
-        {/* Task Header */}
-        <div className="flex justify-between items-start mb-2">
-          <div className="flex-1 min-w-0 pr-4">
-            <h3 className="text-sm font-semibold text-gray-900 truncate" title={task.task_description}>
-              {task.task_description || `Task ${task.task_execution_counter}`}
+    <div className="relative">
+      <div
+        className={`${cardBaseClasses} ${statusColor} ${animationClass} ${currentlyExecutingClass}`}
+        onClick={handleItemClick}
+      >
+        <div className="flex justify-between items-start">
+          <div className="flex-1 min-w-0">
+            <h3 className="text-sm font-semibold text-gray-900 truncate" title={titleText}>
+              {titleText}
             </h3>
-            <p className="text-xs text-gray-600 mt-1">
-              ID: <span className="font-mono">{task.task_execution_id}</span>
-            </p>
           </div>
-          <div className="flex-shrink-0 text-right">
-            <div className="flex items-center gap-1 flex-wrap justify-end">
-              {shouldShowStatusBadge && (
-                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeColor(task.status)}`}>
-                  {task.status}
-                </span>
-              )}
-              {isCurrentlyExecuting && (
-                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                  currently executing
-                </span>
+          <div className="ml-2 flex-shrink-0 flex items-center space-x-2">
+            {shouldShowStatusBadge && (
+              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeColor(item.status)}`}>
+                {item.status}
+              </span>
+            )}
+            {isCurrentlyExecuting && (
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                Executing
+              </span>
+            )}
+          </div>
+        </div>
+
+        {fullDescription && (
+          <div className="mt-2">
+            <button
+              type="button"
+              className="text-xs text-blue-600 hover:underline"
+              onClick={(e) => { e.stopPropagation(); setShowFullDescription(!showFullDescription); }}
+            >
+              {showFullDescription ? 'Hide full description' : 'Show full description'}
+            </button>
+            {showFullDescription && (
+              <pre className="bg-gray-100 p-2 rounded text-xs text-gray-700 mt-1 whitespace-pre-wrap break-words max-h-40 overflow-auto">
+                <code>{fullDescription}</code>
+              </pre>
+            )}
+          </div>
+        )}
+
+        <div className="mt-2 pt-2 border-t border-gray-200">
+          <div className="text-xs text-gray-600 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+            <div>
+              {isCompleted ? (
+                <>
+                  <span className="font-medium">Duration:</span> {duration}
+                </>
+              ) : (
+                <>
+                  <span className="font-medium">Started:</span> {formatTime(item.start_time)}
+                </>
               )}
             </div>
-          </div>
-        </div>
-
-        {/* Task Details */}
-        <div className="grid grid-cols-2 gap-4 text-xs text-gray-600 mb-3">
-          <div>
-            <span className="font-medium">Started:</span> {formatTime(task.start_time)}
-          </div>
-          <div>
-            <span className="font-medium">Duration:</span> {duration}
-          </div>
-        </div>
-
-        {/* Phases */}
-        {phases.length > 0 && (
-          <div className="mb-3">
-            <div className="text-xs font-medium text-gray-700 mb-1">Phases:</div>
-            <div className="flex flex-wrap gap-1">
-              {phases.map((phase) => (
-                <span 
-                  key={phase}
-                  className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-gray-100 text-gray-700"
+            <div className="flex flex-wrap gap-2">
+              {phases.map((phase, idx) => (
+                <span
+                  key={idx}
+                  className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${phase.chipClass}`}
                 >
-                  {phase.replace(/_/g, ' ')}
+                  {phase.label}
+                  {phase.completed && (
+                    <>
+                      <span className="ml-1" aria-label="completed">✔</span>
+                      {phase.duration && phase.duration !== 'N/A' && (
+                        <span className="ml-1">({phase.duration})</span>
+                      )}
+                    </>
+                  )}
                 </span>
               ))}
             </div>
           </div>
-        )}
-
-        {/* Output Preview */}
-        {output && output !== 'No output available' && (
-          <div className="border-t border-gray-200 pt-2">
-            <div className="text-xs font-medium text-gray-700 mb-1">Output Preview:</div>
-            <div className="text-xs text-gray-600 bg-white rounded px-2 py-1 max-h-16 overflow-hidden">
-              <pre className="whitespace-pre-wrap break-words">
-                {output.length > 100 ? output.substring(0, 100) + '...' : output}
-              </pre>
-            </div>
-          </div>
-        )}
-
-        {/* Error display */}
-        {task.error && (
-          <div className="border-t border-red-200 pt-2 mt-2">
-            <div className="text-xs font-medium text-red-700 mb-1">Error:</div>
-            <div className="text-xs text-red-600 bg-red-50 rounded px-2 py-1">
-              {task.error}
-            </div>
-          </div>
-        )}
-
-        {/* Click indicator */}
-        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-          <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-          </svg>
         </div>
+
+        
+
+
+        {item.error && (
+          <div className="mt-2">
+            <h4 className="text-xs font-medium text-red-600 mb-1">Error</h4>
+            <pre className="bg-red-50 p-2 rounded text-xs text-red-700 max-h-24 overflow-auto whitespace-pre-wrap break-all">
+              <code>{item.error}</code>
+            </pre>
+          </div>
+        )}
       </div>
     </div>
   );

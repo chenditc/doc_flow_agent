@@ -17,6 +17,14 @@ export default defineConfig({
       }
     }
   },
+  build: {
+    minify: false,
+    sourcemap: true,
+    target: 'esnext',
+  },
+  esbuild: {
+    minify: false,
+  },
   test: {
     // Use jsdom environment for DOM testing with React Testing Library
     environment: 'jsdom',

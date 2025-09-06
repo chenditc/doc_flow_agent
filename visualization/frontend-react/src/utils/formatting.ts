@@ -268,8 +268,13 @@ export const extractLLMCalls = (task: TaskExecution): Array<{
   };
 
   // Check SOP resolution phase
-  if (task.phases?.sop_resolution?.document_selection?.validation_call) {
-    addLLMCall(task.phases.sop_resolution.document_selection.validation_call, 'SOP Resolution');
+  if (task.phases?.sop_resolution?.document_selection) {
+    const ds: any = task.phases.sop_resolution.document_selection;
+    if (ds.llm_calls && Array.isArray(ds.llm_calls)) {
+      ds.llm_calls.forEach((c: any) => addLLMCall(c, 'SOP Resolution'));
+    } else if (ds.validation_call) {
+      addLLMCall(ds.validation_call, 'SOP Resolution');
+    }
   }
 
   // Check task creation phase
@@ -285,18 +290,33 @@ export const extractLLMCalls = (task: TaskExecution): Array<{
   }
 
   // Check task creation output path generation
-  if (task.phases?.task_creation?.output_path_generation?.path_generation_call) {
-    addLLMCall(task.phases.task_creation.output_path_generation.path_generation_call, 'Task Creation - Output Path');
+  if (task.phases?.task_creation?.output_path_generation) {
+    const opg: any = task.phases.task_creation.output_path_generation;
+    if (opg.llm_calls && Array.isArray(opg.llm_calls)) {
+      opg.llm_calls.forEach((c: any) => addLLMCall(c, 'Task Creation - Output Path'));
+    } else if (opg.path_generation_call) {
+      addLLMCall(opg.path_generation_call, 'Task Creation - Output Path');
+    }
   }
 
   // Check task execution phase
-  if (task.phases?.task_execution?.output_path_generation?.path_generation_call) {
-    addLLMCall(task.phases.task_execution.output_path_generation.path_generation_call, 'Task Execution - Output Path');
+  if (task.phases?.task_execution?.output_path_generation) {
+    const opgExec: any = task.phases.task_execution.output_path_generation;
+    if (opgExec.llm_calls && Array.isArray(opgExec.llm_calls)) {
+      opgExec.llm_calls.forEach((c: any) => addLLMCall(c, 'Task Execution - Output Path'));
+    } else if (opgExec.path_generation_call) {
+      addLLMCall(opgExec.path_generation_call, 'Task Execution - Output Path');
+    }
   }
 
   // Check new task generation phase
-  if (task.phases?.new_task_generation?.task_generation?.task_generation_call) {
-    addLLMCall(task.phases.new_task_generation.task_generation.task_generation_call, 'New Task Generation');
+  if (task.phases?.new_task_generation?.task_generation) {
+    const ntg: any = task.phases.new_task_generation.task_generation;
+    if (ntg.llm_calls && Array.isArray(ntg.llm_calls)) {
+      ntg.llm_calls.forEach((c: any) => addLLMCall(c, 'New Task Generation'));
+    } else if (ntg.task_generation_call) {
+      addLLMCall(ntg.task_generation_call, 'New Task Generation');
+    }
   }
 
   return llmCalls;

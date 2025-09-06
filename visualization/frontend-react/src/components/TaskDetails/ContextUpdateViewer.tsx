@@ -149,14 +149,19 @@ export const ContextUpdateViewer: React.FC<ContextUpdateViewerProps> = ({ phaseD
               </code>
             </div>
             
-            {phaseData.output_path_generation.path_generation_call && (
-              <CollapsibleSection title="View Path Generation Call" defaultExpanded={false}>
-                <ContextualLLMCall 
-                  llmCall={phaseData.output_path_generation.path_generation_call} 
-                  context="output_generation"
-                />
+            {(phaseData.output_path_generation as any)?.llm_calls && (phaseData.output_path_generation as any).llm_calls.length > 0 ? (
+              <CollapsibleSection title="View Path Generation Calls" defaultExpanded={false}>
+                <div className="space-y-3">
+                  {(phaseData.output_path_generation as any).llm_calls.map((call: any, idx: number) => (
+                    <ContextualLLMCall key={call.tool_call_id || idx} llmCall={call} context="output_generation" />
+                  ))}
+                </div>
               </CollapsibleSection>
-            )}
+            ) : (phaseData.output_path_generation as any)?.path_generation_call ? (
+              <CollapsibleSection title="View Path Generation Call" defaultExpanded={false}>
+                <ContextualLLMCall llmCall={(phaseData.output_path_generation as any).path_generation_call} context="output_generation" />
+              </CollapsibleSection>
+            ) : null}
             
             {phaseData.output_path_generation.error && (
               <div className="bg-red-50 border border-red-200 rounded-lg p-3">

@@ -32,6 +32,12 @@ export interface TaskExecution {
   engine_state_before: EngineState;
   engine_state_after?: EngineState;
   phases: TaskPhases;
+  // Parent linkage (optional, may exist in newer traces)
+  parent_task_id?: string | null;
+  // Optional direct task_id for early parent/child linking before phases produce created_task
+  task_id?: string;
+  // Optional short name for compact display (available at start from tracer)
+  short_name?: string;
 }
 
 export interface TaskPhases {
@@ -58,7 +64,7 @@ export interface DocumentSelection {
   start_time: string;
   end_time: string | null;
   status: PhaseStatus;
-  validation_call?: LLMCall | null;
+  llm_calls?: LLMCall[] | null;
   candidate_documents: string[];
   selected_doc_id: string | null;
   loaded_document?: any | null;
@@ -126,7 +132,7 @@ export interface OutputPathGeneration {
   start_time: string;
   end_time: string | null;
   status: PhaseStatus;
-  path_generation_call?: LLMCall | null;
+  llm_calls?: LLMCall[] | null;
   generated_path?: string | null;
   prefixed_path?: string | null;
   error: string | null;
@@ -146,6 +152,7 @@ export interface Task {
   task_id: string;
   description: string;
   sop_doc_id: string;
+  parent_task_id?: string | null;
   tool: {
     tool_id: string;
     parameters?: Record<string, any>;
@@ -153,6 +160,8 @@ export interface Task {
   input_json_path: Record<string, string>;
   output_json_path: string;
   output_description: string;
+  // Optional short name for compact timeline display
+  short_name?: string;
 }
 
 // Task Execution Phase (Updated for new tracing structure)
@@ -210,11 +219,20 @@ export interface NewTaskGeneration {
   start_time: string;
   end_time: string | null;
   status: PhaseStatus;
-  task_generation_call?: LLMCall | null;
+  llm_calls?: LLMCall[] | null;
   tool_output: any;
   current_task_description?: string | null;
   generated_tasks: string[];
   error: string | null;
+}
+
+export interface GeneratedTask {
+  description: string;
+  task_id?: string;
+  short_name?: string;
+  parent_task_id?: string | null;
+  generated_by_phase?: string | null;
+  [key: string]: any;
 }
 
 // Common Types (Updated for new tracing structure)

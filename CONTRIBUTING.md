@@ -29,12 +29,21 @@ Thank you for your interest in contributing to Doc Flow Agent! This document pro
 - Ensure proper YAML front matter structure
 - Test your SOPs with the execution engine
 
+### Developer Certificate of Origin (DCO)
+
+**All contributions must be signed off using the Developer Certificate of Origin (DCO).**
+
+- Sign your commits using `git commit -s`
+- This certifies that you have the right to submit the code under the project's license
+- See [DCO.md](DCO.md) for full details
+
 ### Pull Request Process
 
-1. Update documentation if needed
-2. Add tests for new functionality
-3. Ensure your code follows the style guidelines
-4. Create a pull request with:
+1. **Sign off all commits** with DCO (see above)
+2. Update documentation if needed
+3. Add tests for new functionality
+4. Ensure your code follows the style guidelines
+5. Create a pull request with:
    - Clear title and description
    - Reference any related issues
    - List of changes made

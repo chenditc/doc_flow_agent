@@ -22,7 +22,7 @@ from tools.llm_tool import LLMTool
 from tools.cli_tool import CLITool
 from tools.user_communicate_tool import UserCommunicateTool
 from tools.python_executor_tool import PythonExecutorTool
-from doc_execute_engine import DocExecuteEngine, Task
+from doc_execute_engine import DocExecuteEngine, Task, PendingTask
 from sop_document import SOPDocument
 from exceptions import TaskInputMissingError, TaskCreationError
 from utils import set_json_path_value
@@ -306,13 +306,20 @@ class TestDocExecuteEngineIntegration:
         task_description = "List home directory contents using command: ls -la ~/"
         self.engine.context = {"current_task": task_description}
         
+        # Create PendingTask first
+        pending_task = PendingTask(description=task_description)
+        
         # Create task
-        task = await self.engine.create_task_from_sop(sop_doc, task_description)
+        task = await self.engine.create_task_from_sop(sop_doc, pending_task)
         print(task)
         assert task.description == task_description
         assert task.sop_doc_id == "tools/bash"
         assert task.tool["tool_id"] == "CLI"
         assert task.input_json_path is not None
+        # Check new relationship fields
+        assert task.short_name is not None
+        assert task.task_id == pending_task.task_id  # Should use same task_id
+        assert task.parent_task_id == pending_task.parent_task_id  # Should inherit parent relationship
         
         print("✅ Task creation from bash SOP document works correctly")
     
@@ -336,12 +343,18 @@ class TestDocExecuteEngineIntegration:
         """Test task creation from natural language with bash SOP"""
         description = "Run ls command to list home directory contents using: ls -la ~/"
         
-        task = await self.engine.create_task_from_description(description)
+        # Create PendingTask first  
+        pending_task = PendingTask(description=description)
+        
+        task = await self.engine.create_task_from_description(pending_task)
         
         assert task.description == description
         # Since the LLM might not pick up the bash SOP, this will likely use fallback
         # which is expected behavior - fallback can handle any task
         assert task.tool["tool_id"] in ["CLI", "LLM"]
+        # Check new relationship fields
+        assert task.short_name is not None
+        assert task.task_id == pending_task.task_id
         
         print("✅ Task creation from description with bash SOP works correctly")
     
@@ -353,9 +366,10 @@ class TestDocExecuteEngineIntegration:
             mock_parser.return_value = "nonexistent/sop"
             
             description = "Task with non-existent SOP"
+            pending_task = PendingTask(description=description)
             
             with pytest.raises(ValueError, match="Cannot find SOP document for parsed doc_id: nonexistent/sop"):
-                await self.engine.create_task_from_description(description)
+                await self.engine.create_task_from_description(pending_task)
         
         print("✅ Task creation handles invalid SOP correctly")
 

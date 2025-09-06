@@ -283,15 +283,24 @@ class TestDocExecuteEngineUnits(unittest.TestCase):
     
     def test_get_engine_state(self):
         """Test engine state capture for tracing"""
-        # Set up some engine state
-        self.engine.task_stack = ["task1", "task2"]
+        from doc_execute_engine import PendingTask
+        
+        # Set up some engine state with PendingTask objects
+        task1 = PendingTask(description="task1")
+        task2 = PendingTask(description="task2")
+        self.engine.task_stack = [task1, task2]
         self.engine.context = {"key": "value", "nested": {"data": 123}}
         self.engine.task_execution_counter = 5
         
         state = self.engine._get_engine_state()
         
-        # Verify state capture
-        self.assertEqual(state["task_stack"], ["task1", "task2"])
+        # Verify state capture - PendingTask objects are converted to dict format
+        self.assertEqual(len(state["task_stack"]), 2)
+        self.assertEqual(state["task_stack"][0]["description"], "task1")
+        self.assertEqual(state["task_stack"][1]["description"], "task2")
+        # Verify that task_id and short_name are included
+        self.assertIn("task_id", state["task_stack"][0])
+        self.assertIn("short_name", state["task_stack"][0])
         self.assertEqual(state["context"]["key"], "value")
         self.assertEqual(state["context"]["nested"]["data"], 123)
         self.assertEqual(state["task_execution_counter"], 5)

@@ -6,6 +6,19 @@ interface NewTaskGenerationViewerProps {
   phaseData: NewTaskGenerationPhase;
 }
 
+function renderGeneratedTask(task: any): React.ReactNode {
+  if (typeof task === 'string') return task;
+  if (!task || typeof task !== 'object') return String(task);
+  // Prefer description if present
+  if (typeof task.description === 'string') return task.description;
+  // Fallback: pretty-print object
+  return (
+    <pre className="text-xs bg-white rounded border p-2 overflow-x-auto">
+      {JSON.stringify(task, null, 2)}
+    </pre>
+  );
+}
+
 export const NewTaskGenerationViewer: React.FC<NewTaskGenerationViewerProps> = ({ phaseData }) => {
   const taskGeneration = phaseData.task_generation;
   
@@ -17,8 +30,10 @@ export const NewTaskGenerationViewer: React.FC<NewTaskGenerationViewerProps> = (
     );
   }
 
-  const generatedTasks = taskGeneration.generated_tasks || [];
+  const generatedTasks = (taskGeneration.generated_tasks || []) as any[];
   const taskCount = generatedTasks.length;
+  const llmCalls = (taskGeneration as any).llm_calls as any[] | undefined;
+  const singleCall = (taskGeneration as any).task_generation_call as any | undefined;
 
   return (
     <div className="space-y-4">
@@ -44,7 +59,7 @@ export const NewTaskGenerationViewer: React.FC<NewTaskGenerationViewerProps> = (
                     {index + 1}
                   </div>
                   <div className="flex-1 text-sm text-gray-800">
-                    {task}
+                    {renderGeneratedTask(task)}
                   </div>
                 </div>
               </div>
@@ -53,16 +68,26 @@ export const NewTaskGenerationViewer: React.FC<NewTaskGenerationViewerProps> = (
         )}
       </div>
 
-      {/* Task Generation LLM Call */}
-      {taskGeneration.task_generation_call && (
+      {/* Task Generation LLM Calls */}
+      {llmCalls && llmCalls.length > 0 && (
         <div>
           <div className="text-sm font-medium text-gray-700 mb-3">
-            Task Generation LLM Call
+            Task Generation LLM Calls ({llmCalls.length})
           </div>
-          <ContextualLLMCall 
-            llmCall={taskGeneration.task_generation_call} 
-            context="task_generation"
-          />
+          <div className="space-y-3">
+            {llmCalls.map((call, idx) => (
+              <div key={call.tool_call_id || idx} className="border rounded p-3">
+                <ContextualLLMCall llmCall={call} context="task_generation" />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {/* Backward compatibility: single call field */}
+      {!llmCalls && singleCall && (
+        <div>
+          <div className="text-sm font-medium text-gray-700 mb-3">Task Generation LLM Call</div>
+          <ContextualLLMCall llmCall={singleCall} context="task_generation" />
         </div>
       )}
 

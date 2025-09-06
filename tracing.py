@@ -102,7 +102,7 @@ class OutputPathGeneration:
     status: ExecutionStatus = ExecutionStatus.STARTED
     
     # LLM call for path generation
-    path_generation_call: Optional[LLMCall] = None
+    llm_calls: List[LLMCall] = field(default_factory=list)
     
     # Results
     generated_path: Optional[str] = None
@@ -118,7 +118,7 @@ class DocumentSelection:
     status: ExecutionStatus = ExecutionStatus.STARTED
     
     # LLM call for validation
-    validation_call: Optional[LLMCall] = None
+    llm_calls: List[LLMCall] = field(default_factory=list)
     
     # Results
     candidate_documents: List[str] = field(default_factory=list)
@@ -135,7 +135,7 @@ class NewTaskGeneration:
     status: ExecutionStatus = ExecutionStatus.STARTED
     
     # LLM call for task generation
-    task_generation_call: Optional[LLMCall] = None
+    llm_calls: List[LLMCall] = field(default_factory=list)
     
     # Results
     tool_output: Any = None
@@ -244,6 +244,10 @@ class TaskExecutionRecord:
     status: ExecutionStatus = ExecutionStatus.STARTED
     error: Optional[str] = None
     task_id: Optional[str] = None  # ID of the actual task being executed
+    # Parent relationship for this execution's task (available even before phases run)
+    parent_task_id: Optional[str] = None
+    # A short name for compact display (populated from PendingTask at start)
+    short_name: Optional[str] = None
     
     engine_state_before: Optional[Dict[str, Any]] = None
     engine_state_after: Optional[Dict[str, Any]] = None
@@ -339,12 +343,13 @@ class ExecutionTracer:
         if not self.enabled or not self.session:
             return ""
             
-        execution_id = self._generate_id()
         self.current_task_execution = TaskExecutionRecord(
-            task_execution_id=execution_id,
+            task_execution_id=pending_task.task_id,
             task_execution_counter=engine_state["task_execution_counter"],
             task_description=pending_task.description,
             task_id=pending_task.task_id,
+            parent_task_id=pending_task.parent_task_id,
+            short_name=pending_task.short_name,
             start_time=self._current_time(),
             engine_state_before=json.loads(json.dumps(engine_state))  # Deep copy
         )
@@ -357,7 +362,7 @@ class ExecutionTracer:
         # Save session file for real-time monitoring after task execution start
         self._save_session()
         
-        return execution_id
+        return pending_task.task_id
     
     def start_phase(self, phase_name: str) -> None:
         """Start a new execution phase"""
@@ -702,7 +707,7 @@ class ExecutionTracer:
         # Initialize the sub-step
         phase.task_generation = NewTaskGeneration(start_time=self._current_time())
         self._context.current_sub_step = "new_task_generation_step"
-        self._context.llm_call_storage = lambda call: setattr(phase.task_generation, 'task_generation_call', call)
+        self._context.llm_call_storage = lambda call: phase.task_generation.llm_calls.append(call)
         
         step_ctx = NewTaskGenerationContext()
         exception = None
@@ -761,7 +766,7 @@ class ExecutionTracer:
         # Initialize the sub-step
         phase.document_selection = DocumentSelection(start_time=self._current_time())
         self._context.current_sub_step = "document_selection"
-        self._context.llm_call_storage = lambda call: setattr(phase.document_selection, 'validation_call', call)
+        self._context.llm_call_storage = lambda call: phase.document_selection.llm_calls.append(call)
         
         step_ctx = DocumentSelectionContext()
         exception = None
@@ -955,11 +960,11 @@ class ExecutionTracer:
         if not self.enabled:
             yield OutputPathGenerationContext()
             return
-        
+
         # Start output path generation step (inline logic from start_output_path_generation)
         current_time = self._current_time()
         output_gen = None
-        
+
         assert(self._context.current_phase == "context_update")
 
         phase = self.current_task_execution.phases.get("context_update")
@@ -968,10 +973,10 @@ class ExecutionTracer:
         phase.output_path_generation = OutputPathGeneration(start_time=current_time)
         output_gen = phase.output_path_generation
         self._context.current_sub_step = "output_path_generation"
-        self._context.llm_call_storage = lambda call: setattr(phase.output_path_generation, 'path_generation_call', call)
+        self._context.llm_call_storage = lambda call: phase.output_path_generation.llm_calls.append(call)
 
         assert(output_gen is not None)
-        
+
         step_ctx = OutputPathGenerationContext()
         exception = None
         try:
@@ -990,7 +995,7 @@ class ExecutionTracer:
                     output_gen.generated_path = step_ctx.generated_path
                 if step_ctx.prefixed_path:
                     output_gen.prefixed_path = step_ctx.prefixed_path
-            
+
             self._context.current_sub_step = None
             self._context.llm_call_storage = None
 

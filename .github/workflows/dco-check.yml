@@ -1,0 +1,58 @@
+name: DCO Check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  dco_check:
+    name: Developer Certificate of Origin Check
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        # Fetch full history for DCO check
+        fetch-depth: 0
+        
+    - name: Check DCO
+      run: |
+        # Get the list of commits in this PR
+        COMMITS=$(git rev-list --no-merges origin/main..HEAD)
+        
+        if [ -z "$COMMITS" ]; then
+          echo "No commits to check"
+          exit 0
+        fi
+        
+        # Check each commit for DCO sign-off
+        EXIT_CODE=0
+        for commit in $COMMITS; do
+          # Check if commit message contains "Signed-off-by:"
+          if ! git log --format="%B" -n 1 $commit | grep -q "^Signed-off-by: "; then
+            echo "❌ Commit $commit is missing DCO sign-off"
+            echo "   $(git log --format="%s" -n 1 $commit)"
+            EXIT_CODE=1
+          else
+            echo "✅ Commit $commit has DCO sign-off"
+            echo "   $(git log --format="%s" -n 1 $commit)"
+          fi
+        done
+        
+        if [ $EXIT_CODE -ne 0 ]; then
+          echo ""
+          echo "❌ DCO check failed!"
+          echo ""
+          echo "All commits must be signed off with 'Signed-off-by:' line."
+          echo "To fix this, you can:"
+          echo "1. Amend your commits: git commit --amend -s"
+          echo "2. Or rebase and sign off: git rebase --signoff HEAD~<number-of-commits>"
+          echo ""
+          echo "See DCO.md for more information."
+        else
+          echo ""
+          echo "✅ All commits have DCO sign-off!"
+        fi
+        
+        exit $EXIT_CODE

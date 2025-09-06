@@ -119,6 +119,8 @@ class DocExecuteEngine:
         self.task_retry_count = {}  # Track retry attempts for failed tasks
         self.max_retries = 3  # Maximum retry attempts per task
         self.last_task_output = None  # Store the last task output
+        # Centralized map to store task short names by task_id for cross-references
+        self.task_short_name_map: Dict[str, str] = {}
         
         # Initialize tracing
         self.tracer = ExecutionTracer(output_dir=trace_output_dir, enabled=enable_tracing)
@@ -146,6 +148,128 @@ class DocExecuteEngine:
         
         # Initialize JSON path generator
         self.json_path_generator = SmartJsonPathGenerator(self.tools.get("LLM"), self.tracer)
+
+    def _record_task_short_name(self, task_id: str, short_name: Optional[str]) -> None:
+        """Record or update a task's short name in the centralized map."""
+        if task_id and short_name:
+            self.task_short_name_map[task_id] = short_name
+
+    # No sanitization: visualization will render names exactly as generated
+
+    async def generate_short_names_for_pending_tasks(self, new_pending_tasks: List[PendingTask], current_task: Optional[Task] = None) -> None:
+        """Use LLM in a single batch to generate unique, discriminative, short names for newly parsed tasks.
+
+        The LLM considers existing short names and descriptions to avoid collisions and keep names concise.
+        Updates each PendingTask.short_name in-place and records into task_short_name_map.
+        """
+        if not new_pending_tasks:
+            return
+
+        llm_tool = self.tools.get("LLM")
+        if not llm_tool:
+            return        
+
+        # Prepare new task payload
+        new_tasks_payload = [
+            {"task_id": pt.task_id, "description": pt.description}
+            for pt in new_pending_tasks
+        ]
+
+        # Build XML blocks to preserve newlines and avoid escaping issues
+        existing_names_xml = "\n".join([f"<task><task_id>{task_id}</task_id><name>{sname}</name></task>" for task_id, sname in self.task_short_name_map.items() if sname])
+        current_task_xml = (
+            f"<task_id>{current_task.task_id}</task_id>\n<description>\n{current_task.description}\n</description>\n"
+            f"<short_name>{current_task.short_name}</short_name>"
+        ) if current_task else "<current_task/>"
+        new_tasks_xml = "\n".join([
+            f"<task>\n<task_id>{pt['task_id']}</task_id>\n<description>\n{pt['description']}\n</description>\n</task>"
+            for pt in new_tasks_payload
+        ])
+
+        prompt = f"""
+You're assigning compact, unique short names to newly generated tasks. Requirements:
+- Ensure uniqueness across all existing short names
+- Keep names discriminative and concise
+- Use the same language as each task's description
+- Keep names under 15 words
+- You can change existing names if needed to ensure uniqueness
+
+Use the XML blocks below. Do not include any markdown. Return only via the function call with assignments for ALL new tasks.
+
+<existing_short_names>
+{existing_names_xml}
+</existing_short_names>
+
+<current_task>
+{current_task_xml}
+</current_task>
+
+<new_tasks>
+{new_tasks_xml}
+</new_tasks>
+"""
+
+        assign_names_tool = {
+            "type": "function",
+            "function": {
+                "name": "assign_short_names",
+                "description": "Assign unique, short names for tasks in one batch",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "assignments": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "task_id": {"type": "string"},
+                                    "short_name": {"type": "string"}
+                                },
+                                "required": ["task_id", "short_name"]
+                            }
+                        }
+                    },
+                    "required": ["assignments"]
+                }
+            }
+        }
+
+        llm_response = await llm_tool.execute({
+            "prompt": prompt,
+            "tools": [assign_names_tool]
+        })
+
+        # Parse tool call assignments
+        assignments: List[Dict[str, str]] = []
+        if isinstance(llm_response, dict) and "tool_calls" in llm_response:
+            for tool_call in llm_response["tool_calls"]:
+                if tool_call.get("name") == "assign_short_names":
+                    args = tool_call.get("arguments", {})
+                    proposed = args.get("assignments")
+                    if isinstance(proposed, str):
+                        try:
+                            proposed = json_repair.loads(proposed)
+                        except Exception:
+                            proposed = []
+                    if isinstance(proposed, list):
+                        assignments = [a for a in proposed if isinstance(a, dict) and "task_id" in a and "short_name" in a]
+        # Fallback: if nothing usable, keep existing short names
+        if not assignments:
+            raise ValueError("LLM did not return assignments for short names")
+
+        # Build a map from id to the returned name
+        id_to_name = {a["task_id"]: a.get("short_name", "") for a in assignments if "task_id" in a}
+
+        # Apply to pending tasks and record
+        by_id = {pt.task_id: pt for pt in new_pending_tasks}
+        for tid, sname in id_to_name.items():
+            if tid in by_id:
+                by_id[tid].short_name = sname
+                self._record_task_short_name(tid, sname)
+        # Record any remaining without assignment using their existing name
+        for pt in new_pending_tasks:
+            if pt.task_id not in id_to_name:
+                self._record_task_short_name(pt.task_id, pt.short_name)
     
     def _get_engine_state(self) -> Dict[str, Any]:
         """Get current engine state for tracing"""
@@ -332,6 +456,8 @@ class DocExecuteEngine:
         with self.tracer.trace_phase_with_data("task_creation") as phase_ctx:
             # Step 4: Create task with all fields populated
             task = await self.create_task_from_sop(sop_doc, pending_task)
+            # Keep short name map in sync
+            self._record_task_short_name(task.task_id, task.short_name)
             
             # Set phase data
             phase_ctx.set_data({
@@ -463,7 +589,11 @@ class DocExecuteEngine:
             # Use new task generation context manager
             with self.tracer.trace_new_task_generation_step() as step_ctx:
                 # Use LLM to check the output, see if there is new task needed.
-                new_pending_tasks = await self.parse_new_tasks_from_output(tool_output, task)
+                new_pending_tasks = await self.parse_new_tasks_from_output(tool_output, task, self.task_stack)
+
+                # Always batch-generate short names for the new tasks
+                if new_pending_tasks:
+                    await self.generate_short_names_for_pending_tasks(new_pending_tasks, current_task=task)
                 
                 # Set results in context manager
                 step_ctx.set_result(
@@ -507,11 +637,13 @@ class DocExecuteEngine:
         for pending_task in reversed(new_pending_tasks):
             self.task_stack.append(pending_task)
             self.pending_tasks[pending_task.task_id] = pending_task
+            # Record short name in central map
+            self._record_task_short_name(pending_task.task_id, pending_task.short_name)
             print(f"[TASK_STACK] Added task to stack: {pending_task.short_name} (ID: {pending_task.task_id})")
         
         print(f"[TASK_STACK] Stack size: {len(self.task_stack)}")
 
-    async def parse_new_tasks_from_output(self, output: Any, current_task: Task) -> List[PendingTask]:
+    async def parse_new_tasks_from_output(self, output: Any, current_task: Task, task_stack: List[PendingTask]) -> List[PendingTask]:
         """Parse new task descriptions from tool output using LLM with function calling
         
         Args:
@@ -528,15 +660,24 @@ class DocExecuteEngine:
         else:
             output_str = str(output)
 
+        # Use xml format to compact pending task description to string
+        pending_task_list_str = "No tasks waiting in queue"
+        if task_stack:
+            pending_descriptions = []
+            for pending in task_stack:
+                pending_descriptions.append(f"<task>{pending.description}</task>")
+            pending_task_list_str = "\n".join(pending_descriptions)
+
         # Create prompt for LLM to extract task descriptions
         prompt = f"""
-An agent has completed a task from user, analyze the output of the following task and extract any new task descriptions that need to be executed by agent. If the output doesn't satisfy the current task requirement, generate a new task for agent to fix error or complete the remaining parts.
+An agent has completed a task from user, analyze the output of the following task and extract any new task descriptions that need to be executed by agent. If the output doesn't satisfy the current task requirement, generate tasks for agent to fix error on original one or finish the remaining task, the generated tasks should also contain the task to apply the fix to original content, so that user can get a complete result instead of multiple fragmented parts.
 
 Please carefully analyze the output content and identify if it explicitly contains any follow-up tasks that explicitly needed to be executed by agent.
 
 **Analysis process:**
 1. Is the output satisfy the current task requirement?
 2. Does the output indicate any follow-up tasks that explicitly needed to be executed by agent?
+3. Any new task already covered by the task waiting for execute? If so, skip the duplicated task.
 
 **Important notes:**
 1. Only extract tasks that clearly need to be executed, do not speculate
@@ -550,13 +691,22 @@ Please carefully analyze the output content and identify if it explicitly contai
 6. If the output doesn't satisfy the current task requirement, you can add more context to the original task description to help avoid the error or missing part.
 
 <Example which should output new task>
-Current Task: We need to implement a landing page site for small business company. Draft a plan for implementation for agents to execute.
-Task output: 
+
+<Current task description>
+We need to implement a landing page site for small business company. Draft a plan for implementation for agents to execute.
+</Current task description>
+
+<Task output content to analyze>
 Agent should execute these tasks:
  - Follow user_communicate.md. Ask user for requirement on landing page, including layout, style, language.
  - Draft plan for frontend development.
  - Draft plan for backend development.
  - Implement frontend and backend site.
+</Task output content to analyze>
+
+<Task list waiting for execute>
+<task>Follow the development plan and implement frontend and backend site.</task>
+</Task list waiting for execute>
 
 extract_new_tasks:
   think process: 
@@ -573,23 +723,34 @@ Yes, the output explicitly lists 4 tasks that "Agent should execute":
 - Draft plan for backend development.
 - Implement frontend and backend site.
 
+3. Any new task already covered by the task waiting for execute? If so, skip the duplicated task.
+`Implement frontend and backend site.` is duplicate with the task waiting for execute. We should skip generate it as new task.
+
 tasks:
 [
-  "Background: We are implementing a landing page site for small business company and have drafted an implementation plan. The plan indicates we need to gather user requirements first.\n\nTask: Follow user_communicate.md documentation and ask user for requirements on landing page, including layout, style, and language preferences.\n\nExpected output: Clear documentation of user requirements covering layout preferences, visual style guidelines, and language specifications for the landing page.\n\nHow to do it: Follow the guidelines in user_communicate.md for proper user communication procedures.",
-  "Background: We are implementing a landing page site for small business company. After gathering user requirements, we need to create a detailed frontend development plan.\n\nTask: Draft a comprehensive plan for frontend development of the landing page site.\n\nExpected output: A detailed frontend development plan that includes technology stack, component structure, responsive design approach, and implementation timeline.\n\nHow to do it: Based on the user requirements gathered, create a structured plan covering all frontend development aspects.",
-  "Background: We are implementing a landing page site for small business company. Along with frontend, we need to plan the backend infrastructure and functionality.\n\nTask: Draft a comprehensive plan for backend development of the landing page site.\n\nExpected output: A detailed backend development plan including server architecture, database design (if needed), API endpoints, hosting requirements, and security considerations.\n\nHow to do it: Design backend architecture that supports the landing page functionality and integrates well with the frontend plan.",
-  "Background: We are implementing a landing page site for small business company. After completing the planning phase, we need to build the actual website.\n\nTask: Implement both frontend and backend components of the landing page site according to the drafted plans.\n\nExpected output: A fully functional landing page website with both frontend user interface and backend infrastructure deployed and ready for use.\n\nHow to do it: Follow the frontend and backend development plans created in previous tasks to build and deploy the complete landing page site."
+  "Background: We are implementing a landing page site for small business company. We need to gather user requirements first.\n\nTask: Follow user_communicate.md documentation and ask user for requirements on landing page, including layout, style, and language preferences.\n\nExpected output: User answered preferred layout preferences, visual style guidelines, and language specifications for the landing page.",
+  "Background: We are implementing a landing page site for small business company. In previous step, we gathered user requirements. In this step we need to create a detailed frontend development plan.\n\nTask: Draft a comprehensive plan for frontend development of the landing page site.\n\nExpected output: A detailed frontend development plan that includes technology stack, component structure, responsive design approach, and implementation timeline.",
+  "Background: We are implementing a landing page site for small business company. In previous step, we gathered user requirements, created plan for frontend development. In this step, we need to plan the backend infrastructure and functionality.\n\nTask: Draft a comprehensive plan for backend development of the landing page site.\n\nExpected output: A detailed backend development plan including server architecture, database design (if needed), API endpoints, hosting requirements, and security considerations.",
 ]
 </Example which should output new task>
 
 <Example which should not output new task>
-Current Task: We need to implement a landing page site for small business company. Draft a plan for implementation.
-Task output: 
+
+<Current task description>
+We need to implement a landing page site for small business company. Draft a plan for implementation.
+</Current task description>
+
+<Task output content to analyze>
 Here is a plan:
  - Follow user_communicate.md. Ask user for requirement on landing page, including layout, style, language.
  - Draft plan for frontend development.
  - Draft plan for backend development.
  - Implement frontend and backend site.
+</Task output content to analyze>
+
+<Task list waiting for execute>
+No tasks waiting in queue
+</Task list waiting for execute>
 
 extract_new_tasks:
   think process: 
@@ -615,6 +776,10 @@ Here is the task that needs analysis:
 <Task output content to analyze>
 {output_str}
 </Task output content to analyze>
+
+<Task list waiting for execute>
+{pending_task_list_str}
+</Task list waiting for execute>
 """
 
         # Define the function schema for extracting new tasks
@@ -771,6 +936,7 @@ Please return only the task description as a single paragraph, without additiona
                 )
                 self.task_stack.append(initial_pending_task)
                 self.pending_tasks[initial_pending_task.task_id] = initial_pending_task
+                self._record_task_short_name(initial_pending_task.task_id, initial_pending_task.short_name)
                 print(f"[ENGINE] Added initial task: {initial_pending_task.short_name} (ID: {initial_pending_task.task_id})")
             
             # Main execution loop
@@ -829,9 +995,9 @@ async def main():
     engine.load_context(load_if_exists=False)
     
     
-    task_description = "Follow write_xiaohongshu_ganhuo.md, 为一个初中男语文老师写关于作文的小红书笔记，对象是希望自己孩子作文能写好的家长，目的是推广他的作文精批服务。"
+    #task_description = "Follow write_xiaohongshu_ganhuo.md, 为一个初中男语文老师写关于作文的小红书笔记，对象是希望自己孩子作文能写好的家长，目的是推广他的作文精批服务。"
 
-    #task_description = "Follow python.md, 写一段代码输出当前的北京时间。"
+    task_description = "用 az cli 创建一个新的 aks arc cluster"
 
     # Execute the task
     print("Executing...")
