@@ -65,7 +65,7 @@ class TestDocExecuteEngineIntegration:
     
     def teardown_method(self):
         """Clean up and save test data if in real mode"""
-        if self.test_mode == IntegrationTestMode.REAL:
+        if self.test_mode == IntegrationTestMode.REAL or self.test_mode == IntegrationTestMode.MOCK_THEN_REAL:
             self.integration_test.save_test_data()
     
     @pytest.mark.asyncio
@@ -179,7 +179,7 @@ class TestToolRecordingFeatures:
         )
     
     def teardown_method(self):
-        if self.test_mode == IntegrationTestMode.REAL:
+        if self.test_mode == IntegrationTestMode.REAL or self.test_mode == IntegrationTestMode.MOCK_THEN_REAL:
             self.integration_test.save_test_data()
     
     @pytest.mark.asyncio

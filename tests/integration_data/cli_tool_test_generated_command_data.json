@@ -1,0 +1,49 @@
+{
+  "test_name": "cli_tool_test_generated_command",
+  "mode": "real",
+  "timestamp": "2025-09-14T16:36:31.646616",
+  "tool_calls": [
+    {
+      "tool_id": "LLM",
+      "parameters": {
+        "prompt": "You are a command generation assistant.\nGenerate ONE safe shell command to perform the task.\nRules:\n1. Prefer harmless read/print operations (echo, printf, ls, cat a provided file).\n2. Do NOT use destructive actions (rm, mv overwriting, sudo, chmod 777, curl | sh, pip install, git clone).\n3. If task implies file creation, use echo 'content' > filename (no redirection of untrusted var expansions).\n4. Avoid command injection characters unless essential (&, ;, |, >, >>, &&). Use only what is required.\n5. Output MUST be returned via generate_command tool call.\n\n<Task Description>\nPrint the phrase CLI Test Success\n</Task Description>\n\n<Related Context JSON>\n{\n  \"note\": \"testing generated command\"\n}\n</Related Context JSON>\n",
+        "temperature": 0.0,
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "generate_command",
+              "description": "Generate a safe, single-line shell command to accomplish the described task.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "command": {
+                    "type": "string",
+                    "description": "A single safe shell command. Prefer POSIX utilities (echo, ls, cat). No chaining with &&, |, ; unless necessary."
+                  }
+                },
+                "required": [
+                  "command"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "output": {
+        "error": "Failed to connect to LLM API",
+        "error_type": "RuntimeError"
+      },
+      "timestamp": "2025-09-14T16:36:31.645358",
+      "execution_time_ms": 653.0775470018853,
+      "parameters_hash": "8cd7bbf41dd75def"
+    }
+  ],
+  "metadata": {
+    "total_tool_calls": 1,
+    "tools_used": [
+      "LLM"
+    ]
+  },
+  "saved_at": "2025-09-14T16:36:31.646726"
+}

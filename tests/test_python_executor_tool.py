@@ -39,7 +39,7 @@ class TestPythonExecutorTool(unittest.TestCase):
 
     def tearDown(self):
         """Persist recorded tool calls when running in REAL mode"""
-        if self.test_mode == IntegrationTestMode.REAL:
+        if self.test_mode == IntegrationTestMode.REAL or self.test_mode == IntegrationTestMode.MOCK_THEN_REAL:
             # Save all recorded calls for this test so MOCK runs can replay them
             self.integration_test.save_test_data()
 
@@ -54,17 +54,17 @@ class TestPythonExecutorTool(unittest.TestCase):
             result = await self.tool.execute(params)
 
             # Verify result structure
-            self.assertIn("generated_code", result)
+            self.assertIn("python_code", result)
             self.assertIn("return_value", result)
             self.assertIn("stdout", result)
             self.assertIn("stderr", result)
             self.assertIn("exception", result)
 
             # Verify code was generated
-            self.assertIn("def process_step", result["generated_code"])
+            self.assertIn("def process_step", result["python_code"])
 
             # Print results for debugging
-            print(f"\nGenerated code:\n{result['generated_code']}")
+            print(f"\nGenerated code:\n{result['python_code']}")
             print(f"Return value: {result['return_value']}")
             print(f"Exception: {result['exception']}")
             
@@ -87,11 +87,11 @@ class TestPythonExecutorTool(unittest.TestCase):
             result = await self.tool.execute(params)
 
             # Verify result structure
-            self.assertIn("generated_code", result)
-            self.assertIn("def process_step", result["generated_code"])
+            self.assertIn("python_code", result)
+            self.assertIn("def process_step", result["python_code"])
 
             # Print results for debugging
-            print(f"\nGenerated code:\n{result['generated_code']}")
+            print(f"\nGenerated code:\n{result['python_code']}")
             print(f"Return value: {result['return_value']}")
             print(f"Exception: {result['exception']}")
             

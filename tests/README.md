@@ -153,6 +153,7 @@ ls -la tests/integration_data/
 ### Environment Variables
 - `INTEGRATION_TEST_MODE=REAL` - Record actual tool interactions (slower, requires API keys)
 - `INTEGRATION_TEST_MODE=MOCK` - Use recorded data for fast testing (default if not set)
+- `INTEGRATION_TEST_MODE=MOCK_THEN_REAL` - Hybrid: replay when cached; on cache miss, run real call and add it so subsequent identical calls in same test become deterministic. Use this to organically grow/update recorded datasets.
 
 ### Key Features
 - **📹 Automatic Recording**: Tool calls recorded during real execution

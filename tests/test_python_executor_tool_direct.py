@@ -158,7 +158,7 @@ class TestPythonExecutorToolDirect(unittest.TestCase):
             self.assertEqual(result["stdout"], "stdout message")
             self.assertEqual(result["stderr"], "stderr message")
             self.assertIsNone(result["exception"])
-            self.assertIn("def process_step(context)", result["generated_code"])
+            self.assertIn("def process_step(context)", result["python_code"])
             
             # Verify cleanup
             self.assertEqual(mock_remove.call_count, 3)
@@ -256,7 +256,7 @@ class TestPythonExecutorToolDirect(unittest.TestCase):
 
                 # Verify it still works with legacy response
                 self.assertEqual(result["return_value"], "legacy")
-                self.assertEqual(result["generated_code"], "def process_step(context):\n    return 'legacy'")
+                self.assertEqual(result["python_code"], "def process_step(context):\n    return 'legacy'")
 
         asyncio.run(run_test())
 

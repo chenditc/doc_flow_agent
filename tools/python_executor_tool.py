@@ -1,3 +1,23 @@
+#!/usr/bin/env python3
+"""Python Executor Tool for Doc Flow Agent
+
+Generates and runs safe Python functions via LLM assistance.
+
+Copyright 2024-2025 Di Chen
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+"""
+
 import json
 import subprocess
 import uuid
@@ -21,10 +41,12 @@ class PythonExecutorTool(BaseTool):
         task_description = parameters.get("task_description")
         related_context_content = parameters.get("related_context_content", {})
 
-        # Create tool schema for Python code generation
-        tool_schema = self._create_python_code_tool_schema()
+        python_code = parameters.get("python_code")
+        if not python_code:
+            # Create tool schema for Python code generation
+            tool_schema = self._create_python_code_tool_schema()
 
-        prompt = f"""
+            prompt = f"""
 You are a Python code generation assistant.
 Your task is to write a single Python function named `process_step` that takes one argument: `context: dict`.
 This function will be executed to perform following specific task. Import necessary library if you used any.
@@ -40,19 +62,19 @@ The function should return a JSON-serializable value.
 </Json serialized context object>
 """
 
-        llm_params = {
-            "prompt": prompt,
-            "temperature": 0.0,
-            "tools": [tool_schema]
-        }
-        response = await self.llm_tool.execute(llm_params)
-        
-        # Extract generated code from tool call response
-        generated_code = self._extract_python_code_from_response(response)
+            llm_params = {
+                "prompt": prompt,
+                "temperature": 0.0,
+                "tools": [tool_schema]
+            }
+            response = await self.llm_tool.execute(llm_params)
+            
+            # Extract generated code from tool call response
+            python_code = self._extract_python_code_from_response(response)
 
-        # Ensure the generated code is a string
-        if not isinstance(generated_code, str):
-            generated_code = str(generated_code)
+            # Ensure the generated code is a string
+            if not isinstance(python_code, str):
+                python_code = str(python_code)
 
         # Prepare for subprocess
         run_id = uuid.uuid4()
@@ -64,7 +86,7 @@ The function should return a JSON-serializable value.
             json.dump(related_context_content, f)
 
         with open(code_file, "w") as f:
-            f.write(generated_code)
+            f.write(python_code)
 
         try:
             # Run subprocess
@@ -99,7 +121,7 @@ The function should return a JSON-serializable value.
                     os.remove(file_path)
 
         return {
-            "generated_code": generated_code,
+            "python_code": python_code,
             "return_value": return_value,
             "stdout": process.stdout,
             "stderr": process.stderr,

@@ -1,7 +1,20 @@
 #!/usr/bin/env python3
-"""
-JSON Path Generator Tool
+"""JSON Path Generator Tool
 Uses LLM to generate appropriate JSON paths based on input/output descriptions and context schema
+
+Copyright 2024-2025 Di Chen
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 """
 
 import json
@@ -413,29 +426,24 @@ def extract_func(context):
 </GENERATED_CODE>
 """
 
-        try:
-            response = await self.llm_tool.execute({
-                "prompt": prompt
-            })
-            
-            # Extract content from new response format
-            response_content = response["content"]
-            
-            # Print think process for debugging
-            print(f"[JSON_PATH_GEN] Think process for '{input_description}': \n{response_content}")
-            # Parse using regex to extract the code block
-            code_match = re.search(r'```python\n(.*?)\n```', response_content, re.DOTALL)
-            if code_match:
-                code = code_match.group(1).strip()
-            else:
-                raise ValueError("Response does not contain valid Python code block")
-            
-            print(f"[JSON_PATH_GEN] Generated extraction code for '{input_description}': {code}")
-            return code
-        except Exception as e:
-            print(f"[JSON_PATH_GEN] Error generating extraction code: {e}")
-            # Fallback: return lambda that returns description
-            return f'lambda context: "{input_description}"'
+        response = await self.llm_tool.execute({
+            "prompt": prompt
+        })
+        
+        # Extract content from new response format
+        response_content = response["content"]
+        
+        # Print think process for debugging
+        print(f"[JSON_PATH_GEN] Think process for '{input_description}': \n{response_content}")
+        # Parse using regex to extract the code block
+        code_match = re.search(r'```python\n(.*?)\n```', response_content, re.DOTALL)
+        if code_match:
+            code = code_match.group(1).strip()
+        else:
+            raise ValueError("Response does not contain valid Python code block")
+        
+        print(f"[JSON_PATH_GEN] Generated extraction code for '{input_description}': {code}")
+        return code
 
     async def generate_input_json_paths(
         self,

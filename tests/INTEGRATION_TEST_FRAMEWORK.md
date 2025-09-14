@@ -250,8 +250,11 @@ Run the test in REAL mode first to generate mock data.
 
 ## Environment Variables
 
-- `INTEGRATION_TEST_MODE=real|mock` - Override test mode
-- Default mode is `real` if not specified
+- `INTEGRATION_TEST_MODE=REAL|MOCK|MOCK_THEN_REAL` - Override test mode
+    - `REAL`: Always execute real tool calls and record them (overwrites/creates data file on save)
+    - `MOCK`: Only use previously recorded data. Fails fast if a call isn't found.
+    - `MOCK_THEN_REAL`: Use mock data when present; if a call isn't recorded yet, execute it for real, record it in-memory, and (on save) persist an updated dataset. This enables incremental cache building during normal test runs.
+    - Default (when unset) remains `MOCK` for speed and determinism.
 
 ## Troubleshooting
 

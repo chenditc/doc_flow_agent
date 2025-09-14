@@ -10,6 +10,7 @@ import asyncio
 import pytest
 from unittest.mock import patch, MagicMock
 import uuid
+import re
 
 from doc_execute_engine import DocExecuteEngine, Task, PendingTask
 from tracing import ExecutionTracer
@@ -26,20 +27,20 @@ class TestTaskRelationships:
         """Test PendingTask dataclass creation and auto-generation"""
         # Test with minimal fields
         pending_task = PendingTask(description="Test task description")
-        
-        # Verify auto-generated fields
+        # Verify auto-generated fields (deterministic hash id)
         assert pending_task.task_id is not None
-        assert len(pending_task.task_id) == 36  # UUID length
+        assert len(pending_task.task_id) == 16  # First 16 hex chars of sha1
+        assert re.fullmatch(r"[0-9a-f]{16}", pending_task.task_id)
         assert pending_task.short_name == "Test task description"
         assert pending_task.parent_task_id is None
         assert pending_task.generated_by_phase is None
-        
+
         # Test with long description
         long_description = "This is a very long task description that should be truncated to 50 characters max for the short name"
         pending_task_long = PendingTask(description=long_description)
         assert len(pending_task_long.short_name) == 50
         assert pending_task_long.short_name.endswith("...")
-        
+
         print("✅ PendingTask creation and auto-generation works correctly")
 
     def test_pending_task_with_relationships(self):
@@ -66,7 +67,7 @@ class TestTaskRelationships:
         task = Task(
             task_id="test-task-id",
             description="Test task",
-            sop_doc_id="test/sop",
+            sop_doc_id="tools/llm",
             tool={"tool_id": "LLM"},
             input_json_path={"input": "$.test"},
             output_json_path="$.output",
@@ -175,7 +176,7 @@ class TestTaskRelationships:
         parent_task = Task(
             task_id="parent-id",
             description="Parent task",
-            sop_doc_id="test/sop",
+            sop_doc_id="tools/llm",
             tool={"tool_id": "LLM"},
             input_json_path={},
             output_json_path="$.output"

@@ -24,6 +24,7 @@ class IntegrationTestMode(Enum):
     """Test execution modes"""
     REAL = "real"      # Record tool calls and save to file
     MOCK = "mock"      # Load tool calls from file and replay
+    MOCK_THEN_REAL = "mock_then_real"  # Use mock if available, otherwise execute real call and record (progressively builds cache)
 
 
 @dataclass
@@ -147,8 +148,21 @@ class IntegrationTestProxy:
         
         if self.mode == IntegrationTestMode.REAL:
             return await self._execute_real(parameters, param_hash)
-        else:  # MOCK mode
+        elif self.mode == IntegrationTestMode.MOCK:
             return await self._execute_mock(parameters, param_hash)
+        else:  # MOCK_THEN_REAL
+            # Try mock first
+            if param_hash in self._mock_data:
+                return await self._execute_mock(parameters, param_hash)
+            # Fallback to real execution and record (acts like REAL for this call)
+            print(f"🌀 [MOCK_THEN_REAL] Cache miss for {self.tool_id} (hash={param_hash}), executing real call...")
+            result = await self._execute_real(parameters, param_hash)
+            # Also store into mock cache so subsequent identical calls in same test use mock path
+            try:
+                self._mock_data[param_hash] = self._recorded_calls[-1]
+            except Exception:
+                pass
+            return result
     
     async def _execute_real(self, parameters: Dict[str, Any], param_hash: str) -> Any:
         """Execute tool in real mode and record the result"""
@@ -230,7 +244,7 @@ class IntegrationTestBase:
         self.test_session: Optional[TestSession] = None
         
         # Load existing data if in mock mode and load_data is True
-        if self.mode == IntegrationTestMode.MOCK and load_data:
+        if self.mode in (IntegrationTestMode.MOCK, IntegrationTestMode.MOCK_THEN_REAL) and load_data:
             try:
                 self.test_session = self.data_manager.load_test_session(test_name)
             except FileNotFoundError:
@@ -243,7 +257,7 @@ class IntegrationTestBase:
         proxy = IntegrationTestProxy(tool, self.mode, self.data_manager)
         
         # If in mock mode, load the mock data
-        if self.mode == IntegrationTestMode.MOCK and self.test_session:
+        if self.mode in (IntegrationTestMode.MOCK, IntegrationTestMode.MOCK_THEN_REAL) and self.test_session:
             proxy.load_mock_data(self.test_session)
         
         self.proxies.append(proxy)
@@ -251,8 +265,8 @@ class IntegrationTestBase:
     
     def save_test_data(self) -> None:
         """Save all recorded tool calls to file"""
-        if self.mode != IntegrationTestMode.REAL:
-            print("⚠️  Not saving data - not in REAL mode")
+        if self.mode not in (IntegrationTestMode.REAL, IntegrationTestMode.MOCK_THEN_REAL):
+            print("⚠️  Not saving data - mode does not allow writing (MOCK only)")
             return
         
         # Collect all recorded calls from all proxies
@@ -296,6 +310,8 @@ def get_test_mode() -> IntegrationTestMode:
     mode_str = os.getenv("INTEGRATION_TEST_MODE", "mock").lower()
     if mode_str == "mock":
         return IntegrationTestMode.MOCK
+    if mode_str in ("mock_then_real", "mock-then-real", "mockthenreal"):
+        return IntegrationTestMode.MOCK_THEN_REAL
     return IntegrationTestMode.REAL
 
 
@@ -303,5 +319,7 @@ def print_test_mode_info(mode: IntegrationTestMode) -> None:
     """Print information about current test mode"""
     if mode == IntegrationTestMode.REAL:
         print("🔴 Running in REAL mode - tool calls will be executed and recorded")
-    else:
+    elif mode == IntegrationTestMode.MOCK:
         print("🎭 Running in MOCK mode - using recorded tool call responses")
+    elif mode == IntegrationTestMode.MOCK_THEN_REAL:
+        print("🌀 Running in MOCK_THEN_REAL mode - using recorded responses when available, otherwise executing real calls and recording them")

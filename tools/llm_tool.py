@@ -1,7 +1,20 @@
 #!/usr/bin/env python3
-"""
-LLM Tool for Doc Flow Agent
+"""LLM Tool for Doc Flow Agent
 Real OpenAI API implementation
+
+Copyright 2024-2025 Di Chen
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 """
 
 import json
@@ -15,16 +28,31 @@ from .base_tool import BaseTool
 
 class LLMTool(BaseTool):
     """Large Language Model tool for generating text and structured responses"""
-    
+
     def __init__(self):
         super().__init__("LLM")
         # Initialize OpenAI client with custom endpoint
+
+        api_key = os.getenv("OPENAI_API_KEY", "")
+        base_url = os.getenv("OPENAI_API_BASE", "https://openrouter.ai/api/v1")
+        if "cognitiveservices.azure.com" in base_url and not api_key:
+            api_key = self.create_azure_token_provider()
+            print("[LLM INIT] Using Azure OpenAI endpoint")
+
         self.client = AsyncOpenAI(
-            base_url=os.getenv("OPENAI_API_BASE", "https://openrouter.ai/api/v1"),
-            api_key=os.getenv("OPENAI_API_KEY", "")
+            base_url=base_url,
+            api_key=api_key
         )
         self.model = os.getenv("OPENAI_MODEL", "openai/gpt-4o-2024-11-20")   
     
+    def create_azure_token_provider(self):
+        from azure.identity.aio import DefaultAzureCredential, get_bearer_token_provider
+
+        token_provider = get_bearer_token_provider(
+            DefaultAzureCredential(), "https://cognitiveservices.azure.com/.default"
+        )
+        return token_provider
+
     async def execute(self, parameters: Dict[str, Any]) -> str:
         """Execute LLM tool with given parameters
         
@@ -38,8 +66,6 @@ class LLMTool(BaseTool):
             ValueError: If prompt parameter is missing
         """
         self.validate_parameters(parameters, ['prompt'])
-        if not self._validate_api_key():
-            raise ValueError("API key is not configured or invalid")
         if not await self._test_connection():
             raise RuntimeError("Failed to connect to LLM API")
         
@@ -61,8 +87,7 @@ class LLMTool(BaseTool):
                     "content": prompt
                 }
             ],
-            "temperature": 0.7,
-            "max_tokens": max_tokens,
+            "max_completion_tokens": max_tokens,
             "stream": True,
         }
         
@@ -91,11 +116,6 @@ class LLMTool(BaseTool):
             "content": content,
             "tool_calls": tool_calls
         }
-
-    
-    def _validate_api_key(self) -> bool:
-        """Validate that API key is configured"""
-        return bool(self.client.api_key)
     
     def _is_valid_chunk_with_content(self, chunk) -> bool:
         """Check if chunk has valid choices and content
@@ -194,7 +214,7 @@ class LLMTool(BaseTool):
             stream = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": "test"}],
-                max_tokens=2,
+                max_completion_tokens=2,
                 stream=True,
             )
             # Just collect the chunks to verify streaming works
@@ -203,6 +223,9 @@ class LLMTool(BaseTool):
             return True
         except Exception as e:
             print(f"[LLM CONNECTION ERROR] {str(e)}")
+            # print stack trace for debugging
+            import traceback
+            traceback.print_exc()
             return False
 
 if __name__ == "__main__":

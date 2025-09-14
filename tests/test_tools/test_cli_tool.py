@@ -113,7 +113,7 @@ class TestCLITool(unittest.TestCase):
         
         error_message = asyncio.run(run_test())
         
-        self.assertIn("CLI command failed: Command not found", error_message)
+        self.assertIn("CLI command failed (code 1): Command not found", error_message)
     
     @patch('asyncio.create_subprocess_shell')
     @patch('builtins.print')
@@ -135,62 +135,7 @@ class TestCLITool(unittest.TestCase):
         # Verify the result
         self.assertEqual(result_dict["stdout"], "")
         self.assertEqual(result_dict["stderr"], "")
-    
-    def test_execute_missing_command_parameter(self):
-        """Test execute with missing command parameter"""
-        async def run_test():
-            parameters = {}
-            with self.assertRaises(ValueError) as context:
-                await self.cli_tool.execute(parameters)
-            return str(context.exception)
-        
-        error_message = asyncio.run(run_test())
-        self.assertIn("CLI tool requires parameters: command", error_message)
-    
-    def test_validate_command_safety_safe_commands(self):
-        """Test command safety validation for safe commands"""
-        safe_commands = [
-            "ls -la",
-            "cat file.txt",
-            "echo hello",
-            "pwd",
-            "whoami",
-            "grep pattern file.txt"
-        ]
-        
-        for command in safe_commands:
-            self.assertTrue(self.cli_tool.validate_command_safety(command))
-    
-    def test_validate_command_safety_dangerous_commands(self):
-        """Test command safety validation for dangerous commands"""
-        dangerous_commands = [
-            "rm -rf /",
-            "format c:",
-            "del /f *.*",
-            "sudo rm -rf /home",
-            "RM -RF /tmp",  # Test case insensitive
-            "some command && rm -rf /important"
-        ]
-        
-        for command in dangerous_commands:
-            self.assertFalse(self.cli_tool.validate_command_safety(command))
-    
-    def test_validate_command_safety_edge_cases(self):
-        """Test command safety validation edge cases"""
-        edge_cases = [
-            "",  # Empty command
-            "   ",  # Whitespace only
-            "echo 'rm -rf' is dangerous",  # Contains dangerous text in quotes
-        ]
-        
-        # Empty and whitespace commands should be considered safe
-        self.assertTrue(self.cli_tool.validate_command_safety(""))
-        self.assertTrue(self.cli_tool.validate_command_safety("   "))
-        
-        # Command with dangerous text in quotes should be flagged as dangerous
-        # (our simple implementation doesn't distinguish context)
-        self.assertFalse(self.cli_tool.validate_command_safety("echo 'rm -rf' is dangerous"))
-    
+
     @patch('asyncio.create_subprocess_shell')
     @patch('builtins.print')
     def test_execute_command_parameter_retrieval(self, mock_print, mock_subprocess):

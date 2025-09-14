@@ -47,7 +47,7 @@ class TestDocExecuteEngineIntegration:
         
         # Create wrapped tools
         self.llm_tool = self.integration_test.wrap_tool(LLMTool())
-        self.cli_tool = self.integration_test.wrap_tool(CLITool())
+        self.cli_tool = self.integration_test.wrap_tool(CLITool(llm_tool=self.llm_tool))
         self.user_tool = self.integration_test.wrap_tool(UserCommunicateTool())
         self.python_tool = self.integration_test.wrap_tool(PythonExecutorTool(llm_tool=self.llm_tool))
         
@@ -88,7 +88,7 @@ class TestDocExecuteEngineIntegration:
     
     def teardown_method(self):
         """Clean up and save test data if in real mode"""
-        if self.test_mode == IntegrationTestMode.REAL:
+        if self.test_mode == IntegrationTestMode.REAL or self.test_mode == IntegrationTestMode.MOCK_THEN_REAL:
             self.integration_test.save_test_data()
         
         # Clean up temporary directory
@@ -463,7 +463,7 @@ class TestDocExecuteEngineIntegration:
             task_id="test-task-4",
             description="Generate blog outline for AI topic: The Future of Artificial Intelligence in Education",
             sop_doc_id="blog/generate_outline",
-            tool={"tool_id": "LLM", "parameters": {"prompt": "请为主题【{title}】生成一个清晰的3-5小节大纲，帮助撰写文章。大纲的开头一定要离奇、吸引人思考，可以通过提出一个生活中的反常识事实来实现。\n\n如果你对这个主题不熟悉，你可以只返回【{title}】作为单个小节。\n\n如果主题【{title}】有可能引起争议，在生成完大纲后建议用户参考文档 \"doc/more_info.md\" 进行进一步调研。"}},
+            tool={"tool_id": "LLM", "parameters": {"prompt": "请为主题【{title}】生成一个清晰的3-5小节大纲，帮助撰写文章。大纲的开头一定要离奇、吸引人思考，可以通过提出一个生活中的反常识事实来实现。\n\n如果你对这个主题不熟悉，你可以只返回【{title}】作为单个小节。"}},
             input_json_path={"title": "$.blog_topic"},
             output_json_path="$.outline_result"
         )

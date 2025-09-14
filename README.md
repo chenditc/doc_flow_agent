@@ -5,6 +5,8 @@
 **Authors:** Di Chen
 **Document Status:** In Progress
 
+> Licensing: This project is licensed under the Apache License, Version 2.0. See the `LICENSE` file for the full text.
+
 ## Executive Summary
 
 The Doc Flow Agent is a document-driven task execution framework that implements a novel approach to AI agent architecture. Unlike traditional hardcoded agent systems, this framework externalizes all business logic and domain knowledge into Standard Operating Procedure (SOP) documents, creating a highly flexible and maintainable agent system.
@@ -65,6 +67,14 @@ cd visualization/frontend-react && npm install && npm run build && cd .. && sour
 ```
 
 Visit http://localhost:8000 to view execution traces, task timelines, and debug information. See [`visualization/README.md`](visualization/README.md) for detailed setup and development instructions.
+
+## License
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this project except in compliance with the License. You may obtain a copy of the License at:
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the `LICENSE` file for the specific language governing permissions and limitations under the License.
 
 ---
 

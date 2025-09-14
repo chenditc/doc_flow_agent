@@ -2,12 +2,27 @@
 """
 Doc Flow Agent - Document Execute Engine
 Minimal async engine for executing SOP documents.
+
+Copyright 2024-2025 Di Chen
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 """
 
 import json
 import asyncio
-import uuid
+import uuid  # Still used elsewhere (e.g., other modules); retained for backward compatibility in other code paths
 import re
+import hashlib
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, asdict
@@ -42,9 +57,9 @@ class PendingTask:
     generated_by_phase: Optional[str] = None
     
     def __post_init__(self):
-        # Auto-generate task_id if not provided
+        # Auto-generate deterministic task_id if not provided
         if self.task_id is None:
-            self.task_id = str(uuid.uuid4())
+            self.task_id = self._generate_deterministic_task_id()
         
         # Auto-generate short_name if not provided
         if self.short_name is None:
@@ -57,6 +72,18 @@ class PendingTask:
             return description
         else:
             return description[:47] + "..."
+
+    def _generate_deterministic_task_id(self) -> str:
+        """Generate a stable, deterministic task id based on (parent_task_id + description).
+
+        Format: sha1(parent_task_id + '::' + description) first 16 hex chars.
+        This keeps IDs stable across runs for the same logical task structure.
+        Note: If identical descriptions under the same parent are intentionally
+        generated multiple times, their IDs will collide. If later we need
+        disambiguation, we can append a sequence suffix at the engine level.
+        """
+        base = f"{self.parent_task_id or ''}::{self.description.strip()}".encode("utf-8")
+        return hashlib.sha1(base).hexdigest()[:16]
 
 
 @dataclass
@@ -130,7 +157,7 @@ class DocExecuteEngine:
             llm_tool = TracingLLMTool(LLMTool(), self.tracer)
             self.tools = {
                 "LLM": llm_tool,
-                "CLI": TracingToolWrapper(CLITool(), self.tracer),
+                "CLI": TracingToolWrapper(CLITool(llm_tool=llm_tool), self.tracer),
                 "USER_COMMUNICATE": TracingToolWrapper(UserCommunicateTool(), self.tracer),
                 "PYTHON_EXECUTOR": TracingToolWrapper(PythonExecutorTool(llm_tool=llm_tool), self.tracer)
             }
@@ -643,16 +670,23 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
         
         print(f"[TASK_STACK] Stack size: {len(self.task_stack)}")
 
-    async def parse_new_tasks_from_output(self, output: Any, current_task: Task, task_stack: List[PendingTask]) -> List[PendingTask]:
-        """Parse new task descriptions from tool output using LLM with function calling
+    async def parse_new_tasks_from_output(self, output: Any, current_task: Task, task_stack: Optional[List[PendingTask]] = None) -> List[PendingTask]:
+        """Parse new task descriptions from tool output using LLM with function calling.
+
+        Backward compatibility: Older callers (tests) invoked this method without providing
+        the task_stack argument. If omitted, we fall back to the engine's current stack.
         
         Args:
             output: The output from the previously executed task (any type, will be converted to string)
             current_task: The current Task object for context
+            task_stack: (Optional) Explicit pending task stack to consider when generating prompt.
+                        If None, uses self.task_stack.
             
         Returns:
             List of PendingTask objects extracted from the output. Empty list if no tasks found.
         """
+        if task_stack is None:
+            task_stack = self.task_stack
         # Convert output to string
         if isinstance(output, dict):
             # Try to wrap each key using xml format, value as string
@@ -668,9 +702,11 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
                 pending_descriptions.append(f"<task>{pending.description}</task>")
             pending_task_list_str = "\n".join(pending_descriptions)
 
+        sop_doc_content = self.load_sop_document(current_task.sop_doc_id).body
+
         # Create prompt for LLM to extract task descriptions
         prompt = f"""
-An agent has completed a task from user, analyze the output of the following task and extract any new task descriptions that need to be executed by agent. If the output doesn't satisfy the current task requirement, generate tasks for agent to fix error on original one or finish the remaining task, the generated tasks should also contain the task to apply the fix to original content, so that user can get a complete result instead of multiple fragmented parts.
+An agent has completed a task from user, analyze the output of the following task and extract any new task descriptions that need to be executed by agent. If the output doesn't satisfy the current task requirement, generate tasks for agent to fix error on original one or finish the remaining task.
 
 Please carefully analyze the output content and identify if it explicitly contains any follow-up tasks that explicitly needed to be executed by agent.
 
@@ -728,9 +764,9 @@ Yes, the output explicitly lists 4 tasks that "Agent should execute":
 
 tasks:
 [
-  "Background: We are implementing a landing page site for small business company. We need to gather user requirements first.\n\nTask: Follow user_communicate.md documentation and ask user for requirements on landing page, including layout, style, and language preferences.\n\nExpected output: User answered preferred layout preferences, visual style guidelines, and language specifications for the landing page.",
-  "Background: We are implementing a landing page site for small business company. In previous step, we gathered user requirements. In this step we need to create a detailed frontend development plan.\n\nTask: Draft a comprehensive plan for frontend development of the landing page site.\n\nExpected output: A detailed frontend development plan that includes technology stack, component structure, responsive design approach, and implementation timeline.",
-  "Background: We are implementing a landing page site for small business company. In previous step, we gathered user requirements, created plan for frontend development. In this step, we need to plan the backend infrastructure and functionality.\n\nTask: Draft a comprehensive plan for backend development of the landing page site.\n\nExpected output: A detailed backend development plan including server architecture, database design (if needed), API endpoints, hosting requirements, and security considerations.",
+  "Background: We are implementing a landing page site for small business company. We need to gather user requirements first.\n\nTask: Follow user_communicate.md documentation and ask user for requirements on landing page, including layout, style, and language preferences.",
+  "Background: We are implementing a landing page site for small business company. In previous step, we gathered user requirements. In this step we need to create a detailed frontend development plan.\n\nTask: Draft a comprehensive plan for frontend development of the landing page site.",
+  "Background: We are implementing a landing page site for small business company. In previous step, we gathered user requirements, created plan for frontend development. In this step, we need to plan the backend infrastructure and functionality.\n\nTask: Draft a comprehensive plan for backend development of the landing page site."
 ]
 </Example which should output new task>
 
@@ -773,6 +809,10 @@ Here is the task that needs analysis:
 {current_task.description}
 </Current task description>
 
+<SOP doc selected for this task>
+{sop_doc_content}
+</SOP doc selected this task>
+
 <Task output content to analyze>
 {output_str}
 </Task output content to analyze>
@@ -797,7 +837,11 @@ Here is the task that needs analysis:
                         },
                         "tasks": {
                             "type": "array",
-                            "description": "List of new task descriptions that need to be executed, each task should be a valid json string, be careful when you escape newline and quotes \". Empty array if no new tasks found."
+                            "description": "List of new task descriptions that need to be executed, each task should be a valid json string, be careful when you escape newline and quotes \". Empty array if no new tasks found.",
+                            "items": {
+                                "type": "string",
+                                "description": "A single task description string"
+                            }
                         }
                     },
                     "required": ["tasks"]
@@ -995,9 +1039,11 @@ async def main():
     engine.load_context(load_if_exists=False)
     
     
-    #task_description = "Follow write_xiaohongshu_ganhuo.md, 为一个初中男语文老师写关于作文的小红书笔记，对象是希望自己孩子作文能写好的家长，目的是推广他的作文精批服务。"
+    #task_description = "Follow write_xiaohongshu_ganhuo.md, 为一个初中男语文老师写关于作文的小红书笔记，对象是初中学生家长，目的是推广他的写作方法并吸引学生报名他的写作课程。"
 
-    task_description = "用 az cli 创建一个新的 aks arc cluster"
+    task_description = "Follow bash.md, 获取当前时间，并创建一个包含当前时间的文件，文件名格式为 current_time_YYYYMMDD_HHMMSS.txt，内容为当前时间的完整字符串表示。"
+
+    #task_description = "用 az cli 创建一个新的 aks arc cluster"
 
     # Execute the task
     print("Executing...")
