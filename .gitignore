@@ -74,3 +74,5 @@ Thumbs.db
 context.json
 traces/
 *.log
+
+test_traces

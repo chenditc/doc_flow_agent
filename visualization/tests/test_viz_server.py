@@ -148,7 +148,7 @@ class TestVizServer:
         response = client.get('/')
         assert response.status_code == 200
         # Should serve the index.html file
-        assert b'Doc Flow Trace Viewer' in response.content
+        assert b'Doc Flow Visualization API' in response.content
 
     def test_cors_headers(self, client):
         """Test that CORS headers are set for development"""
