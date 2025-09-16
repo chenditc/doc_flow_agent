@@ -11,7 +11,7 @@ output_description: 生成的一系列任务，每一个任务是一条撰写小
 ## parameters.prompt
 
 ### Objective
-请为下面的主题生成一系列小红书图文撰写的任务，每个主题生成一个，例如： `[生成任务x] 请根据 write_xiaohongshu_single_post.md  撰写一个吸引人的小红书图文。`
+请为下面的主题生成一系列小红书图文撰写的任务，每个主题生成一个，例如： `<new task to execute>[生成任务x] 请根据 write_xiaohongshu_single_post.md  撰写一个吸引人的小红书图文。</new task to execute>`
 
 需要展开的主题：
 

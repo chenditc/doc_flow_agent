@@ -243,10 +243,7 @@ class IntegrationTestProxy:
         """
         # Gracefully handle tools that might not implement the method
         if hasattr(self.tool, "get_result_validation_hint"):
-            try:
-                return self.tool.get_result_validation_hint()  # type: ignore
-            except Exception as e:  # Defensive: never block tests due to hint
-                return f"(validation hint unavailable: {e})"
+            return self.tool.get_result_validation_hint()  # type: ignore
         return "(no validation hint provided)"
 
     def __getattr__(self, name: str):  # Fallback delegation for future needs

@@ -7,7 +7,6 @@ tool:
 input_json_path:
   task_description: $.current_task
 input_description:
-  direction: 小红书的图文内容方向，例如生活经验分享、理财产品评测等
   post_target_audience: 小红书图文的受众
   post_num: 需要几个图文主题，一个数字
   current_date: 当前时间

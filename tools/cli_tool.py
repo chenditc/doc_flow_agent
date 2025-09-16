@@ -85,21 +85,10 @@ class CLITool(BaseTool):
             stderr=asyncio.subprocess.PIPE
         )
         stdout, stderr = await process.communicate()
-        decoded_stdout = stdout.decode()
-        decoded_stderr = stderr.decode()
-
-        # If the command failed, raise RuntimeError so integration framework records error
-        if process.returncode != 0:
-            # Use first non-empty line from stderr or stdout as error summary
-            combined = (decoded_stderr or decoded_stdout).strip().splitlines()
-            first_line = "" if not combined else combined[0].strip()
-            raise RuntimeError(
-                f"CLI command failed (code {process.returncode}): {first_line or 'Unknown error'}"
-            )
 
         return {
-            "stdout": decoded_stdout,
-            "stderr": decoded_stderr,
+            "stdout": stdout.decode(),
+            "stderr": stderr.decode(),
             "returncode": process.returncode,
             "executed_command": explicit_command,
         }
@@ -161,4 +150,4 @@ ls -la /home/user/documents | grep '.txt'
         return (
 """The result is a JSON object with keys: stdout (string), stderr (string), returncode (integer), executed_command (string).
 Check for obvious errors in returncode and stderr. If returncode is non-zero, the command likely failed.
-Ensure stdout is relevant to the task description and satisfies task requirements.""")
+If stdout is not empty, check if it is relevant to the task description.""")

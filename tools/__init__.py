@@ -5,6 +5,7 @@ Tools package for Doc Flow Agent
 from .base_tool import BaseTool
 from .llm_tool import LLMTool
 from .cli_tool import CLITool
+from .template_tool import TemplateTool
 from .json_path_generator import (
 	BaseJsonPathGenerator,
 	OnebyOneJsonPathGenerator,
@@ -16,6 +17,7 @@ __all__ = [
 	'BaseTool',
 	'LLMTool',
 	'CLITool',
+	'TemplateTool',
 	'UserCommunicateTool',
 	# JSON path generators
 	'BaseJsonPathGenerator',

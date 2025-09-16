@@ -33,7 +33,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from sop_document import SOPDocument, SOPDocumentLoader, SOPDocumentParser
-from tools import BaseTool, LLMTool, CLITool, UserCommunicateTool
+from tools import BaseTool, LLMTool, CLITool, TemplateTool, UserCommunicateTool
 from tools.python_executor_tool import PythonExecutorTool
 from tools.json_path_generator import SmartJsonPathGenerator
 from jsonpath_ng.ext import parse
@@ -160,6 +160,7 @@ class DocExecuteEngine:
             self.tools = {
                 "LLM": llm_tool,
                 "CLI": TracingToolWrapper(CLITool(llm_tool=llm_tool), self.tracer),
+                "TEMPLATE": TracingToolWrapper(TemplateTool(), self.tracer),
                 "USER_COMMUNICATE": TracingToolWrapper(UserCommunicateTool(), self.tracer),
                 "PYTHON_EXECUTOR": TracingToolWrapper(PythonExecutorTool(llm_tool=llm_tool), self.tracer)
             }
@@ -167,6 +168,7 @@ class DocExecuteEngine:
             self.tools = {
                 "LLM": LLMTool(),
                 "CLI": CLITool(),
+                "TEMPLATE": TemplateTool(),
                 "USER_COMMUNICATE": UserCommunicateTool(),
                 "PYTHON_EXECUTOR": PythonExecutorTool(llm_tool=LLMTool())
             }
@@ -541,11 +543,19 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
                     tool_params[key] = value
                     print(f"Added task input parameter '{key}' with value to tools parameters as default value: {value}")
             
-            # Call the tool
+            # Get the tool ID first
             tool_id = task.tool.get('tool_id')
             if tool_id not in self.tools:
                 raise ValueError(f"Unknown tool: {tool_id}")
             
+            # Special handling for TEMPLATE tool - inject document body
+            if tool_id == "TEMPLATE":
+                # Load the SOP document to get the body
+                sop_doc = self.sop_loader.load_sop_document(task.sop_doc_id)
+                tool_params['template_content'] = sop_doc.body
+                print(f"Added template_content to TEMPLATE tool parameters (body length: {len(sop_doc.body)} chars)")
+            
+            # Call the tool
             tool_instance = self.tools[tool_id]
             # Capture nested LLM calls during actual tool execution
             with self.tracer.trace_tool_execution_step():
@@ -723,24 +733,7 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
 
         # Create prompt for LLM to extract task descriptions
         prompt = f"""
-An agent has completed a task from user. Analyze the output of the following task based on "Output Validation Hint" and extract any new task descriptions that need to be executed by agent. Extract new tasks only if those new tasks are needed to complete the parent task or current task. 
-
-If the output doesn't satisfy the current task requirement based on "Output Validation Hint", generate tasks for agent to fix errors on the original one or finish the remaining task.
-
-Please carefully analyze the output content and identify if it explicitly contains any follow-up tasks that are necessary for fulfilling the parent or current task.
-
-**Analysis process:**
-1. Does the output satisfy the current task requirement?
-2. Does the output indicate any follow-up tasks that are necessary for completing the parent or current task?
-3. Is any new task already covered by the tasks waiting for execution? If so, skip the duplicated task.
-
-**Think process:**
-Let me analyze the task output step by step:
-
-1. Does the output satisfy the current task requirement?
-2. If there are new tasks present, are those new tasks needed to complete the parent task?
-3. If there are new tasks present, are those new tasks needed to complete the current task?
-4. Are any of the new tasks already covered by tasks waiting for execution? If so, skip duplicated tasks.
+Analyze the output of the following text and extract any new task descriptions that need to be executed by agent. New task description is wrapped by <new task to execute> tag or other tag with similar meaning.
 
 **Important notes:**
 1. Only extract tasks that clearly and necessarily need to be executed next to achieve the intended deliverable, do not speculate.
@@ -748,100 +741,10 @@ Let me analyze the task output step by step:
 3. If a reference doc is mentioned, include it in the task description.
 4. There can be overlap between task descriptions. Make sure each description is comprehensive and non-duplicative.
 5. Please use the original task description's language as your response language.
-6. If the output doesn't satisfy the current or parent task requirement, you can add more context to the original task description to help avoid error or missing parts.
+6. If there is duplicate task with "Task list waiting for execute", skip the duplicated task and do not add it in tasks array.
 
-<Example which should output new task>
+Here is the text that needs analysis:
 
-<Parent task description>
-Write a blog post on a specific topic.
-</Parent task description>
-
-<Current task description>
-Draft a plan to write a blog post on a specific topic.
-</Current task description>
-
-<Task output content to analyze>
-Plan:
-- Research the topic thoroughly.
-- Create an outline.
-- Write the first draft.
-- Edit and proofread.
-</Task output content to analyze>
-
-<Task list waiting for execute>
-No tasks waiting in queue
-</Task list waiting for execute>
-
-Extract_new_tasks:
-  Think process:
-  
-Let me analyze the task output to see if it contains explicit follow-up tasks:
-
-1. Does the output satisfy the current task requirement?
-The current task was to "Draft a plan to write a blog post." The output gives a detailed plan, satisfying that requirement. However, since the parent task requires a completed blog post, the planned steps are necessary for that outcome.
-
-2. Are the follow-up tasks required to complete the parent task?
-Yes. The plan steps (Research, Outline, Write, Edit) are required actions for achieving the parent deliverable.
-
-3. Are the follow-up tasks required to complete the current task?
-No, as the current task only required a plan. The deliverable is satisfied for the current task, but further action is needed for the parent.
-
-tasks:
-[
-  "Research the specific topic thoroughly for the blog post.",
-  "Create an outline for the blog post.",
-  "Write the first draft of the blog post.",
-  "Edit and proofread the blog post."
-]
-</Example which should output new task>
-
-<Example which should not output new task>
-
-<Parent task description>
-Draft plans for all my upcoming work tasks.
-</Parent task description>
-
-<Current task description>
-Draft a plan to write a blog post.
-</Current task description>
-
-<Task output content to analyze>
-Plan:
-- Research the topic thoroughly.
-- Create an outline.
-- Write the first draft.
-- Edit and proofread.
-</Task output content to analyze>
-
-<Task list waiting for execute>
-No tasks waiting in queue
-</Task list waiting for execute>
-
-Extract_new_tasks:
-  Think process:
-  
-Let me analyze the task output step by step:
-
-1. Does the output satisfy the current task requirement?
-The current task was to "Draft a plan to write a blog post." The output provides a plan, which is the required deliverable for both the current and parent task.
-
-2. Are the follow-up tasks required for the parent task?
-No. Since the deliverable was the plan itself, there are no necessary follow-up tasks to extract.
-
-tasks: []
-</Example which should not output new task>
-
-If you find new tasks that are essential to complete the parent or current task, use the extract_new_tasks function to return them. If no such tasks are found, call the function with an empty task list.
-
-Here is the task that needs analysis:
-{parent_task_description}
-<Current task description>
-{current_task.description}
-</Current task description>
-
-{sop_doc_content}
-
-{tool_result_validation_hint}
 <Task output content to analyze>
 {output_str}
 </Task output content to analyze>
@@ -862,7 +765,7 @@ Here is the task that needs analysis:
                     "properties": {
                         "think_process": {
                             "type": "string",
-                            "description": "The process of analyze if there is new task for agent to do."
+                            "description": "The process of analyze if there is new task for to do, and if there is any task duplicate with task list waiting for execute."
                         },
                         "tasks": {
                             "type": "array",
