@@ -67,6 +67,7 @@ class TestCLITool(unittest.TestCase):
         # Verify subprocess was called correctly
         mock_subprocess.assert_called_once_with(
             "echo 'Hello World'",
+            executable="bash",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
@@ -155,6 +156,7 @@ class TestCLITool(unittest.TestCase):
         # Verify that the correct command was passed to subprocess
         mock_subprocess.assert_called_once_with(
             "test command",
+            executable='bash',
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )

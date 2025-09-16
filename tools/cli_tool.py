@@ -80,6 +80,7 @@ class CLITool(BaseTool):
 
         process = await asyncio.create_subprocess_shell(
             explicit_command,
+            executable="bash",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )

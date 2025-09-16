@@ -136,7 +136,8 @@ class DocExecuteEngine:
     """Main execution engine for document-driven tasks"""
     
     def __init__(self, docs_dir: str = "sop_docs", context_file: str = "context.json", 
-                 enable_tracing: bool = True, trace_output_dir: str = "traces"):
+                 enable_tracing: bool = True, trace_output_dir: str = "traces", 
+                 max_tasks: Optional[int] = None):
         self.docs_dir = Path(docs_dir)
         self.context_file = Path(context_file)
         self.context = {}
@@ -146,6 +147,11 @@ class DocExecuteEngine:
         self.task_retry_count = {}  # Track retry attempts for failed tasks
         self.max_retries = 3  # Maximum retry attempts per task
         self.last_task_output = None  # Store the last task output
+        # Optional hard cap on number of tasks to execute in a single engine.start() session.
+        # None (default) means unlimited until stack exhausted. When set, once task_execution_counter
+        # reaches max_tasks the engine will stop gracefully with status INTERRUPTED, leaving any
+        # remaining tasks on the stack.
+        self.max_tasks = max_tasks
         # Centralized map to store task short names by task_id for cross-references
         self.task_short_name_map: Dict[str, str] = {}
         
@@ -702,116 +708,135 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
                 pending_descriptions.append(f"<task>{pending.description}</task>")
             pending_task_list_str = "\n".join(pending_descriptions)
 
-        sop_doc_content = self.load_sop_document(current_task.sop_doc_id).body
+        sop_doc_content = self.load_sop_document(current_task.sop_doc_id).body.strip()
+        if sop_doc_content != "":
+            sop_doc_content = f"<sop doc selected for this task: {current_task.sop_doc_id}>\n{sop_doc_content}\n</sop doc selected for this task: {current_task.sop_doc_id}>"
+
+        parent_task_id = current_task.parent_task_id
+        parent_task_description = "This task doesn't have a parent task. This is the root task."
+        if parent_task_id:
+            # Look up parent pending task description if available
+            parent_pending = self.pending_tasks.get(parent_task_id)
+            if parent_pending and parent_pending.description:
+                parent_task_description = f"<parent task description>\n{parent_pending.description}\n</parent task description>\n"
 
         # Create prompt for LLM to extract task descriptions
         prompt = f"""
-An agent has completed a task from user, analyze the output of the following task and extract any new task descriptions that need to be executed by agent. If the output doesn't satisfy the current task requirement, generate tasks for agent to fix error on original one or finish the remaining task.
+Developer: An agent has completed a task from user. Analyze the output of the following task and extract any new task descriptions that need to be executed by agent only if those new tasks are needed to complete the parent task or current task. If the output doesn't satisfy the current task requirement, generate tasks for agent to fix errors on the original one or finish the remaining task.
 
-Please carefully analyze the output content and identify if it explicitly contains any follow-up tasks that explicitly needed to be executed by agent.
+Please carefully analyze the output content and identify if it explicitly contains any follow-up tasks that are necessary for fulfilling the parent or current task.
 
 **Analysis process:**
-1. Is the output satisfy the current task requirement?
-2. Does the output indicate any follow-up tasks that explicitly needed to be executed by agent?
-3. Any new task already covered by the task waiting for execute? If so, skip the duplicated task.
+1. Does the output satisfy the current task requirement?
+2. Does the output indicate any follow-up tasks that are necessary for completing the parent or current task?
+3. Is any new task already covered by the tasks waiting for execution? If so, skip the duplicated task.
+
+**Think process:**
+Let me analyze the task output step by step:
+
+1. Does the output satisfy the current task requirement?
+2. If there are new tasks present, are those new tasks needed to complete the parent task?
+3. If there are new tasks present, are those new tasks needed to complete the current task?
+4. Are any of the new tasks already covered by tasks waiting for execution? If so, skip duplicated tasks.
 
 **Important notes:**
-1. Only extract tasks that clearly need to be executed, do not speculate
-2. Task descriptions should be clear and specific. Make sure the task is understandable without any additional context. Keep the reference documentation path as it is.
-3. Ideally, we should have in the task description: 
- - Why we need to do this: include any context like the current task description and how current task raised new task.
- - What is the expected output: what format or deliverable we expect.
- - How to do it: if there is reference documentation, include the path to it.
-4. There can be overlap between task description, make sure task description is comprehensive.
+1. Only extract tasks that clearly and necessarily need to be executed next to achieve the intended deliverable, do not speculate.
+2. Task descriptions should be clear and specific. Make sure the task is understandable without any additional context. Keep reference documentation path as it is.
+3. If a reference doc is mentioned, include it in the task description.
+4. There can be overlap between task descriptions. Make sure each description is comprehensive and non-duplicative.
 5. Please use the original task description's language as your response language.
-6. If the output doesn't satisfy the current task requirement, you can add more context to the original task description to help avoid the error or missing part.
+6. If the output doesn't satisfy the current or parent task requirement, you can add more context to the original task description to help avoid error or missing parts.
 
 <Example which should output new task>
 
+<Parent task description>
+Write a blog post on a specific topic.
+</Parent task description>
+
 <Current task description>
-We need to implement a landing page site for small business company. Draft a plan for implementation for agents to execute.
+Draft a plan to write a blog post on a specific topic.
 </Current task description>
 
 <Task output content to analyze>
-Agent should execute these tasks:
- - Follow user_communicate.md. Ask user for requirement on landing page, including layout, style, language.
- - Draft plan for frontend development.
- - Draft plan for backend development.
- - Implement frontend and backend site.
-</Task output content to analyze>
-
-<Task list waiting for execute>
-<task>Follow the development plan and implement frontend and backend site.</task>
-</Task list waiting for execute>
-
-extract_new_tasks:
-  think process: 
-  
-Let me analyze the task output to see if it contains explicit follow-up tasks:
-
-1. Is the output satisfy the current task requirement?
-The current task was to "Draft a plan for implementation for agents to execute" for a landing page site. The output does provide a high-level plan with 4 specific tasks that agents should execute, so it does satisfy the requirement.
-
-2. Does the output indicate any follow-up tasks that explicitly needed to be executed by agent?
-Yes, the output explicitly lists 4 tasks that "Agent should execute":
-- Follow user_communicate.md. Ask user for requirement on landing page, including layout, style, language.
-- Draft plan for frontend development.
-- Draft plan for backend development.
-- Implement frontend and backend site.
-
-3. Any new task already covered by the task waiting for execute? If so, skip the duplicated task.
-`Implement frontend and backend site.` is duplicate with the task waiting for execute. We should skip generate it as new task.
-
-tasks:
-[
-  "Background: We are implementing a landing page site for small business company. We need to gather user requirements first.\n\nTask: Follow user_communicate.md documentation and ask user for requirements on landing page, including layout, style, and language preferences.",
-  "Background: We are implementing a landing page site for small business company. In previous step, we gathered user requirements. In this step we need to create a detailed frontend development plan.\n\nTask: Draft a comprehensive plan for frontend development of the landing page site.",
-  "Background: We are implementing a landing page site for small business company. In previous step, we gathered user requirements, created plan for frontend development. In this step, we need to plan the backend infrastructure and functionality.\n\nTask: Draft a comprehensive plan for backend development of the landing page site."
-]
-</Example which should output new task>
-
-<Example which should not output new task>
-
-<Current task description>
-We need to implement a landing page site for small business company. Draft a plan for implementation.
-</Current task description>
-
-<Task output content to analyze>
-Here is a plan:
- - Follow user_communicate.md. Ask user for requirement on landing page, including layout, style, language.
- - Draft plan for frontend development.
- - Draft plan for backend development.
- - Implement frontend and backend site.
+Plan:
+- Research the topic thoroughly.
+- Create an outline.
+- Write the first draft.
+- Edit and proofread.
 </Task output content to analyze>
 
 <Task list waiting for execute>
 No tasks waiting in queue
 </Task list waiting for execute>
 
-extract_new_tasks:
-  think process: 
+Extract_new_tasks:
+  Think process:
+  
+Let me analyze the task output to see if it contains explicit follow-up tasks:
 
+1. Does the output satisfy the current task requirement?
+The current task was to "Draft a plan to write a blog post." The output gives a detailed plan, satisfying that requirement. However, since the parent task requires a completed blog post, the planned steps are necessary for that outcome.
+
+2. Are the follow-up tasks required to complete the parent task?
+Yes. The plan steps (Research, Outline, Write, Edit) are required actions for achieving the parent deliverable.
+
+3. Are the follow-up tasks required to complete the current task?
+No, as the current task only required a plan. The deliverable is satisfied for the current task, but further action is needed for the parent.
+
+tasks:
+[
+  "Research the specific topic thoroughly for the blog post.",
+  "Create an outline for the blog post.",
+  "Write the first draft of the blog post.",
+  "Edit and proofread the blog post."
+]
+</Example which should output new task>
+
+<Example which should not output new task>
+
+<Parent task description>
+Draft plans for all my upcoming work tasks.
+</Parent task description>
+
+<Current task description>
+Draft a plan to write a blog post.
+</Current task description>
+
+<Task output content to analyze>
+Plan:
+- Research the topic thoroughly.
+- Create an outline.
+- Write the first draft.
+- Edit and proofread.
+</Task output content to analyze>
+
+<Task list waiting for execute>
+No tasks waiting in queue
+</Task list waiting for execute>
+
+Extract_new_tasks:
+  Think process:
+  
 Let me analyze the task output step by step:
 
-1. Is the output satisfy the current task requirement?
-The current task was to "Draft a plan for implementation" of a landing page site for a small business company. The output provides a high-level plan with 4 bullet points covering user requirements gathering, frontend planning, backend planning, and implementation. This satisfies the requirement of drafting a plan.
+1. Does the output satisfy the current task requirement?
+The current task was to "Draft a plan to write a blog post." The output provides a plan, which is the required deliverable for both the current and parent task.
 
-2. Does the output indicate any follow-up tasks that explicitly needed to be executed by agent?
-Looking at the output, I can see explicit tasks mentioned, but they are not intended for agent to execute. User just need a plan, but no need for agent.
+2. Are the follow-up tasks required for the parent task?
+No. Since the deliverable was the plan itself, there are no necessary follow-up tasks to extract.
 
 tasks: []
 </Example which should not output new task>
 
-If you find new tasks that need to be executed, use the extract_new_tasks function to return them. If no new tasks are found, call the function with an empty task list.
+If you find new tasks that are essential to complete the parent or current task, use the extract_new_tasks function to return them. If no such tasks are found, call the function with an empty task list.
 
 Here is the task that needs analysis:
+{parent_task_description}
 <Current task description>
 {current_task.description}
 </Current task description>
 
-<SOP doc selected for this task>
 {sop_doc_content}
-</SOP doc selected this task>
 
 <Task output content to analyze>
 {output_str}
@@ -971,7 +996,7 @@ Please return only the task description as a single paragraph, without additiona
         print("[ENGINE] Starting execution engine...")
         
         # Start tracing session using context manager
-        with self.tracer.trace_session(initial_task_description, engine_state_provider=self._get_engine_state):
+        with self.tracer.trace_session(initial_task_description, engine_state_provider=self._get_engine_state) as session_ctx:
             # Add initial task to stack if provided
             if initial_task_description:
                 initial_pending_task = PendingTask(
@@ -982,14 +1007,23 @@ Please return only the task description as a single paragraph, without additiona
                 self.pending_tasks[initial_pending_task.task_id] = initial_pending_task
                 self._record_task_short_name(initial_pending_task.task_id, initial_pending_task.short_name)
                 print(f"[ENGINE] Added initial task: {initial_pending_task.short_name} (ID: {initial_pending_task.task_id})")
-            
+
             # Main execution loop
             while self.task_stack:
+                # Respect max_tasks limit if configured
+                if self.max_tasks is not None and self.task_execution_counter >= self.max_tasks:
+                    print(f"[ENGINE] Maximum task execution limit reached ({self.max_tasks}). Stopping engine.")
+                    # Mark session as interrupted for observability
+                    session_ctx.set_status(ExecutionStatus.INTERRUPTED)
+                    # Record in context for downstream inspection
+                    self.context['max_tasks_reached'] = True
+                    break
+
                 # Pop the next task from the stack
                 pending_task = self.task_stack.pop()
                 print(f"\n[ENGINE] Processing task from stack: {pending_task.short_name} (ID: {pending_task.task_id})")
                 print(f"[ENGINE] Remaining tasks in stack: {len(self.task_stack)}")
-                
+
                 # Use context-managed task execution tracing
                 with self.tracer.trace_task_execution(pending_task, engine_state_provider=self._get_engine_state) as task_ctx:
                     try:
@@ -1027,21 +1061,21 @@ Please return only the task description as a single paragraph, without additiona
                         print(f"[ENGINE] Added recovery task to stack: {recovery_pending_task.short_name} (ID: {recovery_pending_task.task_id})")
                         # Mark as retrying for this execution
                         task_ctx.set_status(ExecutionStatus.RETRYING, e)
-        
+
             print("[ENGINE] All tasks completed. Execution engine stopped.")
 
 async def main():
     """Execute the blog outline generation document"""
     # Initialize the engine
-    engine = DocExecuteEngine()
+    engine = DocExecuteEngine(max_tasks=5)
     
     # Load context (or start fresh)
     engine.load_context(load_if_exists=False)
     
     
-    #task_description = "Follow write_xiaohongshu_ganhuo.md, 为一个初中男语文老师写关于作文的小红书笔记，对象是初中学生家长，目的是推广他的写作方法并吸引学生报名他的写作课程。"
+    task_description = "Follow write_xiaohongshu_ganhuo.md, 为一个初中男语文老师写关于作文的小红书笔记，对象是初中学生家长，目的是推广他的写作方法并吸引学生报名他的写作课程。"
 
-    task_description = "Follow bash.md, 获取当前时间，并创建一个包含当前时间的文件，文件名格式为 current_time_YYYYMMDD_HHMMSS.txt，内容为当前时间的完整字符串表示。"
+    #task_description = "Follow bash.md, 获取当前时间，并创建一个包含当前时间的文件，文件名格式为 current_time_YYYYMMDD_HHMMSS.txt，内容为当前时间的完整字符串表示。"
 
     #task_description = "用 az cli 创建一个新的 aks arc cluster"
 

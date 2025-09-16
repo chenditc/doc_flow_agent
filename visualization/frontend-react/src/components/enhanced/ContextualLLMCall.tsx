@@ -44,7 +44,7 @@ export const ContextualLLMCall: React.FC<ContextualLLMCallProps> = ({
     const allParameters = {
       model: llmCall.model,
       temperature: 0.7, // default, can be overridden
-      max_tokens: 1000, // default, can be overridden
+      max_tokens: 5000, // default, can be overridden
       ...(llmCall.token_usage ? { token_usage: llmCall.token_usage } : {}),
       start_time: llmCall.start_time,
       end_time: llmCall.end_time,

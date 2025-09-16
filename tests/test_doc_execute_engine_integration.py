@@ -67,7 +67,8 @@ class TestDocExecuteEngineIntegration:
             docs_dir=str(real_docs_dir),
             context_file=str(self.context_file),
             enable_tracing=True,
-            trace_output_dir=str(self.traces_dir)
+            trace_output_dir=str(self.traces_dir),
+            max_tasks=3
         )
         
         # Replace the engine's tools with our wrapped versions
