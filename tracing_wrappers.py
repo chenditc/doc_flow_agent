@@ -55,6 +55,10 @@ class TracingToolWrapper:
             )
             raise
 
+    def get_result_validation_hint(self) -> str:
+        """Get result validation hint from the wrapped tool if available"""
+        return self.tool.get_result_validation_hint()
+
 
 class TracingLLMTool(TracingToolWrapper):
     """LLM tool with enhanced tracing for prompt/response logging"""

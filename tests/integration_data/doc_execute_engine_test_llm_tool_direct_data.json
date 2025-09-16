@@ -1,7 +1,7 @@
 {
   "test_name": "doc_execute_engine_test_llm_tool_direct",
   "mode": "real",
-  "timestamp": "2025-09-04T22:04:20.157985",
+  "timestamp": "2025-09-16T16:44:35.121028",
   "tool_calls": [
     {
       "tool_id": "LLM",
@@ -9,11 +9,11 @@
         "prompt": "Generate a simple Python function that adds two numbers"
       },
       "output": {
-        "content": "Here's a simple Python function that adds two numbers:\n\n```python\ndef add_numbers(a, b):\n    \"\"\"\n    Add two numbers together.\n    \n    Args:\n        a (int or float): First number\n        b (int or float): Second number\n    \n    Returns:\n        int or float: Sum of a and b\n    \"\"\"\n    return a + b\n\n# Example usage\nif __name__ == \"__main__\":\n    # Test the function\n    result1 = add_numbers(5, 3)\n    result2 = add_numbers(2.5, 1.7)\n    result3 = add_numbers(-10, 15)\n    \n    print(f\"5 + 3 = {result1}\")\n    print(f\"2.5 + 1.7 = {result2}\")\n    print(f\"-10 + 15 = {result3}\")\n```\n\nThis function:\n- Takes two parameters `a` and `b`\n- Returns their sum\n- Works with both integers and floating-point numbers\n- Includes a docstring explaining its purpose and parameters\n- Has example usage demonstrating how to call the function\n\nWhen you run this code, it will output:\n```\n5 + 3 = 8\n2.5 + 1.7 = 4.2\n-10 + 15 = 5\n```",
+        "content": "def add_numbers(a, b):\n    \"\"\"Return the sum of two numbers.\"\"\"\n    return a + b",
         "tool_calls": []
       },
-      "timestamp": "2025-09-04T22:04:20.155385",
-      "execution_time_ms": 6980.010997009231,
+      "timestamp": "2025-09-16T16:44:35.119188",
+      "execution_time_ms": 16673.246852005832,
       "parameters_hash": "10dc17b9bb71a431"
     }
   ],
@@ -23,5 +23,5 @@
       "LLM"
     ]
   },
-  "saved_at": "2025-09-04T22:04:20.158092"
+  "saved_at": "2025-09-16T16:44:35.121096"
 }

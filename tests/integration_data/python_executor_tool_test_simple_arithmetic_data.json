@@ -1,7 +1,7 @@
 {
   "test_name": "python_executor_tool_test_simple_arithmetic",
   "mode": "real",
-  "timestamp": "2025-09-04T22:04:27.066912",
+  "timestamp": "2025-09-16T16:45:22.371488",
   "tool_calls": [
     {
       "tool_id": "LLM",
@@ -34,16 +34,16 @@
         "content": "",
         "tool_calls": [
           {
-            "id": "toolu_01TKTkZKXREC5UJUBVAJCQ41",
+            "id": "call_SeZvqjz3l0BhNeASfOvxpiPi",
             "name": "generate_python_code",
             "arguments": {
-              "python_code": "def process_step(context: dict):\n    \"\"\"\n    Calculate the sum of numbers a and b from context.\n    \n    Args:\n        context (dict): Dictionary containing 'a' and 'b' keys with numeric values\n        \n    Returns:\n        dict: Dictionary with key 'sum' containing the result\n    \"\"\"\n    a = context['a']\n    b = context['b']\n    result = a + b\n    \n    return {'sum': result}"
+              "python_code": "def process_step(context: dict):\n    \"\"\"\n    Calculate the sum of numbers a and b from context, and return the result as a dictionary with key 'sum'.\n    \"\"\"\n    return {\"sum\": context[\"a\"] + context[\"b\"]}\n"
             }
           }
         ]
       },
-      "timestamp": "2025-09-04T22:04:27.012152",
-      "execution_time_ms": 6697.651624999708,
+      "timestamp": "2025-09-16T16:45:22.328085",
+      "execution_time_ms": 35441.8881960155,
       "parameters_hash": "2f866e5f5773a4e6"
     }
   ],
@@ -53,5 +53,5 @@
       "LLM"
     ]
   },
-  "saved_at": "2025-09-04T22:04:27.067040"
+  "saved_at": "2025-09-16T16:45:22.371670"
 }

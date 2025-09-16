@@ -20,13 +20,10 @@ limitations under the License.
 
 import json
 import asyncio
-import uuid  # Still used elsewhere (e.g., other modules); retained for backward compatibility in other code paths
-import re
 import hashlib
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, asdict
-import subprocess
 import json_repair
 
 import yaml
@@ -39,7 +36,6 @@ from sop_document import SOPDocument, SOPDocumentLoader, SOPDocumentParser
 from tools import BaseTool, LLMTool, CLITool, UserCommunicateTool
 from tools.python_executor_tool import PythonExecutorTool
 from tools.json_path_generator import SmartJsonPathGenerator
-import jsonpath_ng
 from jsonpath_ng.ext import parse
 from utils import set_json_path_value
 from exceptions import TaskInputMissingError, TaskCreationError
@@ -720,9 +716,16 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
             if parent_pending and parent_pending.description:
                 parent_task_description = f"<parent task description>\n{parent_pending.description}\n</parent task description>\n"
 
+        # Get tool validation hint
+        tool_id = current_task.tool.get('tool_id')        
+        tool_instance = self.tools[tool_id]
+        tool_result_validation_hint = f"<Output Validation Hint>\n{tool_instance.get_result_validation_hint()}\n</Output Validation Hint>"
+
         # Create prompt for LLM to extract task descriptions
         prompt = f"""
-Developer: An agent has completed a task from user. Analyze the output of the following task and extract any new task descriptions that need to be executed by agent only if those new tasks are needed to complete the parent task or current task. If the output doesn't satisfy the current task requirement, generate tasks for agent to fix errors on the original one or finish the remaining task.
+An agent has completed a task from user. Analyze the output of the following task based on "Output Validation Hint" and extract any new task descriptions that need to be executed by agent. Extract new tasks only if those new tasks are needed to complete the parent task or current task. 
+
+If the output doesn't satisfy the current task requirement based on "Output Validation Hint", generate tasks for agent to fix errors on the original one or finish the remaining task.
 
 Please carefully analyze the output content and identify if it explicitly contains any follow-up tasks that are necessary for fulfilling the parent or current task.
 
@@ -838,6 +841,7 @@ Here is the task that needs analysis:
 
 {sop_doc_content}
 
+{tool_result_validation_hint}
 <Task output content to analyze>
 {output_str}
 </Task output content to analyze>
@@ -1067,7 +1071,7 @@ Please return only the task description as a single paragraph, without additiona
 async def main():
     """Execute the blog outline generation document"""
     # Initialize the engine
-    engine = DocExecuteEngine(max_tasks=5)
+    engine = DocExecuteEngine(max_tasks=50)
     
     # Load context (or start fresh)
     engine.load_context(load_if_exists=False)

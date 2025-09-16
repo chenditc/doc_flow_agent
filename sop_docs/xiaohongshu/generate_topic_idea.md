@@ -4,6 +4,8 @@ tool:
   tool_id: LLM
   parameters:
     prompt: "{parameters.prompt}"
+input_json_path:
+  task_description: $.current_task
 input_description:
   direction: 小红书的图文内容方向，例如生活经验分享、理财产品评测等
   post_target_audience: 小红书图文的受众
@@ -14,7 +16,7 @@ output_description: 小红书图文的主题列表
 ## parameters.prompt
 
 ### Objective
-请针对于小红书图文的受众“{post_target_audience}”，提出{post_num}个关于“{direction}”的主题列表。最好是与当前时间{current_date}有关的，时令、季节、特殊时间节点相关的。
+{task_description}
 
 ### Guidance
 1. 先分析对于受众{post_target_audience}，他们的痛点有什么，列出{post_num}个不同的痛点。最好是与当前时间{current_date}有关的，时令、季节、特殊时间节点相关的。

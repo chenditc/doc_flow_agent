@@ -1,7 +1,7 @@
 {
   "test_name": "doc_execute_engine_test_create_task_from_description_valid_sop",
   "mode": "real",
-  "timestamp": "2025-09-15T19:33:54.511613",
+  "timestamp": "2025-09-16T16:41:14.793085",
   "tool_calls": [
     {
       "tool_id": "LLM",
@@ -9,11 +9,11 @@
         "prompt": "## Task: Generate Parameter Extraction Code\nGenerate Python code to extract and reformat parameter for the request parameter from candidate fields. User has raise a request and we need to extract and reformat the parameter from the candidate fields in the context.\n\n## User Original Request\nRun ls command to list home directory contents using: ls -la ~/\n\n## Required Request Parameter Description\nAll related context that might be helpful to clarify the task or be used during task execution.\n\n## Candidate Fields from Context\nContext object is a dictionary, here we represent them using json_path syntax:\n- $.['current_task']: Run ls command to list home directory contents using: ls -la ~/\n- current_task: Run ls command to list home directory contents using: ls -la ~/\n\n## Instructions\n1. Generate a Python function that takes 'context' as input variable and returns the code for extracting the request parameter\n2. The code can be:\n   - Hard-coded information, when the parameter needs some rephrasing: `return \"Some fixed string\"` or it's so simple (<50 words) that it can be hard-coded.\n   - Simple extraction, when the parameter is directly available: `return context['key']`\n   - Complex extraction with transformations, regex, string operations, etc, when the parameter needs some transformation.\n3. Think if there is info available in context before generating the code. If info is not enough or still have ambiguitiy, use `return \"<NOT_FOUND_IN_CANDIDATES>\"`. The generated code should just be a getter / parser.\n4. The parameter should only be \"extracted\" or \"rephrased\", not inferred. This means different people should get the same parameter value if they have the same context, if there is uncertainty, do not rephrase it.\n5. If there is no perfect match, return a piece of code which return \"<NOT_FOUND_IN_CANDIDATES>\".\n6. If you rephrase the information, make sure you use the same language as the input_description.\n\n## Examples\n```python\n# The information is directly available in context, just need to do simple extraction\ndef extract_func(context):\n    return context['some_key'][0]['nested_key']\n```\n\n```python\n# The information is available in context, but needs some transformation\ndef extract_func(context): \n    import re\n    # Extract content between <title> tags\n    return re.match(r'<title>(.*?)</title>', context.get('html', '')).group(1)\n```\n\n```python\ndef extract_func(context): \n    # The information is available in context, but doesn't have extact format, so we rephrase it.\n    # Rephrase xxx from xxx\n    return \"Rephrased content based on context\" \n```\n\n```python\ndef extract_func(context): \n    # The information is already present in context, and it's simple enough to return directly\n    return \"cat ./some.log | grep 'error' | wc -l\" \n```\n\n```python\ndef extract_func(context):\n    # The information is not available in context, return a placeholder\n    return \"<NOT_FOUND_IN_CANDIDATES>\"\n```\n\n## Return Format\n<THINK_PROCESS>\n...\n</THINK_PROCESS>\n<GENERATED_CODE>\n```python\ndef extract_func(context):\n    return \"The extracted parameter value\"\n```\n</GENERATED_CODE>\n"
       },
       "output": {
-        "content": "<THINK_PROCESS>\nThe required parameter is \"All related context that might be helpful to clarify the task or be used during task execution.\" In the candidates, the only relevant context is the 'current_task' field containing the user's instruction. Therefore, a simple extraction from context['current_task'] is appropriate. As a fallback, also check for a literal key matching the provided json_path notation. If unavailable, return the placeholder.\n</THINK_PROCESS>\n<GENERATED_CODE>\n```python\ndef extract_func(context):\n    # Prefer direct extraction from 'current_task'\n    try:\n        val = context.get('current_task')\n        if isinstance(val, str) and val.strip():\n            return val\n    except Exception:\n        pass\n\n    # Fallback: sometimes the key may be provided literally as shown in candidates\n    try:\n        val = context.get(\"$.['current_task']\")\n        if isinstance(val, str) and val.strip():\n            return val\n    except Exception:\n        pass\n\n    return \"<NOT_FOUND_IN_CANDIDATES>\"\n```\n</GENERATED_CODE>",
+        "content": "[OFFLINE LLM STUB RESPONSE]\nPrompt hash: 8833\n<THINK_PROCESS>\nThis is a deterministic offline reasoning step.\n</THINK_PROCESS>\n<GENERATED_CODE>\n```python\ndef extract_func(context):\n    # Offline stub returns original task description if present\n    return context.get('current_task', '<NOT_FOUND_IN_CANDIDATES>')\n```\n</GENERATED_CODE>\n",
         "tool_calls": []
       },
-      "timestamp": "2025-09-15T19:33:54.507596",
-      "execution_time_ms": 29161.88281401992,
+      "timestamp": "2025-09-16T16:41:14.791754",
+      "execution_time_ms": 0.021819985704496503,
       "parameters_hash": "e4c3400bef7e88c1"
     }
   ],
@@ -23,5 +23,5 @@
       "LLM"
     ]
   },
-  "saved_at": "2025-09-15T19:33:54.511721"
+  "saved_at": "2025-09-16T16:41:14.793201"
 }

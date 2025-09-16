@@ -21,5 +21,5 @@ output_description: 干货贴的生成方案
 样本流程：
 1. 根据文档 bash.md 调用 bash 获取当前的时间。
 2. 根据文档 generate_topic_idea.md，参考当前的时间，生成10个适合用来做干货贴的主题。
-3. 根据文档 generate_post_task_list.md，把每一个主题写成一个具体的撰写干货贴。
+3. 根据文档 generate_post_task_list.md，把每一个主题写成一个具体的干货贴。
 4. 根据文档 merge_xiaohongshu_result.md，把生成出来的10个干货帖子整理合并成一个完整的文档。

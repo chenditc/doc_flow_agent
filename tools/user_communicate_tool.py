@@ -91,3 +91,6 @@ class UserCommunicateTool(BaseTool):
         
         print(f"\n[USER_COMMUNICATE] Received reply ({len(user_reply)} characters)")
         return user_reply
+
+    def get_result_validation_hint(self) -> str:
+        return "The result is a JSON object with key: user_reply (string). Ensure user_reply contains the user's complete response to the message."

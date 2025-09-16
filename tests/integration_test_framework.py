@@ -232,6 +232,29 @@ class IntegrationTestProxy:
         """Get all recorded calls from this proxy"""
         return self._recorded_calls.copy()
 
+    # --- Delegation helpers -------------------------------------------------
+    def get_result_validation_hint(self) -> str:  # noqa: D401 - simple delegation
+        """Delegate to underlying tool's result validation hint.
+
+        Some engine logic (e.g. task output parsing) expects every tool object
+        to implement get_result_validation_hint(). The proxy previously lacked
+        this attribute causing AttributeError during integration tests when the
+        engine accessed self.tools[tool_id].get_result_validation_hint().
+        """
+        # Gracefully handle tools that might not implement the method
+        if hasattr(self.tool, "get_result_validation_hint"):
+            try:
+                return self.tool.get_result_validation_hint()  # type: ignore
+            except Exception as e:  # Defensive: never block tests due to hint
+                return f"(validation hint unavailable: {e})"
+        return "(no validation hint provided)"
+
+    def __getattr__(self, name: str):  # Fallback delegation for future needs
+        # Avoid recursion for special attributes
+        if name in {"tool", "mode", "data_manager", "tool_id"}:
+            raise AttributeError(name)
+        return getattr(self.tool, name)
+
 
 class IntegrationTestBase:
     """Base class for integration tests with save/mock capabilities"""

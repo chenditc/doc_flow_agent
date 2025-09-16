@@ -66,3 +66,7 @@ class BaseTool(abc.ABC):
     
     def __repr__(self) -> str:
         return self.__str__()
+
+    def get_result_validation_hint(self) -> str:
+        """Return a hint string to help LLM validate the result of the tool call."""
+        raise NotImplementedError("Subclasses must implement get_result_validation_hint()")

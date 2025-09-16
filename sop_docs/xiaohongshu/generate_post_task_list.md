@@ -6,7 +6,7 @@ tool:
     prompt: "{parameters.prompt}"
 input_description:
   topic_list: 一个列表包含了建议生成的小红书图文的主题，一个主题一行
-output_description: 一系列任务，包含小红书的
+output_description: 生成的一系列任务，每一个任务是一条撰写小红书图文的具体内容要求
 ---
 ## parameters.prompt
 
