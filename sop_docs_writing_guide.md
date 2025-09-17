@@ -229,3 +229,44 @@ Combines outputs from multiple execution nodes into final result.
 
 This approach transforms rigid, tool-specific workflows into flexible, reusable, and chainable SOP documents that can be executed programmatically while maintaining human readability.
 
+## Triggering Document Execution
+
+Users can trigger specific SOP documents in several ways:
+
+### Direct Document Reference
+Users can explicitly reference a document by name:
+```
+"Follow write_xiaohongshu_single_post.md to create a post about travel tips"
+"Execute generate_topic_idea.md for my blog"
+"Use merge_xiaohongshu_result.md to combine the posts"
+```
+
+### Chaining Documents
+Documents can trigger other documents using the `<new task to execute>` pattern:
+
+**In Planning Documents:**
+```markdown
+<new task to execute>[Task 1] Follow write_xiaohongshu_single_post.md to write about {topic1}</new task to execute>
+<new task to execute>[Task 2] Follow write_xiaohongshu_single_post.md to write about {topic2}</new task to execute>
+<new task to execute>[Final] Use merge_xiaohongshu_result.md to combine all posts</new task to execute>
+```
+
+This creates a workflow where:
+1. Planning document generates subtasks
+2. Each subtask references a specific execution document
+3. Final merge document combines results
+
+### Best Practices for Document References
+
+**For Document Authors:**
+- Use descriptive filenames that reflect the document's purpose
+- Add meaningful aliases for common alternative names
+- Write clear descriptions that help with automatic selection
+
+**For Users:**
+- Use specific document names when you know exactly what you want
+- Include the `.md` extension for clarity
+- Provide context about your specific requirements
+
+This direct referencing approach gives users precise control over workflow execution while maintaining the flexibility of natural language interaction.
+
