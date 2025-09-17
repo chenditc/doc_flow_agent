@@ -142,12 +142,15 @@ class IntegrationTestProxy:
         
         print(f"🎭 Loaded {len(self._mock_data)} mock responses for {self.tool_id}")
     
-    async def execute(self, parameters: Dict[str, Any]) -> Any:
+    async def execute(self, parameters: Dict[str, Any], sop_doc_body: Optional[str] = None) -> Any:
         """Execute tool with recording/playback logic"""
-        param_hash = self.data_manager._hash_parameters(self.tool_id, parameters)
+        # Include sop_doc_body in hash so that calls differing by provided SOP body don't collide
+        parameters_for_hash = dict(parameters) if isinstance(parameters, dict) else {"params": parameters}
+        parameters_for_hash["__sop_doc_body"] = sop_doc_body
+        param_hash = self.data_manager._hash_parameters(self.tool_id, parameters_for_hash)
         
         if self.mode == IntegrationTestMode.REAL:
-            return await self._execute_real(parameters, param_hash)
+            return await self._execute_real(parameters, param_hash, sop_doc_body=sop_doc_body)
         elif self.mode == IntegrationTestMode.MOCK:
             return await self._execute_mock(parameters, param_hash)
         else:  # MOCK_THEN_REAL
@@ -156,7 +159,7 @@ class IntegrationTestProxy:
                 return await self._execute_mock(parameters, param_hash)
             # Fallback to real execution and record (acts like REAL for this call)
             print(f"🌀 [MOCK_THEN_REAL] Cache miss for {self.tool_id} (hash={param_hash}), executing real call...")
-            result = await self._execute_real(parameters, param_hash)
+            result = await self._execute_real(parameters, param_hash, sop_doc_body=sop_doc_body)
             # Also store into mock cache so subsequent identical calls in same test use mock path
             try:
                 self._mock_data[param_hash] = self._recorded_calls[-1]
@@ -164,19 +167,22 @@ class IntegrationTestProxy:
                 pass
             return result
     
-    async def _execute_real(self, parameters: Dict[str, Any], param_hash: str) -> Any:
+    async def _execute_real(self, parameters: Dict[str, Any], param_hash: str, sop_doc_body: Optional[str] = None) -> Any:
         """Execute tool in real mode and record the result"""
         print(f"🔴 [REAL] {self.tool_id}: {str(parameters)[:100]}...")
         
         start_time = asyncio.get_event_loop().time()
         try:
-            result = await self.tool.execute(parameters)
+            result = await self.tool.execute(parameters, sop_doc_body=sop_doc_body)
             execution_time = (asyncio.get_event_loop().time() - start_time) * 1000
             
             # Record the call
+            # Include sop_doc_body in recorded parameters so playback can match properly
+            parameters_to_record = dict(parameters) if isinstance(parameters, dict) else {"params": parameters}
+            parameters_to_record["__sop_doc_body"] = sop_doc_body
             record = self.data_manager.create_tool_call_record(
                 tool_id=self.tool_id,
-                parameters=parameters,
+                parameters=parameters_to_record,
                 output=result,
                 execution_time_ms=execution_time
             )
@@ -189,9 +195,11 @@ class IntegrationTestProxy:
             execution_time = (asyncio.get_event_loop().time() - start_time) * 1000
             
             # Record the error
+            parameters_to_record = dict(parameters) if isinstance(parameters, dict) else {"params": parameters}
+            parameters_to_record["__sop_doc_body"] = sop_doc_body
             record = self.data_manager.create_tool_call_record(
                 tool_id=self.tool_id,
-                parameters=parameters,
+                parameters=parameters_to_record,
                 output={"error": str(e), "error_type": type(e).__name__},
                 execution_time_ms=execution_time
             )

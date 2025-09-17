@@ -24,12 +24,11 @@ class TestTemplateTool(unittest.TestCase):
         async def run_test():
             template_content = "Hello {name}! Welcome to {company}."
             parameters = {
-                'template_content': template_content,
                 'name': 'John Doe',
                 'company': 'Acme Corp'
             }
             
-            result = await self.tool.execute(parameters)
+            result = await self.tool.execute(parameters, sop_doc_body=template_content)
             
             # Check the result structure
             self.assertIsInstance(result, dict)
@@ -40,9 +39,9 @@ class TestTemplateTool(unittest.TestCase):
             expected_content = "Hello John Doe! Welcome to Acme Corp."
             self.assertEqual(result['content'], expected_content)
             
-            # Check the variables used
-            self.assertSetEqual(set(result['template_variables_used']), {'name', 'company'})
-            
+            # Check the variables used (returned as dict of used variable -> value)
+            self.assertEqual(result['template_variables_used'], {'name': 'John Doe', 'company': 'Acme Corp'})
+
         asyncio.run(run_test())
 
     def test_multiple_variable_replacement(self):
@@ -62,7 +61,6 @@ Best regards,
 {sender_name}"""
             
             parameters = {
-                'template_content': template_content,
                 'customer_name': 'Alice Smith',
                 'order_id': 'ORD-12345',
                 'quantity': '3',
@@ -72,12 +70,10 @@ Best regards,
                 'sender_name': 'Customer Service Team'
             }
             
-            result = await self.tool.execute(parameters)
+            result = await self.tool.execute(parameters, sop_doc_body=template_content)
             
             # Check that all variables were replaced
-            expected_variables = {'customer_name', 'order_id', 'quantity', 'product', 
-                                'total_amount', 'delivery_date', 'sender_name'}
-            self.assertSetEqual(set(result['template_variables_used']), expected_variables)
+            self.assertEqual(result['template_variables_used'], parameters)
             
             # Check specific replacements
             content = result['content']
@@ -96,10 +92,11 @@ Best regards,
                 'company': 'Acme Corp'
             }
             
-            with self.assertRaises(ValueError) as context:
-                await self.tool.execute(parameters)
-                
-            self.assertIn('template_content parameter is required', str(context.exception))
+            # Using sop_doc_body path, absence of template_content param should not raise
+            template_content = "Hello {name}!"
+            parameters['name'] = 'John Doe'
+            result = await self.tool.execute(parameters, sop_doc_body=template_content)
+            self.assertIn('Hello John Doe', result['content'])
             
         asyncio.run(run_test())
 
@@ -108,13 +105,12 @@ Best regards,
         async def run_test():
             template_content = "Hello {name}! Your balance is ${balance}."
             parameters = {
-                'template_content': template_content,
                 'name': 'John Doe'
                 # Missing 'balance' parameter
             }
             
             with self.assertRaises(RuntimeError) as context:
-                await self.tool.execute(parameters)
+                await self.tool.execute(parameters, sop_doc_body=template_content)
                 
             error_msg = str(context.exception)
             self.assertIn('Template formatting failed', error_msg)
@@ -126,11 +122,10 @@ Best regards,
         """Test with empty template content"""
         async def run_test():
             parameters = {
-                'template_content': '',
                 'name': 'John Doe'
             }
             
-            result = await self.tool.execute(parameters)
+            result = await self.tool.execute(parameters, sop_doc_body='')
             
             self.assertEqual(result['content'], '')
             self.assertEqual(result['template_variables_used'], [])
@@ -141,11 +136,9 @@ Best regards,
         """Test template that has no variables"""
         async def run_test():
             template_content = "This is a static message with no variables."
-            parameters = {
-                'template_content': template_content
-            }
+            parameters = {}
             
-            result = await self.tool.execute(parameters)
+            result = await self.tool.execute(parameters, sop_doc_body=template_content)
             
             self.assertEqual(result['content'], template_content)
             self.assertEqual(result['template_variables_used'], [])
@@ -157,13 +150,12 @@ Best regards,
         async def run_test():
             template_content = "Price: ${price}, Quantity: {qty}, Total: ${total}"
             parameters = {
-                'template_content': template_content,
                 'price': 25.99,
                 'qty': 3,
                 'total': 77.97
             }
             
-            result = await self.tool.execute(parameters)
+            result = await self.tool.execute(parameters, sop_doc_body=template_content)
             
             expected_content = "Price: $25.99, Quantity: 3, Total: $77.97"
             self.assertEqual(result['content'], expected_content)
@@ -188,13 +180,12 @@ Regards,
 {sender}"""
             
             parameters = {
-                'template_content': template_content,
                 'subject': 'Test Email',
                 'name': 'Test User',
                 'sender': 'System Admin'
             }
             
-            result = await self.tool.execute(parameters)
+            result = await self.tool.execute(parameters, sop_doc_body=template_content)
             
             # Verify special characters are preserved
             content = result['content']

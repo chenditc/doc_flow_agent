@@ -17,7 +17,7 @@ limitations under the License.
 """
 
 import abc
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 
 class BaseTool(abc.ABC):
@@ -32,11 +32,12 @@ class BaseTool(abc.ABC):
         self.tool_id = tool_id
     
     @abc.abstractmethod
-    async def execute(self, parameters: Dict[str, Any]) -> str:
+    async def execute(self, parameters: Dict[str, Any], sop_doc_body: Optional[str] = None) -> str:
         """Execute the tool with given parameters
         
         Args:
             parameters: Dictionary of parameters for the tool
+            sop_doc_body: Optional raw SOP document body (markdown) associated with the task
             
         Returns:
             Tool output as string (usually JSON)

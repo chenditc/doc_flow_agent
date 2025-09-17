@@ -1,7 +1,7 @@
 {
   "test_name": "python_executor_tool_test_string_concatenation",
   "mode": "real",
-  "timestamp": "2025-09-16T16:46:05.367583",
+  "timestamp": "2025-09-17T12:24:10.861966",
   "tool_calls": [
     {
       "tool_id": "LLM",
@@ -28,23 +28,24 @@
               }
             }
           }
-        ]
+        ],
+        "__sop_doc_body": null
       },
       "output": {
         "content": "",
         "tool_calls": [
           {
-            "id": "call_gwbdE55g28rbsVLQDymXTeVE",
+            "id": "call_0LuO2p9DVtQBDCPcpY0UMDjW",
             "name": "generate_python_code",
             "arguments": {
-              "python_code": "def process_step(context: dict):\n    \"\"\"\n    Combine first_name and last_name from context with a space between them,\n    and return a dict with key 'full_name'.\n    \"\"\"\n    first = context.get(\"first_name\", \"\")\n    last = context.get(\"last_name\", \"\")\n\n    # Normalize to strings and trim whitespace\n    first_s = \"\" if first is None else str(first).strip()\n    last_s = \"\" if last is None else str(last).strip()\n\n    if first_s and last_s:\n        full_name = f\"{first_s} {last_s}\"\n    else:\n        full_name = first_s or last_s\n\n    return {\"full_name\": full_name}\n"
+              "python_code": "def process_step(context: dict):\n    \"\"\"Combine first_name and last_name from context with a space between them.\n\n    Args:\n        context (dict): Should contain 'first_name' and 'last_name'.\n\n    Returns:\n        dict: {\"full_name\": \"<first_name> <last_name>\"}\n    \"\"\"\n    first = context.get(\"first_name\", \"\")\n    last = context.get(\"last_name\", \"\")\n\n    # Ensure values are strings and trim whitespace, then combine with a single space.\n    full_name = f\"{str(first).strip()} {str(last).strip()}\".strip()\n\n    return {\"full_name\": full_name}\n"
             }
           }
         ]
       },
-      "timestamp": "2025-09-16T16:46:05.319030",
-      "execution_time_ms": 36674.545998015674,
-      "parameters_hash": "2cc9a800349af03f"
+      "timestamp": "2025-09-17T12:24:10.827753",
+      "execution_time_ms": 15417.654553020839,
+      "parameters_hash": "d5f2c83734bf172b"
     }
   ],
   "metadata": {
@@ -53,5 +54,5 @@
       "LLM"
     ]
   },
-  "saved_at": "2025-09-16T16:46:05.367735"
+  "saved_at": "2025-09-17T12:24:10.862143"
 }

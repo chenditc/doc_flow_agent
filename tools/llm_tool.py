@@ -20,7 +20,7 @@ limitations under the License.
 import json
 import asyncio
 import os
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from openai import AsyncOpenAI
 
 from .base_tool import BaseTool
@@ -32,24 +32,18 @@ class LLMTool(BaseTool):
     def __init__(self):
         super().__init__("LLM")
         # Initialize OpenAI client with custom endpoint
-        self.offline_mode = os.getenv("LLM_OFFLINE_MODE", "0") in ("1", "true", "True")
-        if self.offline_mode:
-            # Provide deterministic stub behavior
-            self.client = None  # type: ignore
-            self.model = "offline-stub"
-            print("[LLM INIT] Running in OFFLINE stub mode – no external API calls will be made.")
-        else:
-            api_key = os.getenv("OPENAI_API_KEY", "")
-            base_url = os.getenv("OPENAI_API_BASE", "https://openrouter.ai/api/v1")
-            if "cognitiveservices.azure.com" in base_url and not api_key:
-                api_key = self.create_azure_token_provider()
-                print("[LLM INIT] Using Azure OpenAI endpoint")
 
-            self.client = AsyncOpenAI(
-                base_url=base_url,
-                api_key=api_key
-            )
-            self.model = os.getenv("OPENAI_MODEL", "openai/gpt-4o-2024-11-20")   
+        api_key = os.getenv("OPENAI_API_KEY", "")
+        base_url = os.getenv("OPENAI_API_BASE", "https://openrouter.ai/api/v1")
+        if "cognitiveservices.azure.com" in base_url and not api_key:
+            api_key = self.create_azure_token_provider()
+            print("[LLM INIT] Using Azure OpenAI endpoint")
+
+        self.client = AsyncOpenAI(
+            base_url=base_url,
+            api_key=api_key
+        )
+        self.model = os.getenv("OPENAI_MODEL", "openai/gpt-4o-2024-11-20")   
     
     def create_azure_token_provider(self):
         from azure.identity.aio import DefaultAzureCredential, get_bearer_token_provider
@@ -59,7 +53,7 @@ class LLMTool(BaseTool):
         )
         return token_provider
 
-    async def execute(self, parameters: Dict[str, Any]) -> str:
+    async def execute(self, parameters: Dict[str, Any], sop_doc_body: Optional[str] = None) -> str:
         """Execute LLM tool with given parameters
         
         Args:
@@ -67,10 +61,13 @@ class LLMTool(BaseTool):
             
         Returns:
             JSON string with LLM response
+            
+        Raises:
+            ValueError: If prompt parameter is missing
         """
-        if not self.offline_mode:
-            if not await self._test_connection():
-                raise RuntimeError("Failed to connect to LLM API")
+        self.validate_parameters(parameters, ['prompt'])
+        if not await self._test_connection():
+            raise RuntimeError("Failed to connect to LLM API")
         
         prompt = parameters.get('prompt', '')
         tools = parameters.get('tools', None)
@@ -81,114 +78,31 @@ class LLMTool(BaseTool):
         if tools:
             print(f"[LLM CALL] Tools provided: {[tool.get('function', {}).get('name', 'unknown') for tool in tools]}")
         
-        if self.offline_mode:
-            # Produce deterministic pseudo-response for tests (no randomness)
-            # Respect a simple convention: if tools provided, emit a tool call structure.
-            # Special handling: JSON path generator expects a python code block in response.
-            if "Please select the most appropriate SOP document" in prompt:
-                # Heuristic: if prompt contains 'bash' choose tools/bash, else fallback
-                chosen_doc = "tools/bash" if "bash" in prompt.lower() else "general/fallback"
-                content = (
-                    f"[OFFLINE LLM STUB RESPONSE]\nPrompt hash: {abs(hash(prompt)) % 10000}\n"
-                    f"<doc_id>{chosen_doc}</doc_id>"
-                )
-            elif "Generate Parameter Extraction Code" in prompt:
-                # Provide minimal valid structure with code block for regex extraction.
-                content = (
-                    "[OFFLINE LLM STUB RESPONSE]\n"
-                    + f"Prompt hash: {abs(hash(prompt)) % 10000}\n"
-                    + "<THINK_PROCESS>\nThis is a deterministic offline reasoning step.\n</THINK_PROCESS>\n"
-                    + "<GENERATED_CODE>\n```python\ndef extract_func(context):\n    # Offline stub returns original task description if present\n    return context.get('current_task', '<NOT_FOUND_IN_CANDIDATES>')\n```\n</GENERATED_CODE>\n"
-                )
-            elif "You MUST use the generate_output_path tool" in prompt or "generate_output_path tool" in prompt:
-                # Provide a deterministic tool call output path
-                content = (
-                    f"[OFFLINE LLM STUB RESPONSE]\nPrompt hash: {abs(hash(prompt)) % 10000}\n"
-                    "Deciding output path..."
-                )
-                tool_calls = [{
-                    "id": "offline_tool_call_0",
-                    "name": "generate_output_path",
-                    "arguments": {"output_path": "$.cli_output"}
-                }]
-                return {"content": content, "tool_calls": tool_calls}
-            elif "extract any new task descriptions" in prompt.lower() or "extract_new_tasks" in prompt:
-                # Return empty task list via tool call
-                content = (
-                    f"[OFFLINE LLM STUB RESPONSE]\nPrompt hash: {abs(hash(prompt)) % 10000}\nNo follow-up tasks."
-                )
-                tool_calls = [{
-                    "id": "offline_tool_call_0",
-                    "name": "extract_new_tasks",
-                    "arguments": {"tasks": []}
-                }]
-                return {"content": content, "tool_calls": tool_calls}
-            else:
-                # Heuristic content generation for common test prompts
-                lowered = prompt.lower()
-                if "calculate the area of a circle" in lowered or "calculate_circle_area" in lowered:
-                    content = (
-                        f"[OFFLINE LLM STUB RESPONSE]\nPrompt hash: {abs(hash(prompt)) % 10000}\n"
-                        "```python\n"
-                        "import math\n"
-                        "def calculate_circle_area(radius: float) -> float:\n"
-                        "    return math.pi * radius * radius\n"
-                        "```\n"
-                    )
-                else:
-                    content = f"[OFFLINE LLM STUB RESPONSE]\nPrompt hash: {abs(hash(prompt)) % 10000}\n{prompt[:200]}"  # keep it short
-            tool_calls = []
-            if tools:
-                # Create minimal tool call echoing first tool name
-                first_tool = tools[0]["function"]["name"] if tools else "unknown_tool"
-                arguments: Dict[str, Any] = {}
-                if first_tool == "generate_command":
-                    import re as _re
-                    # Find all cat occurrences followed by a non-space token
-                    matches = _re.findall(r"cat\s+([^\s]+)", prompt)
-                    chosen = None
-                    for m in matches:
-                        # Prefer a real path token containing a dot or slash
-                        if m.startswith("./") or m.startswith("/") or "." in m:
-                            chosen = m.strip("'\":)")  # strip quotes / parens / colon but keep leading dot
-                            break
-                    if not chosen and matches:
-                        chosen = matches[-1].strip("'\":)")
-                    if chosen:
-                        # Remove trailing punctuation that might break the command
-                        chosen = chosen.rstrip("'\".,")
-                        arguments["command"] = f"cat {chosen}"
-                elif first_tool == "generate_output_path":
-                    arguments["output_path"] = "$.output"
-                tool_calls = [{
-                    "id": "offline_tool_call_0",
-                    "name": first_tool,
-                    "arguments": arguments
-                }]
-        else:
-            # Prepare API call parameters
-            api_params = {
-                "model": self.model,
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                "max_completion_tokens": max_tokens,
-                "stream": True,
-            }
-            
-            # Add tools if provided
-            if tools:
-                api_params["tools"] = tools
-                api_params["tool_choice"] = "required"
-            
-            # Make streaming OpenAI API call
-            stream = await self.client.chat.completions.create(**api_params)
-            
-            # Collect streaming response chunks and tool calls
-            content, tool_calls = await self._collect_streaming_chunks_with_tools(stream)
+        # Prepare API call parameters
+        api_params = {
+            "model": self.model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            "max_completion_tokens": max_tokens,
+            "stream": True,
+        }
+        
+        # Add tools if provided
+        if tools:
+            api_params["tools"] = tools
+            api_params["tool_choice"] = "required"
+            #api_params["tool_choice"] = "auto"
+            #api_params["tool_choice"] = "auto" if len(tools) != 1 else tools[0]["function"]["name"]
+        
+        # Make streaming OpenAI API call
+        stream = await self.client.chat.completions.create(**api_params)
+        
+        # Collect streaming response chunks and tool calls
+        content, tool_calls = await self._collect_streaming_chunks_with_tools(stream)
 
         print(f"[LLM RESPONSE] {content[:100]}...")
         if tool_calls:

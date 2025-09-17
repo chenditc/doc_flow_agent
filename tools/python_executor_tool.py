@@ -21,7 +21,7 @@ limitations under the License.
 import json
 import subprocess
 import uuid
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 import os
 
 from dotenv import load_dotenv
@@ -37,7 +37,7 @@ class PythonExecutorTool(BaseTool):
         super().__init__("PYTHON_EXECUTOR")
         self.llm_tool = llm_tool
 
-    async def execute(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, parameters: Dict[str, Any], sop_doc_body: Optional[str] = None) -> Dict[str, Any]:
         task_description = parameters.get("task_description")
         related_context_content = parameters.get("related_context_content", {})
 

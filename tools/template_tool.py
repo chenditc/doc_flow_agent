@@ -18,7 +18,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from .base_tool import BaseTool
 
 
@@ -28,7 +28,7 @@ class TemplateTool(BaseTool):
     def __init__(self):
         super().__init__("TEMPLATE")
 
-    async def execute(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, parameters: Dict[str, Any], sop_doc_body: Optional[str] = None) -> Dict[str, Any]:
         """Execute template tool with given parameters.
         
         This tool uses f-string style formatting to replace placeholders in the 
@@ -45,34 +45,30 @@ class TemplateTool(BaseTool):
             ValueError: If template_content parameter is missing
             RuntimeError: If template formatting fails
         """
-        # Get the template content (document body)
-        template_content = parameters.get('template_content')
+        # Determine template content: prefer provided sop_doc_body over parameters['template_content']
+        template_content = sop_doc_body 
         if template_content is None:
-            raise ValueError("template_content parameter is required")
+            raise ValueError("sop_doc_body is required")
         
         print(f"[TEMPLATE CALL] Template length: {len(template_content)} characters")
         print(f"[TEMPLATE CALL] Parameters: {list(parameters.keys())}")
-        
+
         # Create a copy of parameters without template_content for formatting
         format_params = {k: v for k, v in parameters.items() if k != 'template_content'}
-        
-        # Find variables actually used in the template
-        import re
-        variable_pattern = r'\{([^}]+)\}'
-        template_variables = re.findall(variable_pattern, template_content)
-        template_variables = list(set(template_variables))  # Remove duplicates
-        
         try:
-            # Use f-string style formatting
             formatted_content = template_content.format(**format_params)
-            
+
+            # Detect actually used variables (simple placeholder scan)
+            import re
+            used_var_names = {m.group(1) for m in re.finditer(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}", template_content)}
+            used_vars = {k: v for k, v in format_params.items() if k in used_var_names}
+
             print(f"[TEMPLATE RESULT] Formatted content length: {len(formatted_content)} characters")
-            
+
             return {
                 "content": formatted_content,
-                "template_variables_used": template_variables
+                "template_variables_used": used_vars if used_vars else {}
             }
-            
         except KeyError as e:
             missing_key = str(e).strip("'\"")
             raise RuntimeError(f"Template formatting failed: missing variable '{missing_key}' in parameters")

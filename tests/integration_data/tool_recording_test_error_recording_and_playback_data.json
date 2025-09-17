@@ -1,20 +1,23 @@
 {
   "test_name": "tool_recording_test_error_recording_and_playback",
   "mode": "real",
-  "timestamp": "2025-09-16T16:47:12.027891",
+  "timestamp": "2025-09-17T12:23:54.426174",
   "tool_calls": [
     {
       "tool_id": "CLI",
       "parameters": {
-        "command": "this-command-does-not-exist-12345"
+        "command": "this-command-does-not-exist-12345",
+        "__sop_doc_body": null
       },
       "output": {
-        "error": "CLI command failed (exit 127): this-command-does-not-exist-12345 :: bash: line 1: this-command-does-not-exist-12345: command not found",
-        "error_type": "RuntimeError"
+        "stdout": "",
+        "stderr": "bash: line 1: this-command-does-not-exist-12345: command not found\n",
+        "returncode": 127,
+        "executed_command": "this-command-does-not-exist-12345"
       },
-      "timestamp": "2025-09-16T16:47:12.027029",
-      "execution_time_ms": 40.89798600762151,
-      "parameters_hash": "d8db154d372d03a3"
+      "timestamp": "2025-09-17T12:23:54.242910",
+      "execution_time_ms": 47.041714016813785,
+      "parameters_hash": "11654ffdda72470f"
     }
   ],
   "metadata": {
@@ -23,5 +26,5 @@
       "CLI"
     ]
   },
-  "saved_at": "2025-09-16T16:47:12.027954"
+  "saved_at": "2025-09-17T12:23:54.426254"
 }

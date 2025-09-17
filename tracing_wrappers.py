@@ -31,11 +31,11 @@ class TracingToolWrapper:
         # Delegate all attributes to the wrapped tool
         self.tool_id = tool.tool_id
     
-    async def execute(self, parameters: Dict[str, Any]) -> Any:
+    async def execute(self, parameters: Dict[str, Any], sop_doc_body: Optional[str] = None) -> Any:
         """Execute tool with tracing"""
         try:
             # Log tool execution start
-            result = await self.tool.execute(parameters)
+            result = await self.tool.execute(parameters, sop_doc_body=sop_doc_body)
             
             # Log successful tool execution
             self.tracer.log_tool_call(
@@ -63,10 +63,10 @@ class TracingToolWrapper:
 class TracingLLMTool(TracingToolWrapper):
     """LLM tool with enhanced tracing for prompt/response logging"""
     
-    async def execute(self, parameters: Dict[str, Any]) -> Any:
+    async def execute(self, parameters: Dict[str, Any], sop_doc_body: Optional[str] = None) -> Any:
         """Execute LLM tool with enhanced tracing"""
         try:
-            result = await self.tool.execute(parameters)
+            result = await self.tool.execute(parameters, sop_doc_body=sop_doc_body)
             
             # Log LLM call with prompt/response details
             prompt = parameters.get('prompt', '')

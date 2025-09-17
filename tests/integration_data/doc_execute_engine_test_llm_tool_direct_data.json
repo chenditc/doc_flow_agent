@@ -1,20 +1,21 @@
 {
   "test_name": "doc_execute_engine_test_llm_tool_direct",
   "mode": "real",
-  "timestamp": "2025-09-16T16:44:35.121028",
+  "timestamp": "2025-09-17T12:24:04.249317",
   "tool_calls": [
     {
       "tool_id": "LLM",
       "parameters": {
-        "prompt": "Generate a simple Python function that adds two numbers"
+        "prompt": "Generate a simple Python function that adds two numbers",
+        "__sop_doc_body": null
       },
       "output": {
         "content": "def add_numbers(a, b):\n    \"\"\"Return the sum of two numbers.\"\"\"\n    return a + b",
         "tool_calls": []
       },
-      "timestamp": "2025-09-16T16:44:35.119188",
-      "execution_time_ms": 16673.246852005832,
-      "parameters_hash": "10dc17b9bb71a431"
+      "timestamp": "2025-09-17T12:24:04.247420",
+      "execution_time_ms": 9873.57238601544,
+      "parameters_hash": "27e91c44276c7140"
     }
   ],
   "metadata": {
@@ -23,5 +24,5 @@
       "LLM"
     ]
   },
-  "saved_at": "2025-09-16T16:44:35.121096"
+  "saved_at": "2025-09-17T12:24:04.249453"
 }

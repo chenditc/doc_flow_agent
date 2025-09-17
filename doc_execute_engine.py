@@ -133,7 +133,7 @@ class DocExecuteEngine:
     
     def __init__(self, docs_dir: str = "sop_docs", context_file: str = "context.json", 
                  enable_tracing: bool = True, trace_output_dir: str = "traces", 
-                 max_tasks: Optional[int] = None):
+                 max_tasks: Optional[int] = 5):
         self.docs_dir = Path(docs_dir)
         self.context_file = Path(context_file)
         self.context = {}
@@ -548,18 +548,19 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
             if tool_id not in self.tools:
                 raise ValueError(f"Unknown tool: {tool_id}")
             
-            # Special handling for TEMPLATE tool - inject document body
-            if tool_id == "TEMPLATE":
-                # Load the SOP document to get the body
-                sop_doc = self.sop_loader.load_sop_document(task.sop_doc_id)
-                tool_params['template_content'] = sop_doc.body
-                print(f"Added template_content to TEMPLATE tool parameters (body length: {len(sop_doc.body)} chars)")
+            # Load SOP document body if available
+            sop_doc_body = None
+            if task.sop_doc_id:
+                try:
+                    sop_doc_body = self.sop_loader.load_sop_document(task.sop_doc_id).body
+                except Exception as e:
+                    print(f"[TASK_EXECUTION] Warning: Failed to load SOP body for {task.sop_doc_id}: {e}")
             
-            # Call the tool
+            # Call the tool with optional sop_doc_body
             tool_instance = self.tools[tool_id]
             # Capture nested LLM calls during actual tool execution
             with self.tracer.trace_tool_execution_step():
-                tool_output = await tool_instance.execute(tool_params)
+                tool_output = await tool_instance.execute(tool_params, sop_doc_body=sop_doc_body)
             print(f"Tool output: {tool_output}")
             
             # Set phase data with results

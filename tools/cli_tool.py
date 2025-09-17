@@ -37,7 +37,7 @@ class CLITool(BaseTool):
         super().__init__("CLI")
         self.llm_tool = llm_tool  # May be None if only explicit commands are desired
 
-    async def execute(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, parameters: Dict[str, Any], sop_doc_body: Optional[str] = None) -> Dict[str, Any]:
         """Execute CLI tool with given parameters.
 
     Accepted parameter patterns:
@@ -85,12 +85,17 @@ class CLITool(BaseTool):
             stderr=asyncio.subprocess.PIPE
         )
         stdout, stderr = await process.communicate()
+        stdout_text = stdout.decode()
+        stderr_text = stderr.decode()
 
+        # Do NOT raise on non-zero return code; treat as data for upper layers to decide.
+        # Preserve backwards-compatible keys; add 'success' boolean for convenience.
         return {
-            "stdout": stdout.decode(),
-            "stderr": stderr.decode(),
+            "stdout": stdout_text,
+            "stderr": stderr_text,
             "returncode": process.returncode,
             "executed_command": explicit_command,
+            "success": process.returncode == 0,
         }
 
     def _create_command_generation_tool_schema(self) -> Dict[str, Any]:

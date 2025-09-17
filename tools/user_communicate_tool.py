@@ -19,7 +19,7 @@ limitations under the License.
 
 import json
 import sys
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from .base_tool import BaseTool
 
@@ -30,7 +30,7 @@ class UserCommunicateTool(BaseTool):
     def __init__(self):
         super().__init__("USER_COMMUNICATE")
     
-    async def execute(self, parameters: Dict[str, Any]) -> str:
+    async def execute(self, parameters: Dict[str, Any], sop_doc_body: Optional[str] = None) -> str:
         """Execute user communicate tool with given parameters
         
         Args:

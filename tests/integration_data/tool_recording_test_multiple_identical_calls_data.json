@@ -1,12 +1,13 @@
 {
   "test_name": "tool_recording_test_multiple_identical_calls",
   "mode": "real",
-  "timestamp": "2025-09-16T16:41:15.511869",
+  "timestamp": "2025-09-17T12:23:54.469368",
   "tool_calls": [
     {
       "tool_id": "CLI",
       "parameters": {
-        "command": "echo 'test call'"
+        "command": "echo 'test call'",
+        "__sop_doc_body": null
       },
       "output": {
         "stdout": "test call\n",
@@ -14,14 +15,15 @@
         "returncode": 0,
         "executed_command": "echo 'test call'"
       },
-      "timestamp": "2025-09-16T16:41:15.509628",
-      "execution_time_ms": 1.966946991160512,
-      "parameters_hash": "6bdcc78db2cf5a38"
+      "timestamp": "2025-09-17T12:23:54.462574",
+      "execution_time_ms": 28.81761101889424,
+      "parameters_hash": "8e62f52cb6635664"
     },
     {
       "tool_id": "CLI",
       "parameters": {
-        "command": "echo 'test call'"
+        "command": "echo 'test call'",
+        "__sop_doc_body": null
       },
       "output": {
         "stdout": "test call\n",
@@ -29,9 +31,9 @@
         "returncode": 0,
         "executed_command": "echo 'test call'"
       },
-      "timestamp": "2025-09-16T16:41:15.511248",
-      "execution_time_ms": 1.532724010758102,
-      "parameters_hash": "6bdcc78db2cf5a38"
+      "timestamp": "2025-09-17T12:23:54.468183",
+      "execution_time_ms": 5.479616986121982,
+      "parameters_hash": "8e62f52cb6635664"
     }
   ],
   "metadata": {
@@ -40,5 +42,5 @@
       "CLI"
     ]
   },
-  "saved_at": "2025-09-16T16:41:15.511921"
+  "saved_at": "2025-09-17T12:23:54.469459"
 }

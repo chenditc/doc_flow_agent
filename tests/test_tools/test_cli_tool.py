@@ -99,22 +99,21 @@ class TestCLITool(unittest.TestCase):
     @patch('asyncio.create_subprocess_shell')
     @patch('builtins.print')
     def test_execute_failure(self, mock_print, mock_subprocess):
-        """Test command execution failure"""
-        # Mock subprocess
+        """Test command execution failure returns structured result instead of raising"""
         mock_process = AsyncMock()
-        mock_process.returncode = 1
-        mock_process.communicate.return_value = (b'', b'Command not found\n')
+        mock_process.returncode = 7
+        mock_process.communicate.return_value = (b'', b'Some error occurred\n')
         mock_subprocess.return_value = mock_process
-        
+
         async def run_test():
-            parameters = {"command": "nonexistent_command"}
-            with self.assertRaises(RuntimeError) as context:
-                await self.cli_tool.execute(parameters)
-            return str(context.exception)
-        
-        error_message = asyncio.run(run_test())
-        
-        self.assertIn("CLI command failed (code 1): Command not found", error_message)
+            parameters = {"command": "failing_command"}
+            result = await self.cli_tool.execute(parameters)
+            return result
+
+        result = asyncio.run(run_test())
+        self.assertEqual(result["returncode"], 7)
+        self.assertFalse(result.get("success"))
+        self.assertIn("Some error occurred", result["stderr"])        
     
     @patch('asyncio.create_subprocess_shell')
     @patch('builtins.print')

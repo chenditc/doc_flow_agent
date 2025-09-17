@@ -186,14 +186,14 @@ class TestToolRecordingFeatures:
     async def test_error_recording_and_playback(self):
         """Test that tool errors are properly recorded and replayed"""
         cli_tool = self.integration_test.wrap_tool(CLITool())
-        
-        # Command that should fail
-        with pytest.raises(RuntimeError):
-            await cli_tool.execute({
-                "command": "this-command-does-not-exist-12345"
-            })
-        
-        print(f"✅ Error recording test completed")
+        # Command that should fail (non-zero exit). Now we treat failure as data, not exception.
+        result = await cli_tool.execute({
+            "command": "this-command-does-not-exist-12345"
+        })
+        assert result["returncode"] != 0
+        assert not result.get("success")
+        assert result["stderr"]
+        print(f"✅ Error recording test completed (returncode={result['returncode']})")
     
     @pytest.mark.asyncio
     async def test_multiple_identical_calls(self):
