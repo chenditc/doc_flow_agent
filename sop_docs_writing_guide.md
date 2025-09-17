@@ -1,0 +1,231 @@
+# How to write executable sop docs
+
+This guide shows how to convert workflows from visual tools like Dify, Logic App, Coze, or Python scripts into executable SOP documents that can be chained together and executed programmatically.
+
+## Each doc is a tool use
+
+Think about each doc as a node in "Logic App" / "Dify" / "Coze", which takes input, executes some tool and outputs values.
+
+### Example: Converting a Dify Workflow Node
+
+**Dify Node**: "Generate Blog Post Ideas"
+- Input: topic, target_audience
+- Tool: LLM 
+- Output: List of blog ideas
+
+**SOP Document Equivalent**:
+```markdown
+---
+description: Generate creative blog post ideas for a given topic
+tool:
+  tool_id: LLM
+  parameters:
+    prompt: "{parameters.prompt}"
+input_description:
+  topic: The main subject for blog posts
+  target_audience: The intended readers
+output_description: A list of creative blog post ideas with brief descriptions
+---
+## parameters.prompt
+
+Please generate 5 creative blog post ideas for the topic: {topic}
+Target audience: {target_audience}
+
+Format each idea as:
+- Title: [Catchy title]
+- Description: [Brief description]
+- Angle: [Unique perspective]
+```
+
+### Workflow Node Types and SOP Patterns
+
+**Planning Node** (Break down complex tasks):
+- Use `LLM` or `TEMPLATE` tools
+- Generate execution plans
+- Wrap subtasks with `<new task to execute>` tags
+
+**Execution Node** (Perform specific actions):
+- Use specialized tools (`PYTHON_EXECUTOR`, `CLI`, etc.)
+- Execute single, focused operations
+- Process data or interact with external systems
+
+**Merge/Aggregate Node** (Combine results):
+- Use `PYTHON_EXECUTOR` tool
+- Merge multiple inputs into final output
+- Format results for user consumption
+
+## Doc Structure
+
+Each SOP document has a standardized two-part structure that enables automatic parsing and execution:
+
+### YAML Front Matter (Metadata)
+
+The YAML section defines the document's behavior and tool configuration:
+
+```yaml
+---
+description: Human-readable description of what this document does
+aliases:                    # Optional: alternative names for this document
+  - short_name
+  - alternative_name
+tool:
+  tool_id: TOOL_NAME        # Which tool to execute (LLM, PYTHON_EXECUTOR, etc.)
+  parameters:               # Tool-specific parameters
+    param1: "value"
+    param2: "{parameters.section_name}"  # Reference to markdown section
+input_json_path:            # Optional: JSON path mappings for input data
+  field1: "$.path.to.input"
+output_json_path: "$.path.to.output"  # Optional: JSON path for output
+input_description:          # Documentation for expected inputs
+  field1: Description of what this input should contain
+output_description: Description of what this document outputs
+---
+```
+
+### Markdown Body (Content)
+
+The markdown section contains the actual content, organized into named sections:
+
+```markdown
+## parameters.prompt
+This section contains the LLM prompt template with {variable} placeholders.
+
+## parameters.script  
+This section might contain Python code for PYTHON_EXECUTOR tool.
+
+## Additional Section
+Any section starting with ## can be referenced in the YAML parameters.
+```
+
+### Document Loading and Parsing Process
+
+The system processes SOP documents through several stages:
+
+1. **File Discovery**: `SOPDocumentLoader` scans the `sop_docs` directory recursively for `.md` files
+
+2. **Content Parsing**: 
+   - Separates YAML front matter from markdown body using `---` delimiters
+   - Parses YAML metadata using `yaml.safe_load()`
+   - Extracts markdown sections using regex pattern `^## (.+?)\n(.*?)(?=^## |\Z)`
+
+3. **Parameter Resolution**:
+   - Finds references like `"{parameters.prompt}"` in tool parameters
+   - Replaces them with corresponding markdown section content
+   - Validates that all required sections exist
+
+4. **Document Object Creation**:
+   - Creates `SOPDocument` dataclass with all parsed information
+   - Validates required fields (`tool.tool_id`, `description`)
+   - Stores both original and processed versions
+
+5. **Execution Context**:
+   - `DocExecuteEngine` loads documents on-demand
+   - Resolves input data using JSON path expressions
+   - Renders templates with runtime variables using `{variable}` syntax
+   - Executes the specified tool with processed parameters
+
+### Document Selection Process
+
+When executing natural language commands, the system:
+
+1. **Candidate Matching**: Finds potential documents by matching:
+   - Full document path in description
+   - Filename in description
+   - Alias matches
+
+2. **LLM Validation**: Uses LLM to select best match from candidates based on:
+   - Task description alignment
+   - Tool capabilities
+   - Input/output compatibility
+
+3. **Context Resolution**: Extracts input data from current execution context using JSON paths
+
+## Tool Choices
+
+There are several built-in tools, each suited for different workflow node types:
+
+### LLM Tool
+- **Use Case**: Text generation, analysis, planning
+- **Dify Equivalent**: LLM nodes, text processing
+- **Parameters**: `prompt` (template with variables)
+- **Example**: Content generation, task planning, text analysis
+
+### PYTHON_EXECUTOR Tool  
+- **Use Case**: Data processing, calculations, API calls
+- **Dify Equivalent**: Code execution, data transformation
+- **Parameters**: `task_description` (what the code should do)
+- **Example**: Data merging, complex calculations, file processing
+
+### TEMPLATE Tool
+- **Use Case**: Simple text substitution
+- **Dify Equivalent**: Template nodes, variable substitution
+- **Parameters**: `template` (text with {variable} placeholders)
+- **Example**: Generating structured output, formatting data
+
+### CLI Tool
+- **Use Case**: System commands, external tool integration
+- **Logic App Equivalent**: PowerShell/Bash script actions
+- **Parameters**: `command`, `timeout`
+- **Example**: File operations, system administration
+
+### USER Tool
+- **Use Case**: Human interaction, input collection
+- **Dify Equivalent**: User input nodes, approval steps
+- **Parameters**: `message` (prompt for user)
+- **Example**: Collecting requirements, confirmation steps
+
+## Examples from xiaohongshu Workflow
+
+### Planning Node Example
+**File**: `generate_post_task_list.md`
+```yaml
+tool:
+  tool_id: LLM  # Uses LLM for intelligent task generation
+  parameters:
+    prompt: "{parameters.prompt}"
+```
+Generates `<new task to execute>` tags for each subtask to be processed.
+
+### Execution Node Example  
+**File**: `write_xiaohongshu_single_post.md`
+```yaml
+tool:
+  tool_id: LLM  # Focused execution of single post generation
+  parameters:
+    prompt: "{parameters.prompt}"
+```
+Takes specific inputs (topic, audience) and produces a single deliverable.
+
+### Merge Node Example
+**File**: `merge_xiaohongshu_result.md`
+```yaml
+tool:
+  tool_id: PYTHON_EXECUTOR  # Uses Python for data aggregation
+  parameters:
+    task_description: "Format and merge multiple posts into readable markdown"
+```
+Combines outputs from multiple execution nodes into final result.
+
+## Converting Existing Workflows
+
+### From Dify/Coze Workflows:
+1. **Identify Node Types**: Map each node to planning/execution/merge pattern
+2. **Extract Prompts**: Convert node prompts to `## parameters.prompt` sections
+3. **Map Variables**: Replace node variables with `{variable}` syntax
+4. **Define I/O**: Document input_description and output_description
+5. **Chain Tasks**: Use `<new task to execute>` for multi-step workflows
+
+### From Python Scripts:
+1. **Break into Functions**: Each significant function becomes a document
+2. **Identify Dependencies**: Map function parameters to input_description
+3. **Choose Tool**: Use PYTHON_EXECUTOR for complex logic, LLM for AI tasks
+4. **Template Variables**: Replace hardcoded values with {variable} placeholders
+
+### From Logic Apps:
+1. **Map Triggers/Actions**: Convert each action to a tool invocation
+2. **Preserve Conditions**: Use LLM tool for decision logic
+3. **Handle Loops**: Break into individual task documents with planning nodes
+4. **External Calls**: Use CLI tool or PYTHON_EXECUTOR for API calls
+
+This approach transforms rigid, tool-specific workflows into flexible, reusable, and chainable SOP documents that can be executed programmatically while maintaining human readability.
+
