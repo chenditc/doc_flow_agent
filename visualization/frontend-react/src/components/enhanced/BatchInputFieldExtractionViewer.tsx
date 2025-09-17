@@ -272,7 +272,13 @@ export const BatchInputFieldExtractionViewer: React.FC<BatchInputFieldExtraction
               {Object.entries(batchExtraction.candidate_fields).map(([path, value]) => (
                 <div key={path} className="border rounded-lg p-3 bg-gray-50">
                   <div className="flex items-start gap-3">
-                    <code className="text-sm font-mono text-blue-600 mt-1">{path}:</code>
+                    {/* Path (key) with constrained width & wrapping for very long keys */}
+                    <code
+                      className="text-sm font-mono text-blue-600 mt-1 max-w-[240px] break-all whitespace-pre-wrap leading-snug"
+                      style={{ wordBreak: 'break-word' }}
+                    >
+                      {path}:
+                    </code>
                     <div className="flex-1 min-w-0">
                       <div className="bg-white border rounded p-2 text-sm">
                         <pre className="whitespace-pre-wrap break-words text-gray-900">
