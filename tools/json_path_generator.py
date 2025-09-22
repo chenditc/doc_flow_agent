@@ -58,6 +58,7 @@ class BaseJsonPathGenerator:
     async def generate_output_json_path(
         self, 
         output_description: str, 
+        short_name: str,
         context: Dict[str, Any],
         user_original_ask: str = "",
         tool_output: Any = ""
@@ -85,6 +86,7 @@ class BaseJsonPathGenerator:
         # Create prompt for LLM
         prompt = self._create_output_path_prompt(
             output_description, 
+            short_name,
             context_schema, 
             user_original_ask,
             tool_output
@@ -290,19 +292,27 @@ Analyze the current context to find fields that might contain information for th
     def _create_output_path_prompt(
         self, 
         output_description: str, 
+        short_name: str,
         context_schema: str, 
         user_original_ask: str,
         tool_output: Any = ""
     ) -> str:
         """Create prompt for generating output JSON path"""
         
-        tool_output_str = str(tool_output)
+        if type(tool_output) == dict:
+            # Use key as xml tag, wrap the value
+            tool_output_str = "\n".join([f"<{key}>\n{value}\n</{key}>" for key, value in tool_output.items()])
+        else:
+            tool_output_str = str(tool_output)
         
         return f"""## Task Description
-Given the following workspace context schema and output description, you MUST use the generate_output_path tool to return the appropriate output JSON path where the result should be stored.
+Given the following workspace context schema and output description, you MUST use the generate_output_path tool to return the appropriate output JSON path where the result should be stored. If there is obvious error in the output, you should name it with error suffix (e.g., failed_with_xxx_error, etc). Usually you can just use the short name of the User original request's english version, and append suffix to name it.
 
 ## User Original Request
 {user_original_ask}
+
+## User Original Request's Short Name
+{short_name}
 
 ## Current Workspace Context Schema
 {context_schema}
@@ -327,7 +337,7 @@ The output can be stored at the path "$.action_plan_for_raising_five_questions_a
 
 or if the content already generated in the output, the output path might be "$.five_questions_about_machine_learning"
 
-## IMPORTANT: You MUST use the generate_output_path tool function call to provide your response. Do not put the path in your text response."""
+## IMPORTANT: You MUST use the generate_output_path tool function call to provide your response. Do not put the path in your text response. The output path should start with "$." which means the root node."""
 
 
 class OnebyOneJsonPathGenerator(BaseJsonPathGenerator):
@@ -352,8 +362,8 @@ class OnebyOneJsonPathGenerator(BaseJsonPathGenerator):
             Python code string for extracting/generating the required content
         """
         candidates_text = "\n".join([
-            f"- {field}: {value}" 
-            for field, value in candidate_fields.items()
+            f"<json path: {field} type: {type(value)}>\n{value}\n</json path: {field} type: {type(value)}>" 
+            for field, value in candidate_fields.items() if str(value).strip() != ""
         ])
         
         prompt = f"""## Task: Generate Parameter Extraction Code
@@ -410,8 +420,8 @@ def extract_func(context):
 
 ```python
 def extract_func(context):
-    # The information is not available in context, return a placeholder
-    return "<NOT_FOUND_IN_CANDIDATES>"
+    # The information is not available in context, return a placeholder also explain why
+    return "<NOT_FOUND_IN_CANDIDATES>Cannot find xxx in xxx / Cannot parse xxx"
 ```
 
 ## Return Format
@@ -488,7 +498,7 @@ def extract_func(context):
                 # Step 3: Execute code and store in temporary context
                 temp_key = f"_temp_input_{str(uuid.uuid4())}"
                 extracted_content = self._execute_extraction_code(extraction_code, context)
-                if extracted_content == "<NOT_FOUND_IN_CANDIDATES>":
+                if "<NOT_FOUND_IN_CANDIDATES>" in extracted_content:
                     # Set error data in context (no-op if tracing disabled)
                     input_ctx.set_result(
                         candidate_fields=candidate_fields,
@@ -751,10 +761,12 @@ async def test_json_path_generator():
     
     # Test output path generation  
     output_description = "Blog outline generated based on blog title and writing purpose"
+    short_name = "Generate blog outline"
     
     print("\nTesting output path generation...")
     output_path = await generator.generate_output_json_path(
         output_description,
+        short_name,
         test_context,
         "Please generate a blog outline for artificial intelligence topic"
     )

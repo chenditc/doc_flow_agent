@@ -145,34 +145,59 @@ When executing natural language commands, the system:
 There are several built-in tools, each suited for different workflow node types:
 
 ### LLM Tool
-- **Use Case**: Text generation, analysis, planning
+- **Use Case**: Text generation, analysis, dynamic planning
 - **Dify Equivalent**: LLM nodes, text processing
 - **Parameters**: `prompt` (template with variables)
 - **Example**: Content generation, task planning, text analysis
 
 ### PYTHON_EXECUTOR Tool  
-- **Use Case**: Data processing, calculations, API calls
+- **Use Case**: Deterministic logic, data processing, calculations, structured transformations, lightweight integration calls
 - **Dify Equivalent**: Code execution, data transformation
-- **Parameters**: `task_description` (what the code should do)
-- **Example**: Data merging, complex calculations, file processing
+- **Primary Parameters**:
+  - `task_description`: Natural language description of the desired transformation or computation
+  - `related_context_content` (optional): Structured/context data passed to the code generator for awareness
+  - (Optional direct mode) `python_code`: If supplied, skips generation and executes directly
+- **Entry Point Contract**: The executed code MUST define a function `def process_step(context: dict):`
+  1. Receives a dictionary `context` (merged runtime context + any `related_context_content`)
+  2. Returns a JSON-serializable value (primitive, list, or dict)
+  3. Should avoid unintended side effects (no random external writes unless required)
+- **Runtime Behavior**:
+  - If `python_code` absent, an LLM prompt (see `sop_docs/tools/python.md`) generates the complete function
+  - Code is executed in a subprocess; output includes: `python_code`, `return_value`, `stdout`, `stderr`, `exception`
+- **Examples**: Data merging, complex calculations, result aggregation, formatting structured output
+- **Good Pattern**:
+```
+def process_step(context: dict):
+    items = context.get("items", [])
+    total = sum(i.get("value", 0) for i in items)
+    return {"count": len(items), "total": total}
+```
+- **Common Pitfall**: Forgetting a return statement (implicitly returning `None`). Always return structured data.
 
 ### TEMPLATE Tool
-- **Use Case**: Simple text substitution
+- **Use Case**: Deterministic text / plan rendering (no logic branching)
 - **Dify Equivalent**: Template nodes, variable substitution
-- **Parameters**: `template` (text with {variable} placeholders)
-- **Example**: Generating structured output, formatting data
+- **Source of Truth**: The markdown body itself is the template; YAML usually keeps `parameters: {}` for this tool
+- **Variable Resolution**: Placeholders like `{recipient_name}` come from values mapped via `input_json_path`
+- **Examples**: Generating structured output, formatting data, stable process task planning (see `sop_docs/examples/generate_personalized_email.md`)
+- **Failure Mode**: Missing variable raises error—document all placeholders in `input_description`.
 
 ### CLI Tool
-- **Use Case**: System commands, external tool integration
+- **Use Case**: System commands, external tool integration, quick inspection
 - **Logic App Equivalent**: PowerShell/Bash script actions
-- **Parameters**: `command`, `timeout`
-- **Example**: File operations, system administration
+- **Parameters**:
+  - Direct: `command`
+  - Or generative: `task_description` (tool will LLM-generate a command if `command` absent)
+- **Output**: `stdout`, `stderr`, `returncode`, `executed_command`, `success`
+- **Examples**: File operations, system administration, listing artifacts, grepping logs (see `sop_docs/tools/bash.md`)
+- **Tip**: Prefer idempotent, read-only commands in automated chains.
 
 ### USER Tool
-- **Use Case**: Human interaction, input collection
+- **Use Case**: Human interaction, input collection, approvals
 - **Dify Equivalent**: User input nodes, approval steps
-- **Parameters**: `message` (prompt for user)
-- **Example**: Collecting requirements, confirmation steps
+- **Parameters**: `message` (prompt for user, often referencing a section like `{parameters.message}`)
+- **Examples**: Collecting requirements, confirmation steps, selecting among alternatives (see `sop_docs/tools/user_communicate.md`)
+- **Design Tip**: Only insert when genuine human judgment or missing data is required—avoid unnecessary interruptions.
 
 ## Examples from xiaohongshu Workflow
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render } from '@testing-library/react';
 import { Timeline } from '../Timeline';
 import type { TraceSession } from '../../../types/trace';
 
@@ -104,81 +104,70 @@ describe('Timeline with Pending Tasks', () => {
   });
 
   it('should display executed tasks and pending tasks together', () => {
-    render(
+  const { getByText } = render(
       <Timeline
         trace={mockTraceWithPendingTasks}
         onTaskClick={mockOnTaskClick}
         isLoading={false}
       />
     );
-
-    // Check executed tasks are displayed
-    expect(screen.getByText('Completed task 1')).toBeInTheDocument();
-    expect(screen.getByText('Completed task 2')).toBeInTheDocument();
-
-    // Check pending tasks are displayed
-    expect(screen.getByText(/First pending task description/)).toBeInTheDocument();
-    expect(screen.getByText(/Second pending task description/)).toBeInTheDocument();
-    expect(screen.getByText(/Third pending task that is currently executing/)).toBeInTheDocument();
+  expect(getByText('Completed task 1')).toBeInTheDocument();
+  expect(getByText('Completed task 2')).toBeInTheDocument();
+  expect(getByText(/First pending task description/)).toBeInTheDocument();
+  expect(getByText(/Second pending task description/)).toBeInTheDocument();
+  expect(getByText(/Third pending task that is currently executing/)).toBeInTheDocument();
   });
 
   it('should mark the last pending task as currently executing', () => {
-    render(
+  const { getAllByText } = render(
       <Timeline
         trace={mockTraceWithPendingTasks}
         onTaskClick={mockOnTaskClick}
         isLoading={false}
       />
     );
-
-    // The last pending task should have "currently executing" status
-    const currentlyExecutingBadges = screen.getAllByText('currently executing');
+  const currentlyExecutingBadges = getAllByText('currently executing');
     expect(currentlyExecutingBadges).toHaveLength(1);
-
-    // Other pending tasks should have "not started" status
-    const notStartedBadges = screen.getAllByText('not started');
+  const notStartedBadges = getAllByText('not started');
     expect(notStartedBadges).toHaveLength(2);
   });
 
   it('should show pending tasks count in header', () => {
-    render(
+  const { getByText } = render(
       <Timeline
         trace={mockTraceWithPendingTasks}
         onTaskClick={mockOnTaskClick}
         isLoading={false}
       />
     );
-
-    expect(screen.getByText('2 tasks executed')).toBeInTheDocument();
-    expect(screen.getByText('• 3 pending tasks')).toBeInTheDocument();
+  expect(getByText('2 tasks executed')).toBeInTheDocument();
+  expect(getByText('• 3 pending tasks')).toBeInTheDocument();
   });
 
   it('should display only pending tasks when no executions exist', () => {
-    render(
+  const { getByText } = render(
       <Timeline
         trace={mockTraceOnlyPendingTasks}
         onTaskClick={mockOnTaskClick}
         isLoading={false}
       />
     );
-
-    expect(screen.getByText('No tasks executed yet')).toBeInTheDocument();
-    expect(screen.getByText('• 2 pending tasks')).toBeInTheDocument();
-    expect(screen.getByText(/Only pending task 1/)).toBeInTheDocument();
-    expect(screen.getByText(/Only pending task 2 - currently executing/)).toBeInTheDocument();
+  expect(getByText('No tasks executed yet')).toBeInTheDocument();
+  expect(getByText('• 2 pending tasks')).toBeInTheDocument();
+  expect(getByText(/Only pending task 1/)).toBeInTheDocument();
+  expect(getByText(/Only pending task 2 - currently executing/)).toBeInTheDocument();
   });
 
   it('should work normally when no pending tasks exist', () => {
-    render(
+  const { getByText, queryByText } = render(
       <Timeline
         trace={mockTraceWithoutPendingTasks}
         onTaskClick={mockOnTaskClick}
         isLoading={false}
       />
     );
-
-    expect(screen.getByText('2 tasks executed')).toBeInTheDocument();
-    expect(screen.queryByText('pending task')).not.toBeInTheDocument();
+  expect(getByText('2 tasks executed')).toBeInTheDocument();
+  expect(queryByText('pending task')).not.toBeInTheDocument();
   });
 
   it('should show orange styling for currently executing task', () => {
@@ -209,7 +198,7 @@ describe('Timeline with Pending Tasks', () => {
       }
     };
 
-    render(
+  const { getByText } = render(
       <Timeline
         trace={longTaskTrace}
         onTaskClick={mockOnTaskClick}
@@ -218,9 +207,7 @@ describe('Timeline with Pending Tasks', () => {
     );
 
     // Should show truncated text with ellipsis
-    expect(screen.getByText(/This is a very long task description that should be truncated when displayed in the timeline to ensure the UI remains clean.../)).toBeInTheDocument();
-    
-    // Should have show more functionality
-    expect(screen.getByText('Show full description')).toBeInTheDocument();
+  expect(getByText(/This is a very long task description that should be truncated when displayed in the timeline to ensure the UI remains clean.../)).toBeInTheDocument();
+  expect(getByText('Show full description')).toBeInTheDocument();
   });
 });

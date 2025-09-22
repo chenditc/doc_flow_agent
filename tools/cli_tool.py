@@ -37,7 +37,7 @@ class CLITool(BaseTool):
         super().__init__("CLI")
         self.llm_tool = llm_tool  # May be None if only explicit commands are desired
 
-    async def execute(self, parameters: Dict[str, Any], sop_doc_body: Optional[str] = None) -> Dict[str, Any]:
+    async def execute(self, parameters: Dict[str, Any], sop_doc_body: str = "") -> Dict[str, Any]:
         """Execute CLI tool with given parameters.
 
     Accepted parameter patterns:
@@ -65,7 +65,7 @@ class CLITool(BaseTool):
 
             tool_schema = self._create_command_generation_tool_schema()
             # related_context_content is deprecated for CLI; ignore if provided
-            prompt = self._build_generation_prompt(task_description)
+            prompt = self._build_generation_prompt(task_description, sop_doc_body)
 
             llm_params = {
                 "prompt": prompt,
@@ -118,7 +118,10 @@ class CLITool(BaseTool):
             }
         }
 
-    def _build_generation_prompt(self, task_description: str) -> str:
+    def _build_generation_prompt(self, task_description: str, sop_doc_body: str) -> str:
+        document_guidance = ""
+        if sop_doc_body.strip():
+            document_guidance = f"<Document Guidance>\n{sop_doc_body.strip()}\n</Document Guidance>\n"
         return f"""You are a command generation assistant.
 Generate shell command to perform the task.
 Rules:
@@ -128,6 +131,8 @@ Rules:
 <Example command>
 ls -la /home/user/documents | grep '.txt'
 </Example command>
+
+{document_guidance}
 
 <Task Description>
 {task_description}

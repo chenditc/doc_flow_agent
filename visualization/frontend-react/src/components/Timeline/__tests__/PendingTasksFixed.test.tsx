@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render } from '@testing-library/react';
 import { Timeline } from '../Timeline';
 import type { TraceSession } from '../../../types/trace';
 
@@ -53,24 +53,18 @@ describe('Timeline with Corrected Pending Tasks Logic', () => {
   });
 
   it('should mark the FIRST pending task as currently executing, not the last', () => {
-    render(
+  const { getAllByText, getByText } = render(
       <Timeline
         trace={mockTraceWithPendingTasks}
         onTaskClick={mockOnTaskClick}
         isLoading={false}
       />
     );
-
-    // The FIRST pending task should have "currently executing" status
-    const currentlyExecutingBadges = screen.getAllByText('currently executing');
+  const currentlyExecutingBadges = getAllByText('currently executing');
     expect(currentlyExecutingBadges).toHaveLength(1);
-
-    // Other pending tasks should have "not started" status  
-    const notStartedBadges = screen.getAllByText('not started');
+  const notStartedBadges = getAllByText('not started');
     expect(notStartedBadges).toHaveLength(2);
-
-    // Verify the correct task is marked as currently executing
-    expect(screen.getByText(/First pending task - should be currently executing/)).toBeInTheDocument();
+  expect(getByText(/First pending task - should be currently executing/)).toBeInTheDocument();
   });
 
   it('should show the first pending task with orange styling', () => {

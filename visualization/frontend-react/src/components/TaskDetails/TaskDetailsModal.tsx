@@ -54,7 +54,7 @@ export const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({
     }
   };
 
-  const modalTitle = task.task_description || `Task ${task.task_execution_counter}`;
+  const modalTitle = task.short_name || task.task_description || `Task ${task.task_execution_counter}`;
 
   return (
     <Modal

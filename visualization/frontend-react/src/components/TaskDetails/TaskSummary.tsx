@@ -56,7 +56,7 @@ export const TaskSummary: React.FC<TaskSummaryProps> = ({ task }) => {
       {/* Task Description */}
       <div>
         <h3 className="text-lg font-medium text-gray-900 mb-2">Task Description</h3>
-        <p className="text-sm text-gray-700 bg-gray-50 p-3 rounded-md">
+        <p className="text-sm text-gray-700 bg-gray-50 p-3 rounded-md break-words whitespace-pre-wrap overflow-wrap-anywhere">
           {task.task_description || 'No description available'}
         </p>
       </div>

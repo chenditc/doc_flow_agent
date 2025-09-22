@@ -1,10 +1,22 @@
 import React, { useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
 
+interface TaskLike {
+  short_name: string;
+  // ...other task fields (ignored here)
+}
+
 interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
-  title: string;
+  /**
+   * Fallback/manual title. If a task is provided, task.short_name takes precedence.
+   */
+  title?: string;
+  /**
+   * Task whose short_name will be used as the modal title when present.
+   */
+  task?: TaskLike | null;
   children: React.ReactNode;
   size?: 'small' | 'medium' | 'large' | 'xlarge';
 }
@@ -13,6 +25,7 @@ export const Modal: React.FC<ModalProps> = ({
   isOpen,
   onClose,
   title,
+  task,
   children,
   size = 'large'
 }) => {
@@ -82,7 +95,7 @@ export const Modal: React.FC<ModalProps> = ({
           <div className="bg-gray-50 px-6 py-4 border-b border-gray-200">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-medium text-gray-900" id="modal-title">
-                {title}
+                {task?.short_name ?? title ?? ''}
               </h3>
               <button
                 data-modal-close

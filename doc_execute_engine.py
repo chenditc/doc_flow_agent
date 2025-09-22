@@ -398,7 +398,8 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
         first_key = parts[0].split('[')[0]
         
         # Create prefixed key
-        prefixed_key = f"msg{self.task_execution_counter}_{first_key}"
+        #prefixed_key = f"msg{self.task_execution_counter}_{first_key}"
+        prefixed_key = first_key
         
         # Rebuild the path
         if '[' in parts[0]:  # Handle array notation like 'key[0]'
@@ -585,6 +586,7 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
                 with self.tracer.trace_output_path_generation_step() as output_ctx:
                     task.output_json_path = await self.json_path_generator.generate_output_json_path(
                         task.output_description,
+                        task.short_name,
                         self.context,
                         task.description,
                         tool_output

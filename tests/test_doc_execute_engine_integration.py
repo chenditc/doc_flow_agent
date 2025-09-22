@@ -277,22 +277,22 @@ class TestDocExecuteEngineIntegration:
     async def test_execution_prefix_path_generation(self):
         """Test add_execution_prefix_to_path functionality"""
         self.engine.task_execution_counter = 5
-        
-        # Test simple paths
-        assert self.engine.add_execution_prefix_to_path("$.output") == "$.msg5_output"
-        assert self.engine.add_execution_prefix_to_path("$.result") == "$.msg5_result"
-        
-        # Test paths with array notation
-        assert self.engine.add_execution_prefix_to_path("$.messages[0]") == "$.msg5_messages[0]"
-        assert self.engine.add_execution_prefix_to_path("$.data[1].value") == "$.msg5_data[1].value"
-        
-        # Test nested paths
-        assert self.engine.add_execution_prefix_to_path("$.output.nested") == "$.msg5_output.nested"
-        
-        # Test edge cases
+
+        # Simple paths should be unchanged now that prefixing removed
+        for path in ["$.output", "$.result"]:
+            assert self.engine.add_execution_prefix_to_path(path) == path
+
+        # Array notation
+        for path in ["$.messages[0]", "$.data[1].value"]:
+            assert self.engine.add_execution_prefix_to_path(path) == path
+
+        # Nested path
+        assert self.engine.add_execution_prefix_to_path("$.output.nested") == "$.output.nested"
+
+        # Edge cases
         assert self.engine.add_execution_prefix_to_path("") == ""
         assert self.engine.add_execution_prefix_to_path("invalid_path") == "invalid_path"
-        
+
         print("✅ Execution prefix path generation works correctly")
 
     ## D. Task Creation Tests
@@ -329,7 +329,6 @@ class TestDocExecuteEngineIntegration:
         """Test task creation with dynamic input using LLM SOP document"""
         # Test through the complete workflow which populates context automatically
         description = "Generate a welcome message: Write a simple greeting message for a new user to school, less than 50 words. This is for a welcome screen."
-        
         # Use the start method which will populate context and create tasks automatically
         await self.engine.start(description)
         
@@ -397,9 +396,8 @@ class TestDocExecuteEngineIntegration:
         
         # Verify execution
         assert self.engine.task_execution_counter == 1
-        assert "msg1_llm_result" in self.engine.context
+        assert "llm_result" in self.engine.context
         assert isinstance(new_tasks, list)
-        
         print("✅ LLM tool execution works correctly")
     
     @pytest.mark.asyncio
@@ -414,18 +412,16 @@ class TestDocExecuteEngineIntegration:
             input_json_path={"command": "$.bash_command"},
             output_json_path="$.cli_result"
         )
-        
         # Populate context with command extracted from description
         self.engine.context = {"bash_command": "ls -la /"}
-        
-        # Execute task
+
+        # Execute task (CLI has no mock dependency, should always work)
         new_tasks = await self.engine.execute_task(task)
-        
+
         # Verify execution
         assert self.engine.task_execution_counter == 1
-        assert "msg1_cli_result" in self.engine.context
+        assert "cli_result" in self.engine.context
         assert isinstance(new_tasks, list)
-        
         print("✅ CLI tool execution works correctly")
     
     @pytest.mark.asyncio
@@ -451,7 +447,7 @@ class TestDocExecuteEngineIntegration:
             
             # Verify execution
             assert self.engine.task_execution_counter == 1
-            assert "msg1_user_response" in self.engine.context
+            assert "user_response" in self.engine.context
             assert isinstance(new_tasks, list)
         
         print("✅ User communication tool execution works correctly")
@@ -476,8 +472,7 @@ class TestDocExecuteEngineIntegration:
         new_tasks = await self.engine.execute_task(task)
         
         # Verify input resolution worked
-        assert "msg1_outline_result" in self.engine.context
-        
+        assert "outline_result" in self.engine.context
         print("✅ Task execution with input resolution for blog outline works correctly")
     
     ## F. Error Handling Tests

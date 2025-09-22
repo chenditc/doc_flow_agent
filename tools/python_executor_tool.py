@@ -37,7 +37,7 @@ class PythonExecutorTool(BaseTool):
         super().__init__("PYTHON_EXECUTOR")
         self.llm_tool = llm_tool
 
-    async def execute(self, parameters: Dict[str, Any], sop_doc_body: Optional[str] = None) -> Dict[str, Any]:
+    async def execute(self, parameters: Dict[str, Any], sop_doc_body: str = "") -> Dict[str, Any]:
         task_description = parameters.get("task_description")
         related_context_content = parameters.get("related_context_content", {})
 
@@ -45,6 +45,10 @@ class PythonExecutorTool(BaseTool):
         if not python_code:
             # Create tool schema for Python code generation
             tool_schema = self._create_python_code_tool_schema()
+
+            sop_guidance = ""
+            if sop_doc_body.strip():
+                sop_guidance = f"<Document Guidance>\n{sop_doc_body.strip()}\n</Document Guidance>\n"
 
             prompt = f"""
 You are a Python code generation assistant.
@@ -56,7 +60,7 @@ The function should return a JSON-serializable value.
 <Task Description>
 {task_description}
 </Task Description>
-
+{sop_guidance}
 <Json serialized context object>
 {json.dumps(related_context_content, indent=2, ensure_ascii=False)}
 </Json serialized context object>

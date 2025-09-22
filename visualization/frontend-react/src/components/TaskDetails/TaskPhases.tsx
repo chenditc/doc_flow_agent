@@ -6,6 +6,7 @@ import { NewTaskGenerationViewer } from '../enhanced/NewTaskGenerationViewer';
 import { ContextualLLMCall } from '../enhanced/ContextualLLMCall';
 import { ParameterCards } from './ParameterCards';
 import { ContextUpdateViewer } from './ContextUpdateViewer';
+import { JsonViewer as NiceJsonViewer } from '@textea/json-viewer';
 
 interface TaskPhasesProps {
   task: TaskExecution;
@@ -351,36 +352,51 @@ export const TaskPhases: React.FC<TaskPhasesProps> = ({ task }) => {
 
                   {/* Tool Execution: if LLM then render LLM component, otherwise JSON */}
                   <div>
-                    <div className="text-sm font-medium text-gray-700 mb-2">Tool Execution</div>
-                    {execPhase.tool_execution ? (
-                      execPhase.tool_execution.tool_id === 'LLM' || execPhase.task?.tool?.tool_id === 'LLM' ? (
-                        (() => {
-                          // Map ToolExecution to a temporary LLMCall shape for display
-                          const toolExec = execPhase.tool_execution as any;
-                          const syntheticLLM: LLMCall = {
-                            tool_call_id: toolExec.tool_call_id || 'unknown',
-                            prompt: (toolExec.parameters && (toolExec.parameters.prompt || toolExec.parameters['prompt'])) || '',
-                            response: toolExec.output.content,
-                            start_time: toolExec.start_time || execPhase.start_time || '',
-                            end_time: toolExec.end_time || execPhase.end_time || '',
-                            model: toolExec.parameters?.model || undefined,
-                            token_usage: toolExec.parameters?.token_usage || undefined,
-                          };
+                    {(() => {
+                      let len: number | null = null;
+                      if (execPhase.tool_execution) {
+                        try { len = JSON.stringify(execPhase.tool_execution).length; } catch { len = null; }
+                      }
+                      return <div className="text-sm font-medium text-gray-700 mb-2">Tool Execution{len !== null ? ` (${len.toLocaleString()} chars)` : ''}</div>;
+                    })()}
+                     {execPhase.tool_execution ? (
+                       execPhase.tool_execution.tool_id === 'LLM' || execPhase.task?.tool?.tool_id === 'LLM' ? (
+                         (() => {
+                           // Map ToolExecution to a temporary LLMCall shape for display
+                           const toolExec = execPhase.tool_execution as any;
+                           const syntheticLLM: LLMCall = {
+                             tool_call_id: toolExec.tool_call_id || 'unknown',
+                             prompt: (toolExec.parameters && (toolExec.parameters.prompt || toolExec.parameters['prompt'])) || '',
+                             response: toolExec.output.content,
+                             start_time: toolExec.start_time || execPhase.start_time || '',
+                             end_time: toolExec.end_time || execPhase.end_time || '',
+                             model: toolExec.parameters?.model || undefined,
+                             token_usage: toolExec.parameters?.token_usage || undefined,
+                           };
 
-                          return <ContextualLLMCall 
-                            llmCall={syntheticLLM} 
-                            context="field_extraction"
-                            relatedData={toolExec.parameters}
-                          />;
-                        })()
-                      ) : (
-                        <pre className="text-xs text-gray-700 bg-gray-50 p-3 rounded border overflow-x-auto">
-                          {JSON.stringify(execPhase.tool_execution, null, 2)}
-                        </pre>
-                      )
-                    ) : (
-                      <div className="text-sm text-gray-500">No tool execution recorded</div>
-                    )}
+                           return <ContextualLLMCall 
+                             llmCall={syntheticLLM} 
+                             context="field_extraction"
+                             relatedData={toolExec.parameters}
+                           />;
+                         })()
+                       ) : (
+                         <div className="text-xs text-gray-700 bg-gray-50 p-3 rounded border overflow-x-auto">
+                           <NiceJsonViewer
+                             value={execPhase.tool_execution}
+                             rootName={false}
+                             defaultInspectDepth={1}
+                             enableClipboard
+                             displayDataTypes={false}
+                             collapseStringsAfterLength={120}
+                             className="text-xs"
+                             theme="light"
+                           />
+                         </div>
+                       )
+                     ) : (
+                       <div className="text-sm text-gray-500">No tool execution recorded</div>
+                     )}
                   </div>
 
                   {/* Nested LLM calls during tool execution */}
@@ -466,9 +482,18 @@ export const TaskPhases: React.FC<TaskPhasesProps> = ({ task }) => {
                 statusBadge={statusBadge}
                 rightContent={timingInfo}
               >
-                <pre className="text-xs text-gray-700 bg-gray-50 p-3 rounded border overflow-x-auto">
-                  {JSON.stringify(detailsData, null, 2)}
-                </pre>
+                <div className="text-xs text-gray-700 bg-gray-50 p-3 rounded border overflow-x-auto">
+                  <NiceJsonViewer
+                    value={detailsData}
+                    rootName={formatPhaseName(phaseName)}
+                    defaultInspectDepth={1}
+                    enableClipboard
+                    displayDataTypes={false}
+                    collapseStringsAfterLength={120}
+                    className="text-xs"
+                    theme="light"
+                  />
+                </div>
               </CollapsibleSection>
             );
           } else {

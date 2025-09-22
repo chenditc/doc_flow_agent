@@ -74,9 +74,10 @@ class TestDocExecuteEngineUnits(unittest.TestCase):
         self.engine.task_execution_counter = 3
         
         test_cases = [
-            ("$.output", "$.msg3_output"),
-            ("$.result", "$.msg3_result"),
-            ("$.data", "$.msg3_data"),
+            # Prefixing behavior removed in engine; now paths remain unchanged
+            ("$.output", "$.output"),
+            ("$.result", "$.result"),
+            ("$.data", "$.data"),
         ]
         
         for input_path, expected in test_cases:
@@ -89,9 +90,9 @@ class TestDocExecuteEngineUnits(unittest.TestCase):
         self.engine.task_execution_counter = 7
         
         test_cases = [
-            ("$.messages[0]", "$.msg7_messages[0]"),
-            ("$.items[5]", "$.msg7_items[5]"),
-            ("$.users[10].name", "$.msg7_users[10].name"),
+            ("$.messages[0]", "$.messages[0]"),
+            ("$.items[5]", "$.items[5]"),
+            ("$.users[10].name", "$.users[10].name"),
         ]
         
         for input_path, expected in test_cases:
@@ -104,9 +105,9 @@ class TestDocExecuteEngineUnits(unittest.TestCase):
         self.engine.task_execution_counter = 12
         
         test_cases = [
-            ("$.output.nested", "$.msg12_output.nested"),
-            ("$.data.level1.level2", "$.msg12_data.level1.level2"),
-            ("$.result.summary.count", "$.msg12_result.summary.count"),
+            ("$.output.nested", "$.output.nested"),
+            ("$.data.level1.level2", "$.data.level1.level2"),
+            ("$.result.summary.count", "$.result.summary.count"),
         ]
         
         for input_path, expected in test_cases:

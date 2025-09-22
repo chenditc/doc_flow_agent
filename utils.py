@@ -79,8 +79,7 @@ def _ensure_path_exists(data: Dict[str, Any], json_path: str) -> None:
     # For now, focus on simple dot notation paths
     if '[' in path_without_root:
         # Complex path with array indices - handle separately
-        _ensure_complex_path_exists(data, json_path)
-        return
+        path_without_root = re.match(r"\[\'(.*)\'\]", path_without_root).groups()[0]
     
     # Simple dot notation path
     path_parts = path_without_root.split('.')
@@ -96,16 +95,6 @@ def _ensure_path_exists(data: Dict[str, Any], json_path: str) -> None:
         current = current[part]
 
 
-def _ensure_complex_path_exists(data: Dict[str, Any], json_path: str) -> None:
-    """
-    Handle complex paths with array indices.
-    For now, we'll implement basic support for simple cases.
-    """
-    # This is a simplified implementation
-    # A full implementation would need to handle various array syntax patterns
-    raise NotImplementedError("Complex paths with array indices are not yet supported")
-
-
 def _set_value_by_path(data: Dict[str, Any], json_path: str, value: Any) -> None:
     """
     Set the value at the specified JSON path.
@@ -116,24 +105,21 @@ def _set_value_by_path(data: Dict[str, Any], json_path: str, value: Any) -> None
         raise ValueError(f"JSON path must start with '$.' but got: {json_path}")
     
     path_without_root = json_path[2:]
+
+    if path_without_root.startswith('['):
+        path_without_root = re.match(r"\[\'(.*)\'\]", path_without_root).groups()[0]
     
     # Handle simple dot notation
-    if '[' not in path_without_root:
-        path_parts = path_without_root.split('.')
-        current = data
-        
-        # Navigate to the parent
-        for part in path_parts[:-1]:
-            current = current[part]
-        
-        # Set the final value
-        final_key = path_parts[-1]
-        current[final_key] = value
-    else:
-        # Complex path - use jsonpath library for setting
-        # This is more complex and might need additional logic
-        raise NotImplementedError("Complex paths with array indices are not yet supported")
-
+    path_parts = path_without_root.split('.')
+    current = data
+    
+    # Navigate to the parent
+    for part in path_parts[:-1]:
+        current = current[part]
+    
+    # Set the final value
+    final_key = path_parts[-1]
+    current[final_key] = value
 
 def get_json_path_value(data: Dict[str, Any], json_path: str) -> Any:
     """

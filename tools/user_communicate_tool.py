@@ -54,6 +54,7 @@ class UserCommunicateTool(BaseTool):
         user_reply = self._get_multiline_input()
         
         return {
+            "question": message,
             "user_reply": user_reply
         }
     
