@@ -1,7 +1,7 @@
 {
   "test_name": "doc_execute_engine_test_execute_task_simple_llm_tool",
-  "mode": "real",
-  "timestamp": "2025-09-17T12:24:26.948656",
+  "mode": "mock_then_real",
+  "timestamp": "2025-09-24T17:41:56.083083",
   "tool_calls": [
     {
       "tool_id": "LLM",
@@ -14,8 +14,8 @@
         "content": "Welcome to [Platform Name]!\n\nWe\u2019re excited you\u2019re here. With [Platform Name], you can [briefly state 1\u20132 core benefits, e.g., \u201cdiscover curated content and connect with experts\u201d]. To get started:\n- Complete your profile and set your preferences\n- Explore [key feature/section, e.g., \u201cthe Dashboard,\u201d \u201cProjects,\u201d or \u201cLibrary\u201d]\n- Follow topics and connect with people who share your interests\n\nIf you need help, visit our Help Center or contact us at [support email or link]. We\u2019re glad you\u2019re with us\u2014enjoy your time on [Platform Name]!",
         "tool_calls": []
       },
-      "timestamp": "2025-09-17T12:24:17.471976",
-      "execution_time_ms": 22025.219037983334,
+      "timestamp": "2025-09-24T17:41:56.082004",
+      "execution_time_ms": 0.0011840020306408405,
       "parameters_hash": "3d61a1abcdb4a277"
     },
     {
@@ -66,8 +66,8 @@
           }
         ]
       },
-      "timestamp": "2025-09-17T12:24:26.944150",
-      "execution_time_ms": 9469.763191998936,
+      "timestamp": "2025-09-24T17:41:56.082558",
+      "execution_time_ms": 0.0006050104275345802,
       "parameters_hash": "2d927e4789b4953a"
     }
   ],
@@ -77,5 +77,5 @@
       "LLM"
     ]
   },
-  "saved_at": "2025-09-17T12:24:26.948825"
+  "saved_at": "2025-09-24T17:41:56.083132"
 }

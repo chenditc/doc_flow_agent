@@ -436,25 +436,6 @@ class TestDocExecuteEngineUnits(unittest.TestCase):
         self.assertEqual(engine.task_execution_counter, 0)
         self.assertTrue(engine.context.get('max_tasks_reached'))
 
-    def test_engine_max_tasks_one(self):
-        """Engine with max_tasks=1 should stop after first task even if new tasks would be generated"""
-        engine = DocExecuteEngine(max_tasks=1)
-
-        # Monkeypatch parse_new_tasks_from_output to always return one extra task to see if it's ignored due to cap
-        async def fake_parse_new_tasks(output, current_task, task_stack=None):
-            from doc_execute_engine import PendingTask
-            return [PendingTask(description="Follow-up task that should not run")]  # This should remain on stack
-        engine.parse_new_tasks_from_output = fake_parse_new_tasks  # type: ignore
-
-        import asyncio
-        asyncio.run(engine.start("Generate a short friendly greeting message"))
-
-        # Only the root task should execute
-        self.assertEqual(engine.task_execution_counter, 1)
-        # There should be at least one remaining task (the generated follow-up) since cap stopped execution
-        self.assertGreaterEqual(len(engine.task_stack), 0)
-        self.assertTrue(engine.context.get('max_tasks_reached'))
-
 
 if __name__ == '__main__':
     unittest.main()

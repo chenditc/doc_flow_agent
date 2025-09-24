@@ -290,7 +290,7 @@ def extract_func(context):
         """Test generate_output_json_path with empty description"""
         async def run_test():
             with self.assertRaises(ValueError) as context:
-                await self.generator.generate_output_json_path("", {})
+                await self.generator.generate_output_json_path("", "out", {})
             return str(context.exception)
         
         error_message = asyncio.run(run_test())
@@ -315,6 +315,7 @@ def extract_func(context):
         async def run_test():
             result = await self.generator.generate_output_json_path(
                 "test output description",
+                "test_output",
                 {"existing": "data"}
             )
             return result
@@ -338,6 +339,7 @@ def extract_func(context):
         async def run_test():
             result = await self.generator.generate_output_json_path(
                 "test output description",
+                "test_output",
                 {"existing": "data"}
             )
             return result
@@ -355,6 +357,7 @@ def extract_func(context):
         async def run_test():
             result = await self.generator.generate_output_json_path(
                 "test output description",
+                "test_output",
                 {"existing": "data"}
             )
             return result
@@ -380,6 +383,7 @@ def extract_func(context):
         async def run_test():
             result = await self.generator.generate_output_json_path(
                 "test output description",
+                "test_output",
                 {"existing": "data"}
             )
             return result
@@ -404,6 +408,7 @@ def extract_func(context):
         async def run_test():
             result = await self.generator.generate_output_json_path(
                 "Blog outline generated based on title",
+                "blog_outline",
                 {"current_task": "Generate a blog outline"}
             )
             return result
@@ -434,6 +439,7 @@ def extract_func(context):
         async def run_test():
             result = await self.generator.generate_output_json_path(
                 "test description",
+                "test_output",
                 {"existing": "data"}
             )
             return result

@@ -1,7 +1,7 @@
 {
   "test_name": "tool_recording_test_multiple_identical_calls",
-  "mode": "real",
-  "timestamp": "2025-09-17T12:23:54.469368",
+  "mode": "mock_then_real",
+  "timestamp": "2025-09-24T17:47:45.404187",
   "tool_calls": [
     {
       "tool_id": "CLI",
@@ -15,8 +15,8 @@
         "returncode": 0,
         "executed_command": "echo 'test call'"
       },
-      "timestamp": "2025-09-17T12:23:54.462574",
-      "execution_time_ms": 28.81761101889424,
+      "timestamp": "2025-09-24T17:47:45.403333",
+      "execution_time_ms": 0.0016980338841676712,
       "parameters_hash": "8e62f52cb6635664"
     },
     {
@@ -31,8 +31,8 @@
         "returncode": 0,
         "executed_command": "echo 'test call'"
       },
-      "timestamp": "2025-09-17T12:23:54.468183",
-      "execution_time_ms": 5.479616986121982,
+      "timestamp": "2025-09-24T17:47:45.403415",
+      "execution_time_ms": 0.0007399939931929111,
       "parameters_hash": "8e62f52cb6635664"
     }
   ],
@@ -42,5 +42,5 @@
       "CLI"
     ]
   },
-  "saved_at": "2025-09-17T12:23:54.469459"
+  "saved_at": "2025-09-24T17:47:45.404275"
 }

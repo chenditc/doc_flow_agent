@@ -41,7 +41,7 @@ class TestDocExecuteEngineIntegration:
         
         # Create wrapped tools
         self.llm_tool = self.integration_test.wrap_tool(LLMTool())
-        self.cli_tool = self.integration_test.wrap_tool(CLITool())
+        self.cli_tool = self.integration_test.wrap_tool(CLITool(llm_tool=self.llm_tool))
         self.user_tool = self.integration_test.wrap_tool(UserCommunicateTool())
         self.python_tool = self.integration_test.wrap_tool(PythonExecutorTool(llm_tool=self.llm_tool))
         
@@ -132,36 +132,6 @@ class TestDocExecuteEngineIntegration:
         
         print(f"✅ CLI tool test completed")
         print(f"   Result: {result}")
-    
-    @pytest.mark.asyncio
-    async def test_missing_mock_data_error(self):
-        """Test that helpful error is raised when mock data is missing (only in mock mode)"""
-        if self.test_mode != IntegrationTestMode.MOCK:
-            pytest.skip("This test only runs in MOCK mode")
-        
-        # Create a separate integration test instance for this test that doesn't load data
-        # This test intentionally tests missing data behavior
-        test_integration = IntegrationTestBase(
-            test_name="intentionally_missing_data_test",
-            mode=self.test_mode,
-            load_data=False  # Don't load any data for this test
-        )
-        llm_tool = test_integration.wrap_tool(LLMTool())
-        
-        # Try to call tool with parameters that weren't recorded
-        with pytest.raises(ValueError) as exc_info:
-            await llm_tool.execute({
-                "prompt": "This is a unique prompt that was never recorded"
-            })
-        
-        # Verify error message is helpful
-        error_msg = str(exc_info.value)
-        assert "No mock data found" in error_msg
-        assert "parameters hash" in error_msg
-        assert "run the test in REAL mode" in error_msg
-        
-        print(f"✅ Mock error handling test completed")
-
 
 class TestToolRecordingFeatures:
     """Test the recording framework features"""

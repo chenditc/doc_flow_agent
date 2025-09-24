@@ -117,7 +117,8 @@ class TestUserCommunicateTool(unittest.TestCase):
         result = asyncio.run(run_test())
         
         # Verify the result
-        expected = {"user_reply": "User's response"}
+        # Updated: execute now returns both question and user_reply
+        expected = {"question": "Please provide your input", "user_reply": "User's response"}
         self.assertEqual(result, expected)
         
         # Verify message was printed
@@ -137,7 +138,7 @@ class TestUserCommunicateTool(unittest.TestCase):
         result = asyncio.run(run_test())
         
         # Should still return structure with empty reply
-        expected = {"user_reply": ""}
+        expected = {"question": "Please respond", "user_reply": ""}
         self.assertEqual(result, expected)
     
     def test_execute_missing_message_parameter(self):
@@ -161,9 +162,8 @@ class TestUserCommunicateTool(unittest.TestCase):
             return result
         
         result = asyncio.run(run_test())
-        
         expected = {"user_reply": "Detailed\nmultiline\nresponse"}
-        self.assertEqual(result, expected)
+        self.assertEqual(result, {"question": "Explain in detail", **expected})
     
     @patch.object(UserCommunicateTool, '_get_multiline_input', return_value="Response with special chars: !@#$%^&*()")
     @patch('builtins.print')
@@ -175,8 +175,7 @@ class TestUserCommunicateTool(unittest.TestCase):
             return result
         
         result = asyncio.run(run_test())
-        
-        expected = {"user_reply": "Response with special chars: !@#$%^&*()"}
+        expected = {"question": "Enter special text", "user_reply": "Response with special chars: !@#$%^&*()"}
         self.assertEqual(result, expected)
     
     @patch.object(UserCommunicateTool, '_get_multiline_input', return_value="Unicode test: 你好 🌟")
@@ -189,8 +188,7 @@ class TestUserCommunicateTool(unittest.TestCase):
             return result
         
         result = asyncio.run(run_test())
-        
-        expected = {"user_reply": "Unicode test: 你好 🌟"}
+        expected = {"question": "Enter Unicode text", "user_reply": "Unicode test: 你好 🌟"}
         self.assertEqual(result, expected)
     
     @patch('builtins.input', side_effect=['  Leading and trailing spaces  ', '###END###'])
@@ -214,14 +212,11 @@ class TestUserCommunicateTool(unittest.TestCase):
             }
             result = await self.tool.execute(parameters)
             return result
-        
         result = asyncio.run(run_test())
-        
         # Should use the message parameter
         mock_print.assert_any_call("Test message")
-        
         # Result should contain user reply
-        expected = {"user_reply": "Test response"}
+        expected = {"question": "Test message", "user_reply": "Test response"}
         self.assertEqual(result, expected)
 
 

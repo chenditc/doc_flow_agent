@@ -64,12 +64,13 @@ class TestDataManager:
         # Sort parameters to ensure consistent hashing
         sorted_params = json.dumps(parameters, sort_keys=True, default=str)
         call_string = f"{tool_id}:{sorted_params}"
+        print("[HASH]", call_string)
         return hashlib.sha256(call_string.encode()).hexdigest()[:16]
     
     def save_test_session(self, session: TestSession) -> None:
         """Save test session to file"""
         file_path = self._get_test_data_path(session.test_name)
-        
+    
         session_data = asdict(session)
         session_data['saved_at'] = datetime.now().isoformat()
         # Convert enum to string for JSON serialization
@@ -141,30 +142,44 @@ class IntegrationTestProxy:
                 self._mock_data[call_record.parameters_hash] = call_record
         
         print(f"🎭 Loaded {len(self._mock_data)} mock responses for {self.tool_id}")
+
+    # --- Internal helpers -------------------------------------------------
+    def _build_parameters_with_sop(self, parameters: Dict[str, Any] | Any, sop_doc_body: Optional[str]) -> Dict[str, Any]:
+        base = dict(parameters) if isinstance(parameters, dict) else {"params": parameters}
+        base["__sop_doc_body"] = sop_doc_body
+        return base
+
+    def _record(self, parameters_with_sop: Dict[str, Any], output: Any, execution_time_ms: float) -> ToolCallRecord:
+        record = self.data_manager.create_tool_call_record(
+            tool_id=self.tool_id,
+            parameters=parameters_with_sop,
+            output=output,
+            execution_time_ms=execution_time_ms,
+        )
+        self._recorded_calls.append(record)
+        return record
     
     async def execute(self, parameters: Dict[str, Any], sop_doc_body: Optional[str] = None) -> Any:
         """Execute tool with recording/playback logic"""
         # Include sop_doc_body in hash so that calls differing by provided SOP body don't collide
-        parameters_for_hash = dict(parameters) if isinstance(parameters, dict) else {"params": parameters}
-        parameters_for_hash["__sop_doc_body"] = sop_doc_body
+        parameters_for_hash = self._build_parameters_with_sop(parameters, sop_doc_body)
         param_hash = self.data_manager._hash_parameters(self.tool_id, parameters_for_hash)
         
         if self.mode == IntegrationTestMode.REAL:
             return await self._execute_real(parameters, param_hash, sop_doc_body=sop_doc_body)
         elif self.mode == IntegrationTestMode.MOCK:
-            return await self._execute_mock(parameters, param_hash)
+            return await self._execute_mock(parameters, param_hash, sop_doc_body=sop_doc_body)
         else:  # MOCK_THEN_REAL
             # Try mock first
             if param_hash in self._mock_data:
-                return await self._execute_mock(parameters, param_hash)
-            # Fallback to real execution and record (acts like REAL for this call)
-            print(f"🌀 [MOCK_THEN_REAL] Cache miss for {self.tool_id} (hash={param_hash}), executing real call...")
-            result = await self._execute_real(parameters, param_hash, sop_doc_body=sop_doc_body)
-            # Also store into mock cache so subsequent identical calls in same test use mock path
-            try:
+                result = await self._execute_mock(parameters, param_hash, sop_doc_body=sop_doc_body)
+            else:
+                # Fallback to real execution and record (acts like REAL for this call)
+                print(f"🌀 [MOCK_THEN_REAL] Cache miss for {self.tool_id} (hash={param_hash}), executing real call...")
+                result = await self._execute_real(parameters, param_hash, sop_doc_body=sop_doc_body)
+            # Ensure we have the last recorded call in mock cache (both real and mock paths now recorded)
+            if self._recorded_calls:
                 self._mock_data[param_hash] = self._recorded_calls[-1]
-            except Exception:
-                pass
             return result
     
     async def _execute_real(self, parameters: Dict[str, Any], param_hash: str, sop_doc_body: Optional[str] = None) -> Any:
@@ -175,66 +190,57 @@ class IntegrationTestProxy:
         try:
             result = await self.tool.execute(parameters, sop_doc_body=sop_doc_body)
             execution_time = (asyncio.get_event_loop().time() - start_time) * 1000
-            
-            # Record the call
-            # Include sop_doc_body in recorded parameters so playback can match properly
-            parameters_to_record = dict(parameters) if isinstance(parameters, dict) else {"params": parameters}
-            parameters_to_record["__sop_doc_body"] = sop_doc_body
-            record = self.data_manager.create_tool_call_record(
-                tool_id=self.tool_id,
-                parameters=parameters_to_record,
-                output=result,
-                execution_time_ms=execution_time
-            )
-            self._recorded_calls.append(record)
-            
+            record_params = self._build_parameters_with_sop(parameters, sop_doc_body)
+            self._record(record_params, result, execution_time)
             print(f"✅ [REAL] {self.tool_id}: Recorded response ({execution_time:.1f}ms)")
             return result
             
         except Exception as e:
             execution_time = (asyncio.get_event_loop().time() - start_time) * 1000
-            
-            # Record the error
-            parameters_to_record = dict(parameters) if isinstance(parameters, dict) else {"params": parameters}
-            parameters_to_record["__sop_doc_body"] = sop_doc_body
-            record = self.data_manager.create_tool_call_record(
-                tool_id=self.tool_id,
-                parameters=parameters_to_record,
-                output={"error": str(e), "error_type": type(e).__name__},
-                execution_time_ms=execution_time
-            )
-            self._recorded_calls.append(record)
-            
+            record_params = self._build_parameters_with_sop(parameters, sop_doc_body)
+            self._record(record_params, {"error": str(e), "error_type": type(e).__name__}, execution_time)
             print(f"❌ [REAL] {self.tool_id}: Recorded error ({execution_time:.1f}ms)")
             raise
     
-    async def _execute_mock(self, parameters: Dict[str, Any], param_hash: str) -> Any:
-        """Execute tool in mock mode using recorded data"""
-        print(f"🎭 [MOCK] {self.tool_id}: {str(parameters)[:100]}...")
+    async def _execute_mock(self, parameters: Dict[str, Any], param_hash: str, sop_doc_body: Optional[str] = None) -> Any:
+        """Execute tool in mock mode using recorded data; also record playback in MOCK_THEN_REAL for completeness"""
+        print(f"🎭 [MOCK] {self.tool_id}: {str(parameters)}...")
         
         if param_hash not in self._mock_data:
             raise ValueError(
-                f"No mock data found for {self.tool_id} with parameters hash '{param_hash}'. "
+                f"No mock data {self.tool_id}:'{param_hash}'. "
                 "Use environment variable INTEGRATION_TEST_MODE=real to run the test in REAL mode first to generate mock data."
             )
         
         record = self._mock_data[param_hash]
         
-        # Check if recorded call had an error
-        if isinstance(record.output, dict) and "error" in record.output:
-            error_type = record.output.get("error_type", "Exception")
-            error_message = record.output["error"]
-            
-            # Recreate the original exception type if possible
-            if error_type == "ValueError":
-                raise ValueError(error_message)
-            elif error_type == "RuntimeError":
-                raise RuntimeError(error_message)
-            else:
-                raise Exception(f"{error_type}: {error_message}")
-        
-        print(f"✅ [MOCK] {self.tool_id}: Returned recorded response")
-        return record.output
+        # Reconstruct error or return value. Always re-record in MOCK_THEN_REAL to produce full session output sequence.
+        start_time = asyncio.get_event_loop().time()
+        try:
+            if isinstance(record.output, dict) and "error" in record.output:
+                # Record playback of error (0ms-ish) only when in MOCK_THEN_REAL to keep pure MOCK sessions lean
+                if self.mode == IntegrationTestMode.MOCK_THEN_REAL:
+                    elapsed = (asyncio.get_event_loop().time() - start_time) * 1000
+                    params_with_sop = self._build_parameters_with_sop(parameters, sop_doc_body)
+                    self._record(params_with_sop, record.output, elapsed)
+                error_type = record.output.get("error_type", "Exception")
+                error_message = record.output["error"]
+                if error_type == "ValueError":
+                    raise ValueError(error_message)
+                elif error_type == "RuntimeError":
+                    raise RuntimeError(error_message)
+                else:
+                    raise Exception(f"{error_type}: {error_message}")
+            # Success path
+            if self.mode == IntegrationTestMode.MOCK_THEN_REAL:
+                elapsed = (asyncio.get_event_loop().time() - start_time) * 1000
+                params_with_sop = self._build_parameters_with_sop(parameters, sop_doc_body)
+                self._record(params_with_sop, record.output, elapsed)
+            print(f"✅ [MOCK] {self.tool_id}: Returned recorded response")
+            return record.output
+        finally:
+            # For pure MOCK we do not append playback records to avoid duplicating data when saving again from real runs.
+            pass
     
     def get_recorded_calls(self) -> List[ToolCallRecord]:
         """Get all recorded calls from this proxy"""

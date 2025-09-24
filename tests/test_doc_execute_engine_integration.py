@@ -80,9 +80,9 @@ class TestDocExecuteEngineIntegration:
         }
         
         # Recreate JsonPathGenerator with the wrapped LLM tool
-        from tools.json_path_generator import OnebyOneJsonPathGenerator
-        self.engine.json_path_generator = OnebyOneJsonPathGenerator(self.llm_tool)
-        
+        from tools.json_path_generator import SmartJsonPathGenerator
+        self.engine.json_path_generator = SmartJsonPathGenerator(self.llm_tool)
+
         # Recreate SOPDocumentParser with the wrapped LLM tool
         from sop_document import SOPDocumentParser
         self.engine.sop_parser = SOPDocumentParser(str(real_docs_dir), llm_tool=self.llm_tool, tracer=self.engine.tracer)

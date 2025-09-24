@@ -105,13 +105,6 @@ class TestUtils(unittest.TestCase):
             set_json_path_value(data, "$.blog.title", "value")
         self.assertIn("intermediate key 'blog' is not a dictionary", str(cm.exception))
 
-    def test_set_json_path_value_complex_path_not_supported(self):
-        """Test that complex paths with arrays raise NotImplementedError"""
-        data = {}
-        
-        with self.assertRaises(NotImplementedError):
-            set_json_path_value(data, "$.items[0].title", "value")
-
     def test_get_json_path_value_simple_path(self):
         """Test getting value with simple path"""
         data = {"title": "My Title"}

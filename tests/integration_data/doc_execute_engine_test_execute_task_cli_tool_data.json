@@ -1,7 +1,7 @@
 {
   "test_name": "doc_execute_engine_test_execute_task_cli_tool",
-  "mode": "real",
-  "timestamp": "2025-09-17T12:24:43.963043",
+  "mode": "mock_then_real",
+  "timestamp": "2025-09-24T17:41:56.134509",
   "tool_calls": [
     {
       "tool_id": "LLM",
@@ -51,8 +51,8 @@
           }
         ]
       },
-      "timestamp": "2025-09-17T12:24:43.959466",
-      "execution_time_ms": 15753.752147982595,
+      "timestamp": "2025-09-24T17:41:56.133834",
+      "execution_time_ms": 0.0005289912223815918,
       "parameters_hash": "f1bb86c6a06becad"
     },
     {
@@ -67,8 +67,8 @@
         "returncode": 0,
         "executed_command": "ls -la /"
       },
-      "timestamp": "2025-09-17T12:24:27.018620",
-      "execution_time_ms": 3.1998119957279414,
+      "timestamp": "2025-09-24T17:41:56.133315",
+      "execution_time_ms": 0.0011409865692257881,
       "parameters_hash": "dad8ffc351ef020c"
     }
   ],
@@ -79,5 +79,5 @@
       "CLI"
     ]
   },
-  "saved_at": "2025-09-17T12:24:43.963215"
+  "saved_at": "2025-09-24T17:41:56.134562"
 }

@@ -1,7 +1,7 @@
 {
   "test_name": "python_executor_tool_test_string_concatenation",
-  "mode": "real",
-  "timestamp": "2025-09-17T12:24:10.861966",
+  "mode": "mock_then_real",
+  "timestamp": "2025-09-24T17:47:45.631670",
   "tool_calls": [
     {
       "tool_id": "LLM",
@@ -43,8 +43,8 @@
           }
         ]
       },
-      "timestamp": "2025-09-17T12:24:10.827753",
-      "execution_time_ms": 15417.654553020839,
+      "timestamp": "2025-09-24T17:47:45.566395",
+      "execution_time_ms": 0.001742970198392868,
       "parameters_hash": "d5f2c83734bf172b"
     }
   ],
@@ -54,5 +54,5 @@
       "LLM"
     ]
   },
-  "saved_at": "2025-09-17T12:24:10.862143"
+  "saved_at": "2025-09-24T17:47:45.631812"
 }
