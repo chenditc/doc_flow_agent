@@ -1,7 +1,7 @@
 {
   "test_name": "python_executor_tool_test_simple_arithmetic",
   "mode": "mock_then_real",
-  "timestamp": "2025-09-24T17:47:45.521941",
+  "timestamp": "2025-09-26T15:50:33.803108",
   "tool_calls": [
     {
       "tool_id": "LLM",
@@ -43,8 +43,8 @@
           }
         ]
       },
-      "timestamp": "2025-09-24T17:47:45.450675",
-      "execution_time_ms": 0.0019129947759211063,
+      "timestamp": "2025-09-26T15:50:33.760920",
+      "execution_time_ms": 0.001038999471347779,
       "parameters_hash": "a47a0a4748361300"
     }
   ],
@@ -54,5 +54,5 @@
       "LLM"
     ]
   },
-  "saved_at": "2025-09-24T17:47:45.522057"
+  "saved_at": "2025-09-26T15:50:33.803192"
 }

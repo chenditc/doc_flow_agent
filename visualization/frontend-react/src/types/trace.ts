@@ -46,6 +46,7 @@ export interface TaskPhases {
   task_execution?: TaskExecutionPhase;
   context_update?: ContextUpdatePhase;
   new_task_generation?: NewTaskGenerationPhase;
+  subtree_compaction?: SubtreeCompactionPhase;
 }
 
 // SOP Resolution Phase (Updated for new tracing structure)
@@ -213,6 +214,18 @@ export interface NewTaskGenerationPhase {
   status: PhaseStatus;
   task_generation?: NewTaskGeneration | null;
   error: string | null;
+}
+
+// Subtree Compaction Phase
+export interface SubtreeCompactionPhase {
+  start_time: string;
+  end_time: string | null;
+  status: PhaseStatus;
+  root_task_id: string;
+  subtree_task_ids: string[];
+  aggregated_outputs: Record<string, any>;
+  llm_calls?: LLMCall[] | null;
+  error?: string | null;
 }
 
 export interface NewTaskGeneration {

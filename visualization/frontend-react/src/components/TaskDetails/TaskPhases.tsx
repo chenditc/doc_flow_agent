@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import type { TaskExecution, TaskPhases as TaskPhasesType, TaskExecutionPhase, LLMCall, ContextUpdatePhase, NewTaskGenerationPhase } from '../../types/trace';
+import type { TaskExecution, TaskPhases as TaskPhasesType, TaskExecutionPhase, LLMCall, ContextUpdatePhase, NewTaskGenerationPhase, SubtreeCompactionPhase } from '../../types/trace';
 import { SOPResolutionViewer } from '../SOPResolution/SOPResolutionViewer';
 import { TaskCreationPhaseViewer } from '../enhanced/TaskCreationPhaseViewer';
 import { NewTaskGenerationViewer } from '../enhanced/NewTaskGenerationViewer';
+import { SubtreeCompactionViewer } from '../enhanced/SubtreeCompactionViewer';
 import { ContextualLLMCall } from '../enhanced/ContextualLLMCall';
 import { ParameterCards } from './ParameterCards';
 import { ContextUpdateViewer } from './ContextUpdateViewer';
@@ -269,6 +270,39 @@ export const TaskPhases: React.FC<TaskPhasesProps> = ({ task }) => {
                 rightContent={timingInfo}
               >
                 <NewTaskGenerationViewer phaseData={newTaskGenPhase} />
+              </CollapsibleSection>
+            );
+          }
+
+          // Special handling for subtree compaction phase
+          if (phaseName === 'subtree_compaction' && 'root_task_id' in phaseData) {
+            const compactionPhase = phaseData as SubtreeCompactionPhase;
+            const outputCount = Object.keys(compactionPhase.aggregated_outputs || {}).length;
+            const taskCount = compactionPhase.subtree_task_ids?.length || 0;
+            const titleSuffix = ` (${outputCount} output${outputCount === 1 ? '' : 's'}, ${taskCount} task${taskCount === 1 ? '' : 's'})`;
+            
+            const statusBadge = (
+              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeColor(compactionPhase.status)}`}>
+                {compactionPhase.status}
+              </span>
+            );
+
+            const timingInfo = (
+              <div className="text-sm text-gray-500">
+                {formatTime(compactionPhase.start_time)} - {formatTime(compactionPhase.end_time)} 
+                ({calculateDuration(compactionPhase.start_time, compactionPhase.end_time)})
+              </div>
+            );
+            
+            return (
+              <CollapsibleSection 
+                key={phaseName}
+                title={`${phaseIndex}. Subtree Compaction${titleSuffix}`}
+                defaultExpanded={false}
+                statusBadge={statusBadge}
+                rightContent={timingInfo}
+              >
+                <SubtreeCompactionViewer phaseData={compactionPhase} />
               </CollapsibleSection>
             );
           }

@@ -363,7 +363,7 @@ class TestDocExecuteEngineIntegration:
         """Test task creation error handling with non-existent SOP"""
         # Mock the SOP parser to return non-existent doc_id
         with patch.object(self.engine.sop_parser, 'parse_sop_doc_id_from_description') as mock_parser:
-            mock_parser.return_value = "nonexistent/sop"
+            mock_parser.return_value = ("nonexistent/sop", "")
             
             description = "Task with non-existent SOP"
             pending_task = PendingTask(description=description)

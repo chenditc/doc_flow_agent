@@ -389,6 +389,7 @@ Context object is a dictionary, here we represent them using json_path syntax:
 4. The parameter should only be "extracted" or "rephrased", not inferred. This means different people should get the same parameter value if they have the same context, if there is uncertainty, do not rephrase it.
 5. If there is no perfect match, return a piece of code which return "<NOT_FOUND_IN_CANDIDATES>".
 6. If you rephrase the information, make sure you use the same language as the input_description.
+7. Just generate the minimum required code, Eg. If there is no requirement to be structured, use plain text. Make sure the code has minimum possibility to fail.
 
 ## Examples
 ```python

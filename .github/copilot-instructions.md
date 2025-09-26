@@ -23,3 +23,5 @@
 - For any task which might take more than 1 hour for a developer, plan first by explicitly list out todo list, then execute them. You can regenerate todo list if you see plan needs to change.
 - Do not reinvent the wheel, use mature library if the functionality has been implemented before.
 - Do not repeat yourself, when you see duplicate code, try to deduplicate it.
+- No need to keep backward compatibility, remove unused or deprecated code.
+- Do not use 'except Excetion' or 'except:' to catch all exception, only catch the exception you can handle.

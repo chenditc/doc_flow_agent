@@ -155,7 +155,7 @@ class TestTaskRelationships:
         
         # Mock the SOP resolution to use bash SOP
         with patch.object(self.engine.sop_parser, 'parse_sop_doc_id_from_description') as mock_parser:
-            mock_parser.return_value = "tools/bash"
+            mock_parser.return_value = ("tools/bash", "")
             
             # Create task from PendingTask
             task = await self.engine.create_task_from_description(pending_task)

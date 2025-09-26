@@ -308,19 +308,78 @@ tool:
 # Bash Tool
 """
         
+        python_doc = """---
+description: Generate and execute python code
+tool:
+  tool_id: PYTHON_EXECUTOR
+---
+# Python Tool
+"""
+        
+        llm_doc = """---
+description: General Large Language Model Text Generation
+tool:
+  tool_id: LLM
+---
+# LLM Tool
+"""
+        
+        user_communicate_doc = """---
+description: Send message to user and collect response
+tool:
+  tool_id: USER_COMMUNICATE
+---
+# User Communication Tool
+"""
+        
+        # Create general directory for plan.md
+        (self.docs_dir / "general").mkdir()
+        
+        plan_doc = """---
+doc_id: general/plan
+description: Break down complex tasks into multiple manageable substeps
+tool:
+  tool_id: LLM
+---
+# Task Planning Tool
+"""
+        
         with open(self.docs_dir / "blog" / "generate_outline.md", 'w') as f:
             f.write(blog_doc)
         
         with open(self.docs_dir / "tools" / "bash.md", 'w') as f:
             f.write(bash_doc)
+            
+        with open(self.docs_dir / "tools" / "python.md", 'w') as f:
+            f.write(python_doc)
+            
+        with open(self.docs_dir / "tools" / "llm.md", 'w') as f:
+            f.write(llm_doc)
+            
+        with open(self.docs_dir / "tools" / "user_communicate.md", 'w') as f:
+            f.write(user_communicate_doc)
+            
+        with open(self.docs_dir / "general" / "plan.md", 'w') as f:
+            f.write(plan_doc)
     
     def test_get_all_doc_ids(self):
         """Test getting all available document IDs"""
         doc_ids = self.parser._get_all_doc_ids()
         
-        self.assertIn("blog/generate_outline", doc_ids)
-        self.assertIn("tools/bash", doc_ids)
-        self.assertEqual(len(doc_ids), 2)
+        # Check for expected documents
+        expected_docs = [
+            "blog/generate_outline",
+            "tools/bash", 
+            "tools/python",
+            "tools/llm", 
+            "tools/user_communicate",
+            "general/plan"
+        ]
+        
+        for expected_doc in expected_docs:
+            self.assertIn(expected_doc, doc_ids)
+        
+        self.assertEqual(len(doc_ids), len(expected_docs))
     
     def test_get_all_doc_ids_empty_directory(self):
         """Test getting doc IDs from empty directory"""
@@ -401,13 +460,110 @@ tool:
             self.assertIsNone(result)
     
     def test_parse_sop_doc_id_no_candidates(self):
-        """Test parsing when no candidates are found"""
-        async def run_test():
-            result = await self.parser.parse_sop_doc_id_from_description("completely unrelated task")
-            return result
+        """Test parsing when no candidates are found - should use tool selection"""
+        # Create a mock LLMTool instance for tool selection
+        mock_llm_tool = AsyncMock()
+        mock_llm_tool.execute.return_value = {
+            "content": "Task analysis completed.",
+            "tool_calls": [{
+                "name": "select_tool_for_task",
+                "arguments": {
+                    "can_complete_with_tool": False,
+                    "selected_tool_doc": "general/plan",
+                    "reasoning": "This is an unrelated task that needs breakdown"
+                }
+            }]
+        }
         
-        result = asyncio.run(run_test())
-        self.assertIsNone(result)
+        # Temporarily patch the LLMTool class
+        with patch('tools.llm_tool.LLMTool', return_value=mock_llm_tool):
+            async def run_test():
+                result = await self.parser.parse_sop_doc_id_from_description("completely unrelated task")
+                return result
+            
+            result = asyncio.run(run_test())
+            sop_doc_id, doc_selection_message = result
+            self.assertEqual(sop_doc_id, "general/plan")
+            self.assertEqual(doc_selection_message, "")
+    
+    def test_parse_sop_doc_id_simple_tool_selection(self):
+        """Test tool selection for simple tasks that can be completed by one tool"""
+        # Create a mock LLMTool instance for tool selection
+        mock_llm_tool = AsyncMock()
+        mock_llm_tool.execute.return_value = {
+            "content": "Task analysis completed.",
+            "tool_calls": [{
+                "name": "select_tool_for_task",
+                "arguments": {
+                    "can_complete_with_tool": True,
+                    "selected_tool_doc": "tools/python",
+                    "reasoning": "This task can be completed with Python code generation and execution"
+                }
+            }]
+        }
+        
+        # Temporarily patch the LLMTool class
+        with patch('tools.llm_tool.LLMTool', return_value=mock_llm_tool):
+            async def run_test():
+                result = await self.parser.parse_sop_doc_id_from_description("Calculate the factorial of 10")
+                return result
+            
+            result = asyncio.run(run_test())
+            sop_doc_id, doc_selection_message = result
+            self.assertEqual(sop_doc_id, "tools/python")
+            self.assertEqual(doc_selection_message, "")
+    
+    def test_parse_sop_doc_id_unexpected_tool_call_raises_exception(self):
+        """Test that unexpected tool call raises ValueError"""
+        # Create a mock LLMTool instance that returns unexpected tool call
+        mock_llm_tool = AsyncMock()
+        mock_llm_tool.execute.return_value = {
+            "content": "Task analysis completed.",
+            "tool_calls": [{
+                "name": "unexpected_function_name",
+                "arguments": {
+                    "some_arg": "some_value"
+                }
+            }]
+        }
+        
+        # Temporarily patch the LLMTool class
+        with patch('tools.llm_tool.LLMTool', return_value=mock_llm_tool):
+            async def run_test():
+                return await self.parser.parse_sop_doc_id_from_description("some random task")
+            
+            with self.assertRaises(ValueError) as context:
+                asyncio.run(run_test())
+            
+            self.assertIn("Unexpected tool call: unexpected_function_name", str(context.exception))
+            self.assertIn("expected 'select_tool_for_task'", str(context.exception))
+    
+    def test_parse_sop_doc_id_invalid_tool_selection_raises_exception(self):
+        """Test that invalid tool selection raises ValueError"""
+        # Create a mock LLMTool instance that returns invalid tool selection
+        mock_llm_tool = AsyncMock()
+        mock_llm_tool.execute.return_value = {
+            "content": "Task analysis completed.",
+            "tool_calls": [{
+                "name": "select_tool_for_task",
+                "arguments": {
+                    "can_complete_with_tool": True,
+                    "selected_tool_doc": "tools/invalid_tool",
+                    "reasoning": "This tool doesn't exist"
+                }
+            }]
+        }
+        
+        # Temporarily patch the LLMTool class
+        with patch('tools.llm_tool.LLMTool', return_value=mock_llm_tool):
+            async def run_test():
+                return await self.parser.parse_sop_doc_id_from_description("some task")
+            
+            with self.assertRaises(ValueError) as context:
+                asyncio.run(run_test())
+            
+            self.assertIn("Invalid tool selection: tools/invalid_tool", str(context.exception))
+            self.assertIn("valid options are:", str(context.exception))
     
     def test_parse_sop_doc_id_full_path_match(self):
         """Test parsing with full path match"""
@@ -425,7 +581,9 @@ tool:
                 return result
             
             result = asyncio.run(run_test())
-            self.assertEqual(result, "blog/generate_outline")
+            sop_doc_id, doc_selection_message = result
+            self.assertEqual(sop_doc_id, "blog/generate_outline")
+            self.assertEqual(doc_selection_message, "")
     
     def test_parse_sop_doc_id_filename_match(self):
         """Test parsing with filename match"""
@@ -443,7 +601,9 @@ tool:
                 return result
             
             result = asyncio.run(run_test())
-            self.assertEqual(result, "tools/bash")
+            sop_doc_id, doc_selection_message = result
+            self.assertEqual(sop_doc_id, "tools/bash")
+            self.assertEqual(doc_selection_message, "")
     
     def test_parse_sop_doc_id_with_tracer(self):
         """Test parsing with tracer enabled"""
@@ -472,7 +632,9 @@ tool:
                 return result
             
             result = asyncio.run(run_test())
-            self.assertEqual(result, "blog/generate_outline")
+            sop_doc_id, doc_selection_message = result
+            self.assertEqual(sop_doc_id, "blog/generate_outline")
+            self.assertEqual(doc_selection_message, "")
             
             # Verify tracer interactions
             self.assertIsNotNone(mock_phase.candidate_documents)

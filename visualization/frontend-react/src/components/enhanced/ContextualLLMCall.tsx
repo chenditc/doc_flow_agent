@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import type { LLMCall } from '../../types/trace';
+import { JsonViewer as NiceJsonViewer } from '@textea/json-viewer';
 
 interface ContextualLLMCallProps {
   llmCall: LLMCall;
-  context: 'sop_validation' | 'field_extraction' | 'output_generation' | 'task_generation';
+  context: 'sop_validation' | 'field_extraction' | 'output_generation' | 'task_generation' | 'subtree_compaction';
   relatedData?: any;
 }
 
@@ -311,11 +312,18 @@ export const ContextualLLMCall: React.FC<ContextualLLMCallProps> = ({
                         {toolCall.id}
                       </span>
                     </div>
-                    <div className="text-sm text-gray-700">
-                      <span className="font-medium">Arguments:</span>
-                      <pre className="mt-1 bg-white border border-blue-200 rounded p-2 text-xs overflow-x-auto">
-                        {JSON.stringify(toolCall.arguments, null, 2)}
-                      </pre>
+                    <div className="text-sm text-gray-700 space-y-1">
+                      <span className="font-medium block">Arguments:</span>
+                      <div className="bg-white border border-blue-200 rounded p-2 text-xs">
+                        <NiceJsonViewer 
+                          value={toolCall.arguments}
+                          rootName={false}
+                          defaultInspectDepth={1}
+                          displayDataTypes={false}
+                          collapseStringsAfterLength={120}
+                          theme="light"
+                        />
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -331,10 +339,15 @@ export const ContextualLLMCall: React.FC<ContextualLLMCallProps> = ({
           {llmCall.token_usage && (
             <div>
               <div className="text-sm font-medium text-gray-700 mb-2">Token Usage</div>
-              <div className="bg-white border rounded p-3">
-                <div className="text-sm text-gray-700">
-                  <pre>{JSON.stringify(llmCall.token_usage, null, 2)}</pre>
-                </div>
+              <div className="bg-white border rounded p-3 text-xs">
+                <NiceJsonViewer 
+                  value={llmCall.token_usage}
+                  rootName={false}
+                  defaultInspectDepth={1}
+                  displayDataTypes={false}
+                  collapseStringsAfterLength={120}
+                  theme="light"
+                />
               </div>
             </div>
           )}
@@ -343,10 +356,15 @@ export const ContextualLLMCall: React.FC<ContextualLLMCallProps> = ({
           {relatedData && (
             <div>
               <div className="text-sm font-medium text-gray-700 mb-2">Related Data</div>
-              <div className="bg-white border rounded p-3">
-                <div className="text-sm text-gray-700">
-                  <pre>{JSON.stringify(relatedData, null, 2)}</pre>
-                </div>
+              <div className="bg-white border rounded p-3 text-xs">
+                <NiceJsonViewer 
+                  value={relatedData}
+                  rootName={false}
+                  defaultInspectDepth={1}
+                  displayDataTypes={false}
+                  collapseStringsAfterLength={120}
+                  theme="light"
+                />
               </div>
             </div>
           )}

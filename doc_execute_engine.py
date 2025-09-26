@@ -37,7 +37,7 @@ from tools import BaseTool, LLMTool, CLITool, TemplateTool, UserCommunicateTool
 from tools.python_executor_tool import PythonExecutorTool
 from tools.json_path_generator import SmartJsonPathGenerator
 from jsonpath_ng.ext import parse
-from utils import set_json_path_value
+from utils import set_json_path_value, get_json_path_value, extract_key_from_json_path
 from exceptions import TaskInputMissingError, TaskCreationError
 from tracing import ExecutionTracer, ExecutionStatus
 from tracing_wrappers import TracingToolWrapper, TracingLLMTool
@@ -150,6 +150,9 @@ class DocExecuteEngine:
         self.max_tasks = max_tasks
         # Centralized map to store task short names by task_id for cross-references
         self.task_short_name_map: Dict[str, str] = {}
+        
+        # Task completion tracking for subtree compaction
+        self.completed_tasks: Dict[str, Task] = {}  # task_id -> completed Task with final output path
         
         # Initialize tracing
         self.tracer = ExecutionTracer(output_dir=trace_output_dir, enabled=enable_tracing)
@@ -413,7 +416,7 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
         else:
             return f"$.{new_first_part}"
     
-    async def create_task_from_sop(self, sop_doc: SOPDocument, pending_task: PendingTask) -> Task:
+    async def create_task_from_sop(self, sop_doc: SOPDocument, pending_task: PendingTask, doc_selection_message: str = "") -> Task:
         """Create a task from a SOP document and PendingTask"""
 
         # Generate input JSON paths if not provided but input_description exists, iterate through input_description and see if the fields has path defined.
@@ -421,6 +424,15 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
         input_description_to_generate_path = {}
         for field, field_description in sop_doc.input_description.items():
             if not input_json_path.get(field):
+                # Special case: if we have a doc_selection_message and this is the message_to_user field, use it directly
+                if field == "message_to_user" and doc_selection_message and sop_doc.doc_id == "tools/user_communicate":
+                    # Store the message directly in context and create a path to it
+                    temp_message_key = f"_temp_input_{field}"
+                    self.context[temp_message_key] = doc_selection_message
+                    input_json_path[field] = f"$.{temp_message_key}"
+                    print(f"[TASK_CREATION] Used doc_selection_message for {field}: {doc_selection_message}")
+                    continue
+                    
                 input_description_to_generate_path[field] = field_description
 
         if input_description_to_generate_path:
@@ -464,16 +476,23 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
             self.context["current_task"] = pending_task.description
             
             # Step 1: Parse sop_doc_id from natural language
-            sop_doc_id = await self.sop_parser.parse_sop_doc_id_from_description(pending_task.description)
+            sop_doc_id, doc_selection_message = await self.sop_parser.parse_sop_doc_id_from_description(pending_task.description)
 
             if not sop_doc_id:
                 # Use general fallback SOP document if no specific doc_id found
                 print("[TASK_CREATION] No specific SOP document found, using fallback SOP document")
                 sop_doc_id = "general/fallback"
+                doc_selection_message = ""
             
             # Step 3: Load SOP document
             try:
                 sop_doc = self.load_sop_document(sop_doc_id)
+                
+                # Append doc_selection_message to the SOP document body if present
+                if doc_selection_message:
+                    sop_doc.body += f"\n\n## When applying this doc to task\n\n{doc_selection_message}"
+                    print(f"[TASK_CREATION] Added doc selection message to SOP body: {doc_selection_message}")
+                    
             except FileNotFoundError:
                 raise ValueError(f"Cannot find SOP document for parsed doc_id: {sop_doc_id}")
             
@@ -487,7 +506,7 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
         # Start task creation phase
         with self.tracer.trace_phase_with_data("task_creation") as phase_ctx:
             # Step 4: Create task with all fields populated
-            task = await self.create_task_from_sop(sop_doc, pending_task)
+            task = await self.create_task_from_sop(sop_doc, pending_task, doc_selection_message)
             # Keep short name map in sync
             self._record_task_short_name(task.task_id, task.short_name)
             
@@ -606,6 +625,9 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
             set_json_path_value(self.context, prefixed_output_path, tool_output)
             print(f"Updated context at path '{prefixed_output_path}' with output")
             updated_paths.append(prefixed_output_path)
+            
+            # Update task with final effective output path for compaction tracking
+            task.output_json_path = prefixed_output_path
 
             # Remove _temp_input_ * key from context
             temp_keys = [k for k in self.context.keys() if k.startswith("_temp_input_")]
@@ -651,6 +673,15 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
                 "current_task_description": task.description,
                 "generated_tasks": [asdict(pending_task) for pending_task in new_pending_tasks]
             })
+        
+        # Mark task as completed and attempt subtree compaction
+        self.completed_tasks[task.task_id] = task
+        # Only attempt subtree compaction if no new subtasks were generated.
+        # Rationale: Presence of newly generated subtasks indicates the subtree is not yet complete.
+        if not new_pending_tasks:
+            await self._attempt_subtree_compaction(task)
+        else:
+            print(f"[COMPACTION] Skipping subtree compaction for task {task.task_id} because {len(new_pending_tasks)} new subtasks were generated.")
 
         return new_pending_tasks
     
@@ -974,6 +1005,297 @@ Please return only the task description as a single paragraph, without additiona
 
             print("[ENGINE] All tasks completed. Execution engine stopped.")
 
+    async def _attempt_subtree_compaction(self, just_completed_task: Task) -> None:
+        """Find and compact the highest possible ancestor subtree that is now complete"""
+        # Walk up the parent chain to find the highest compactable ancestor
+        highest_compactable_ancestor = just_completed_task.task_id
+        current_parent_id = just_completed_task.parent_task_id
+        
+        while current_parent_id:
+            # Check if this ancestor's subtree is complete
+            if await self._is_subtree_complete(current_parent_id):
+                highest_compactable_ancestor = current_parent_id
+                # Keep going up to find an even higher ancestor
+                parent_task = self.completed_tasks.get(current_parent_id)
+                current_parent_id = parent_task.parent_task_id if parent_task else None
+            else:
+                # This ancestor is not complete, stop searching
+                break
+        
+        # Compact the highest ancestor we found
+        if highest_compactable_ancestor:
+            await self._compact_subtree(highest_compactable_ancestor)
+
+    async def _is_subtree_complete(self, root_task_id: str) -> bool:
+        """Check if all descendants of the given task are completed"""
+        descendant_ids = self._collect_descendants(root_task_id)
+        # Root must also be completed, and no descendants should be pending
+        return (root_task_id in self.completed_tasks and 
+                all(desc_id in self.completed_tasks for desc_id in descendant_ids))
+
+    def _collect_descendants(self, root_task_id: str) -> set[str]:
+        """Collect all descendant task IDs for a given root task"""
+        descendants = set()
+        frontier = [root_task_id]
+        
+        while frontier:
+            current_id = frontier.pop()
+            # Search all known tasks (completed + pending) for children
+            all_tasks = list(self.completed_tasks.values()) + list(self.pending_tasks.values())
+            
+            for task in all_tasks:
+                if getattr(task, 'parent_task_id', None) == current_id:
+                    task_id = task.task_id
+                    if task_id not in descendants:  # Avoid cycles
+                        descendants.add(task_id)
+                        frontier.append(task_id)
+        
+        return descendants
+
+    async def _compact_subtree(self, root_task_id: str) -> bool:
+        """Compact a completed subtree by aggregating outputs and evaluating completion"""
+        # Gather subtree information
+        descendant_ids = self._collect_descendants(root_task_id)
+        all_subtree_ids = {root_task_id} | descendant_ids
+
+        # If there's only the root task (no descendants), skip aggregation/renaming.
+        if len(all_subtree_ids) == 1:
+            root_task = self.completed_tasks.get(root_task_id)
+            if root_task:
+                print(f"[COMPACTION] Skipping compaction for single-task subtree {root_task_id}; keeping original output path {root_task.output_json_path}.")
+            return False
+        
+        # Aggregate outputs from all tasks in subtree
+        aggregated_outputs = {}
+        for task_id in all_subtree_ids:
+            task = self.completed_tasks.get(task_id)
+            if task and task.output_json_path:
+                value = self.resolve_json_path(task.output_json_path, self.context)
+                if value is not None:
+                    aggregated_outputs[task.output_json_path] = value
+    
+        # Skip if no outputs to compact
+        if not aggregated_outputs:
+            print(f"[COMPACTION] Skipping compaction for {root_task_id} - no outputs found")
+            return False
+        
+        # Start compaction phase
+        with self.tracer.trace_phase_with_data("subtree_compaction") as phase_ctx:
+            with self.tracer.trace_subtree_compaction_step() as compaction_ctx:
+                root_task = self.completed_tasks[root_task_id]
+                compaction_ctx.set_input(root_task_id, list(all_subtree_ids), aggregated_outputs)
+                
+                # Evaluate with LLM
+                requirements_met, missing_reqs, new_tasks, llm_result = await self._evaluate_subtree_completion(
+                    root_task, aggregated_outputs)
+                
+                if requirements_met:
+                    # Generate compacted artifact with LLM results
+                    artifact_path = await self._generate_compacted_artifact(
+                        root_task, aggregated_outputs, llm_result.get("summary", ""), llm_result.get("useful_output_path", []))
+                    # Prune old paths
+                    pruned_paths = await self._prune_subtree_outputs(all_subtree_ids)
+                    
+                    # Update root task output path to point to compacted result
+                    root_task.output_json_path = artifact_path
+                    self.last_task_output = get_json_path_value(self.context, artifact_path)
+                    
+                    self.save_context()
+                    print(f"[COMPACTION] Compacted subtree {root_task_id} to {artifact_path}")
+                    
+                    compaction_ctx.set_result(
+                        requirements_met=True,
+                        compacted_artifact_path=artifact_path,
+                        pruned_paths=pruned_paths
+                    )
+                    return True
+                else:
+                    # Add missing requirement tasks
+                    if new_tasks:
+                        await self.generate_short_names_for_pending_tasks(new_tasks, root_task)
+                        await self.add_new_tasks(new_tasks)
+                        print(f"[COMPACTION] Added {len(new_tasks)} tasks for missing requirements in {root_task_id}")
+                    
+                    compaction_ctx.set_result(
+                        requirements_met=False,
+                        missing_requirements=missing_reqs,
+                        generated_tasks=[asdict(task) for task in new_tasks]
+                    )
+                    return False
+            
+            phase_ctx.set_data({
+                "root_task_id": root_task_id,
+                "subtree_task_ids": list(all_subtree_ids),
+                "aggregated_outputs": aggregated_outputs,
+                "requirements_met": requirements_met
+            })
+
+    async def _evaluate_subtree_completion(self, root_task: Task, 
+                                         aggregated_outputs: Dict[str, Any]) -> tuple[bool, List[str], List[PendingTask], Dict[str, Any]]:
+        """Use LLM to evaluate if subtree requirements are met"""
+        # Create evaluation prompt
+        root_description = root_task.description
+        root_short_name = root_task.short_name or "subtree"
+        
+        # Format outputs for LLM using XML
+        outputs_xml = "\n".join([
+            f"<output_path>{path}</output_path>\n<content>{value}</content>\n"
+            for path, value in aggregated_outputs.items()
+        ])
+        
+        prompt = f"""<instructions>
+You are a helpful agent which can perform task like run comamnd / code / search data / thinking on behalf of user. You are receiving root task description to execute, and you have performed some work for it. Your work's output is provided in aggregated_outputs.
+
+Right now, you need to evaluate whether your work has satisfied the root task requirements. 
+
+1. First, you need to think about what user wants to achieve, what is expected process and output, what we have performed. No need to be too strict, if it's not explicitly mentioned requirement, consider it's satisfied. Eg. If requirement doesn't ask for specific format, then don't judge on the format.
+2. If requirements are NOT met, list specific missing aspects and create new tasks to address them, so that user's end goal can be achieved.
+3. If requirements ARE met, provide a summary and which path in the aggregated_outputs should be used to consider as the output, put them in the useful_output_path.
+
+Use the evaluate_and_summarize_subtree function to provide your evaluation.
+</instructions>
+
+<root_task_description>{root_description}</root_task_description>
+<root_task_short_name>{root_short_name}</root_task_short_name>
+
+<work you have performed>
+{outputs_xml}
+</work you have performed>
+"""
+
+        # Define tool schema
+        evaluation_tool = {
+            "type": "function",
+            "function": {
+                "name": "evaluate_and_summarize_subtree",
+                "description": "Evaluate if subtree meets root task requirements and provide summary or missing items",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        # "check_requirement_one_by_one": {
+                        #     "type": "string",
+                        #     "description": "Detailed analysis checking each requirement against the outputs to ensure thorough evaluation"
+                        # },
+                        "think_process": {
+                             "type": "string",
+                             "description": "analyze if requirement is met and if not met, what is missing, and how to fix the missing part."
+                        },
+                        "requirements_met": {
+                            "type": "boolean",
+                            "description": "True if root task requirements are fully satisfied by aggregated outputs"
+                        },
+                        # "missing_requirements": {
+                        #     "type": "array",
+                        #     "items": {"type": "string"},
+                        #     "description": "List of specific missing aspects if requirements not met"
+                        # },
+                        "new_task_to_execute": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Array of new tasks to execute"
+                        },
+                        "summary": {
+                            "type": "string", 
+                            "description": "Concise summary of the subtree results if requirements are met"
+                        },
+                        "useful_output_path": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Array of output paths that contain useful results to be preserved in the compacted artifact"
+                        }
+                    },
+                    "required": ["requirements_met"]
+                }
+            }
+        }
+        
+        # Call LLM
+        llm_tool = self.tools.get("LLM")
+        response = await llm_tool.execute({
+            "prompt": prompt,
+            "tools": [evaluation_tool]
+        })
+        
+        # Parse response
+        tool_calls = response.get("tool_calls", [])
+        if not tool_calls:
+            raise ValueError("LLM did not return evaluation tool call")
+        
+        result = tool_calls[0].get("arguments", {})
+        requirements_met = result.get("requirements_met", False)
+        missing_reqs = result.get("missing_requirements", [])
+        
+        # Generate new tasks from new_task_to_execute field
+        new_tasks = []
+        new_task_descriptions = result.get("new_task_to_execute", [])
+        if not requirements_met and new_task_descriptions:
+            for task_desc in new_task_descriptions:
+                task_desc = task_desc.strip()
+                new_task = PendingTask(
+                    description=task_desc,
+                    parent_task_id=root_task.task_id,
+                    generated_by_phase="subtree_compaction"
+                )
+                new_tasks.append(new_task)
+        
+        return requirements_met, missing_reqs, new_tasks, result
+
+    async def _generate_compacted_artifact(self, root_task: Task, aggregated_outputs: Dict[str, Any], 
+                                          summary: str, useful_output_paths: List[str]) -> str:
+        """Generate compacted artifact and store in context"""
+        # Use existing path generator to create output path
+        output_description = f"Compacted result for subtree rooted at: {root_task.short_name or root_task.description}"
+        
+        artifact_path = await self.json_path_generator.generate_output_json_path(
+            output_description,
+            root_task.short_name or "compacted_subtree",
+            self.context,
+            root_task.description,
+            aggregated_outputs
+        )
+        
+        # Copy content from useful output paths into a new dict
+        useful_outputs = {}
+        for path in useful_output_paths:
+            value = self.resolve_json_path(path, self.context)
+            if value is not None:
+                # Use the path without the $. prefix as the key
+                key = path.replace("$.", "") if path.startswith("$.") else path
+                useful_outputs[key] = value
+        
+        # Create compacted artifact with simplified structure
+        artifact = {
+            "summary": summary or f"Compacted results for: {root_task.short_name or root_task.description}",
+            "useful_outputs": useful_outputs,
+            "raw_outputs": aggregated_outputs,
+            "root_task_id": root_task.task_id,
+            "root_task_description": root_task.description,
+            "compacted_at": self.task_execution_counter
+        }
+        
+        # Store in context
+        set_json_path_value(self.context, artifact_path, artifact)
+        return artifact_path
+
+    async def _prune_subtree_outputs(self, subtree_task_ids: set[str]) -> List[str]:
+        """Prune subtree output paths from context"""
+        pruned_paths = []
+        
+        # Get all output paths used by subtree tasks
+        for task_id in subtree_task_ids:
+            task = self.completed_tasks.get(task_id)
+            if task and task.output_json_path:
+                # Extract the key from JSON path using utility function
+                key = extract_key_from_json_path(task.output_json_path)
+                
+                # Remove from context
+                if key in self.context:
+                    del self.context[key]
+                    pruned_paths.append(task.output_json_path)
+                    print(f"[COMPACTION] Pruned path: {task.output_json_path}")
+        
+        return pruned_paths
+
 async def main():
     """Execute the blog outline generation document"""
     # Initialize the engine
@@ -987,7 +1309,7 @@ async def main():
 
     #task_description = "Follow bash.md, 获取当前时间，并创建一个包含当前时间的文件，文件名格式为 current_time_YYYYMMDD_HHMMSS.txt，内容为当前时间的完整字符串表示。"
 
-    #task_description = "用 az cli 创建一个新的 aks arc cluster"
+    #task_description = "Disk is filling up, find out which directory is using the most space."
 
     # Execute the task
     print("Executing...")

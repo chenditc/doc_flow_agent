@@ -8,7 +8,8 @@ import unittest
 import sys
 import os
 import json
-from unittest.mock import patch, MagicMock
+import asyncio
+from unittest.mock import patch, MagicMock, AsyncMock
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -356,8 +357,8 @@ class TestDocExecuteEngineUnits(unittest.TestCase):
         
         self.assertEqual(context, {"test": "data"})
         self.assertEqual(engine.context, {"test": "data"})
-        mock_open_file.assert_called_once()
-    
+        mock_open_file.assert_any_call(engine.context_file, 'r', encoding='utf-8')
+
     @patch('pathlib.Path.exists', return_value=False)
     def test_load_context_nonexistent_file(self, mock_exists):
         """Test loading context when file doesn't exist"""
@@ -386,7 +387,7 @@ class TestDocExecuteEngineUnits(unittest.TestCase):
         
         engine.save_context()
         
-        mock_open_file.assert_called_once()
+        mock_open_file.assert_any_call(engine.context_file, 'w', encoding='utf-8')
         mock_json_dump.assert_called_once()
         
         # Verify json.dump was called with correct parameters
@@ -435,6 +436,142 @@ class TestDocExecuteEngineUnits(unittest.TestCase):
         asyncio.run(engine.start("Simple greeting task: Say hello"))
         self.assertEqual(engine.task_execution_counter, 0)
         self.assertTrue(engine.context.get('max_tasks_reached'))
+
+    @patch("doc_execute_engine.SmartJsonPathGenerator.generate_output_json_path", new_callable=AsyncMock)
+    @patch.object(DocExecuteEngine, "generate_short_names_for_pending_tasks", new_callable=AsyncMock)
+    @patch.object(DocExecuteEngine, "save_context")
+    @patch("doc_execute_engine.LLMTool")
+    def test_compact_subtree_success(self, mock_llm_cls, mock_save_context, mock_generate_short_names, mock_generate_output_path):
+        """Compact subtree should synthesize artifact and prune original keys when requirements met."""
+        mock_llm_instance = MagicMock()
+        mock_llm_instance.execute = AsyncMock()
+        mock_llm_cls.return_value = mock_llm_instance
+
+        engine = DocExecuteEngine(enable_tracing=False)
+        engine.context = {
+            "root_output": {"summary": "draft"},
+            "child_output": "details"
+        }
+
+        root_task = Task(
+            task_id="root",
+            description="Produce final answer",
+            sop_doc_id="dummy/root",
+            tool={"tool_id": "LLM"},
+            input_json_path={},
+            output_json_path="$.root_output",
+            output_description="Root output"
+        )
+        child_task = Task(
+            task_id="child",
+            description="Gather details",
+            sop_doc_id="dummy/child",
+            tool={"tool_id": "LLM"},
+            input_json_path={},
+            output_json_path="$.child_output",
+            output_description="Child output",
+            parent_task_id="root"
+        )
+        engine.completed_tasks = {"root": root_task, "child": child_task}
+        engine.pending_tasks = {}
+        engine.task_stack = []
+
+        engine.tools["LLM"].execute = AsyncMock(return_value={
+            "tool_calls": [
+                {
+                    "name": "evaluate_and_summarize_subtree",
+                    "arguments": {
+                        "requirements_met": True,
+                        "summary": "All objectives are satisfied.",
+                        "check_requirement_one_by_one": "All requirements checked and satisfied",
+                        "useful_output_path": ["$.root_output", "$.child_output"]
+                    }
+                }
+            ]
+        })
+        mock_generate_output_path.return_value = "$.compacted_result"
+
+        result = asyncio.run(engine._compact_subtree("root"))
+
+        self.assertTrue(result)
+        self.assertIn("compacted_result", engine.context)
+        artifact = engine.context["compacted_result"]
+        self.assertEqual(artifact["summary"], "All objectives are satisfied.")
+        expected_useful = {"root_output": {"summary": "draft"}, "child_output": "details"}
+        self.assertEqual(artifact["useful_outputs"], expected_useful)
+        self.assertIn("raw_outputs", artifact)
+        self.assertNotIn("root_output", engine.context)
+        self.assertNotIn("child_output", engine.context)
+        self.assertEqual(root_task.output_json_path, "$.compacted_result")
+        self.assertEqual(engine.last_task_output["summary"], "All objectives are satisfied.")
+        mock_generate_output_path.assert_awaited_once()
+        mock_save_context.assert_called()
+
+    @patch("doc_execute_engine.SmartJsonPathGenerator.generate_output_json_path", new_callable=AsyncMock)
+    @patch.object(DocExecuteEngine, "generate_short_names_for_pending_tasks", new_callable=AsyncMock)
+    @patch.object(DocExecuteEngine, "save_context")
+    @patch("doc_execute_engine.LLMTool")
+    def test_compact_subtree_unmet_requirements(self, mock_llm_cls, mock_save_context, mock_generate_short_names, mock_generate_output_path):
+        """When requirements are not met, engine should enqueue follow-up tasks and skip compaction."""
+        mock_llm_instance = MagicMock()
+        mock_llm_instance.execute = AsyncMock()
+        mock_llm_cls.return_value = mock_llm_instance
+
+        engine = DocExecuteEngine(enable_tracing=False)
+        engine.context = {
+            "root_output": "draft",
+            "child_output": "needs more work"
+        }
+
+        root_task = Task(
+            task_id="root",
+            description="Finalize report",
+            sop_doc_id="dummy/root",
+            tool={"tool_id": "LLM"},
+            input_json_path={},
+            output_json_path="$.root_output",
+            output_description="Root output"
+        )
+        child_task = Task(
+            task_id="child",
+            description="Collect data",
+            sop_doc_id="dummy/child",
+            tool={"tool_id": "LLM"},
+            input_json_path={},
+            output_json_path="$.child_output",
+            output_description="Child output",
+            parent_task_id="root"
+        )
+        engine.completed_tasks = {"root": root_task, "child": child_task}
+        engine.pending_tasks = {}
+        engine.task_stack = []
+
+        engine.tools["LLM"].execute = AsyncMock(return_value={
+            "tool_calls": [
+                {
+                    "name": "evaluate_and_summarize_subtree",
+                    "arguments": {
+                        "check_requirement_one_by_one": "Requirement analysis shows final summary is missing",
+                        "requirements_met": False,
+                        "missing_requirements": ["完成最终总结"],
+                        "new_task_to_execute": ["<new_task_to_execute>Follow llm.md to 完成最终总结</new_task_to_execute>"]
+                    }
+                }
+            ]
+        })
+
+        result = asyncio.run(engine._compact_subtree("root"))
+
+        self.assertFalse(result)
+        self.assertIn("root_output", engine.context)
+        self.assertIn("child_output", engine.context)
+        self.assertEqual(len(engine.task_stack), 1)
+        next_task = engine.task_stack[-1]
+        self.assertIn("<new_task_to_execute>Follow llm.md", next_task.description)
+        self.assertEqual(next_task.parent_task_id, "root")
+        mock_generate_short_names.assert_awaited_once()
+        mock_generate_output_path.assert_not_awaited()
+        mock_save_context.assert_not_called()
 
 
 if __name__ == '__main__':

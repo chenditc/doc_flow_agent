@@ -3,7 +3,7 @@ import unittest
 import sys
 import os
 
-from utils import set_json_path_value, get_json_path_value
+from utils import set_json_path_value, get_json_path_value, extract_key_from_json_path
 
 
 class TestUtils(unittest.TestCase):
@@ -232,6 +232,36 @@ class TestUtils(unittest.TestCase):
         # Add new nested value
         set_json_path_value(data, "$.blog.published", "2024-01-01")
         self.assertEqual(get_json_path_value(data, "$.blog.published"), "2024-01-01")
+
+    # Tests for extract_key_from_json_path function
+    def test_extract_key_from_json_path_simple(self):
+        """Test extracting key from simple JSON path"""
+        self.assertEqual(extract_key_from_json_path("$.title"), "title")
+        self.assertEqual(extract_key_from_json_path("$.author"), "author")
+
+    def test_extract_key_from_json_path_nested(self):
+        """Test extracting key from nested JSON path"""
+        self.assertEqual(extract_key_from_json_path("$.blog.title"), "blog")
+        self.assertEqual(extract_key_from_json_path("$.data.nested.field"), "data")
+
+    def test_extract_key_from_json_path_bracket_notation(self):
+        """Test extracting key from bracket notation JSON path"""
+        self.assertEqual(extract_key_from_json_path("$.['complex_key']"), "complex_key")
+        self.assertEqual(extract_key_from_json_path('$.["another-key"]'), "another-key")
+
+    def test_extract_key_from_json_path_array_index(self):
+        """Test extracting key from JSON path with array indices"""
+        self.assertEqual(extract_key_from_json_path("$.items[0]"), "items")
+        self.assertEqual(extract_key_from_json_path("$.data[0].nested"), "data")
+
+    def test_extract_key_from_json_path_edge_cases(self):
+        """Test edge cases for extract_key_from_json_path"""
+        # Empty or invalid paths
+        self.assertEqual(extract_key_from_json_path(""), "")
+        self.assertEqual(extract_key_from_json_path("invalid_path"), "invalid_path")
+        
+        # Path without $. prefix
+        self.assertEqual(extract_key_from_json_path("plain_key"), "plain_key")
 
 
 if __name__ == '__main__':

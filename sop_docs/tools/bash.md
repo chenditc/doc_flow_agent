@@ -1,6 +1,6 @@
 ---
 doc_id: tools/bash
-description: Execute any bash command or script in a sandbox environment.
+description: Execute any bash command or script in a sandbox environment. If user not mention which environment specifically, assume user meant for this environment.
 tool:
   tool_id: CLI
 input_json_path:

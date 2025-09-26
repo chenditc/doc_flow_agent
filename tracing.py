@@ -247,6 +247,31 @@ class NewTaskGenerationPhase:
 
 
 @dataclass
+class SubtreeCompactionPhase:
+    """Subtree compaction phase for consolidating completed task outputs"""
+    start_time: str
+    end_time: Optional[str] = None
+    status: ExecutionStatus = ExecutionStatus.STARTED
+    
+    # Input data
+    root_task_id: Optional[str] = None
+    subtree_task_ids: List[str] = field(default_factory=list)
+    aggregated_outputs: Dict[str, Any] = field(default_factory=dict)
+    
+    # LLM evaluation
+    llm_calls: List[LLMCall] = field(default_factory=list)
+    requirements_met: Optional[bool] = None
+    missing_requirements: List[str] = field(default_factory=list)
+    
+    # Results
+    compacted_artifact_path: Optional[str] = None
+    pruned_paths: List[str] = field(default_factory=list)
+    generated_tasks: List[Dict[str, Any]] = field(default_factory=list)
+    
+    error: Optional[str] = None
+
+
+@dataclass
 class TaskExecutionRecord:
     """Complete record of a single task execution"""
     task_execution_id: str
@@ -266,7 +291,7 @@ class TaskExecutionRecord:
     engine_state_after: Optional[Dict[str, Any]] = None
     
     phases: Dict[str, Union[SopResolutionPhase, TaskCreationPhase, TaskExecutionPhase, 
-                           ContextUpdatePhase, NewTaskGenerationPhase]] = field(default_factory=dict)
+                           ContextUpdatePhase, NewTaskGenerationPhase, SubtreeCompactionPhase]] = field(default_factory=dict)
 
 
 @dataclass
@@ -405,6 +430,10 @@ class ExecutionTracer:
             )
         elif phase_name == "new_task_generation":
             self.current_task_execution.phases[phase_name] = NewTaskGenerationPhase(
+                start_time=self._current_time()
+            )
+        elif phase_name == "subtree_compaction":
+            self.current_task_execution.phases[phase_name] = SubtreeCompactionPhase(
                 start_time=self._current_time()
             )
     
@@ -1049,6 +1078,59 @@ class ExecutionTracer:
             self._context.current_sub_step = None
             self._context.llm_call_storage = None
     
+    @contextmanager
+    def trace_subtree_compaction_step(self) -> Generator['SubtreeCompactionContext', None, None]:
+        """Context manager for tracing subtree compaction steps
+        
+        Usage:
+            with tracer.trace_subtree_compaction_step() as compaction_ctx:
+                # do compaction work
+                compaction_ctx.set_input(root_task_id, subtree_tasks, outputs)
+                result = evaluate_with_llm()
+                compaction_ctx.set_result(requirements_met, missing, artifact_path)
+        """
+        if not self.enabled:
+            yield SubtreeCompactionContext()
+            return
+
+        # Only active during subtree_compaction phase
+        if self._context.current_phase != "subtree_compaction":
+            yield SubtreeCompactionContext()
+            return
+
+        phase = self.current_task_execution.phases.get("subtree_compaction")
+        if not isinstance(phase, SubtreeCompactionPhase):
+            yield SubtreeCompactionContext()
+            return
+
+        # Set up storage to append any LLM calls to the phase.llm_calls list
+        self._context.current_sub_step = "subtree_compaction"
+        self._context.llm_call_storage = lambda call: phase.llm_calls.append(call)
+
+        step_ctx = SubtreeCompactionContext()
+        exception = None
+        try:
+            yield step_ctx
+        except Exception as e:
+            exception = e
+            raise
+        finally:
+            # Update phase with results from context
+            if phase:
+                phase.root_task_id = step_ctx.root_task_id
+                phase.subtree_task_ids = step_ctx.subtree_task_ids or []
+                phase.aggregated_outputs = step_ctx.aggregated_outputs or {}
+                phase.requirements_met = step_ctx.requirements_met
+                phase.missing_requirements = step_ctx.missing_requirements or []
+                phase.compacted_artifact_path = step_ctx.compacted_artifact_path
+                phase.pruned_paths = step_ctx.pruned_paths or []
+                phase.generated_tasks = step_ctx.generated_tasks or []
+                if exception:
+                    phase.error = str(exception)
+            
+            self._context.current_sub_step = None
+            self._context.llm_call_storage = None
+    
     def _save_session(self) -> str:
         """Save session data to JSON file"""
         if not self.session:
@@ -1198,6 +1280,38 @@ class ToolExecutionContext:
     """
     def __init__(self):
         pass
+
+
+class SubtreeCompactionContext:
+    """Helper class to collect subtree compaction step data for context manager"""
+    def __init__(self):
+        # Input data
+        self.root_task_id: Optional[str] = None
+        self.subtree_task_ids: Optional[List[str]] = None
+        self.aggregated_outputs: Optional[Dict[str, Any]] = None
+        
+        # Results
+        self.requirements_met: Optional[bool] = None
+        self.missing_requirements: Optional[List[str]] = None
+        self.compacted_artifact_path: Optional[str] = None
+        self.pruned_paths: Optional[List[str]] = None
+        self.generated_tasks: Optional[List[Dict[str, Any]]] = None
+    
+    def set_input(self, root_task_id: str, subtree_task_ids: List[str], aggregated_outputs: Dict[str, Any]):
+        """Set input data for compaction"""
+        self.root_task_id = root_task_id
+        self.subtree_task_ids = subtree_task_ids
+        self.aggregated_outputs = aggregated_outputs
+    
+    def set_result(self, requirements_met: bool, missing_requirements: List[str] = None, 
+                   compacted_artifact_path: str = None, pruned_paths: List[str] = None,
+                   generated_tasks: List[Dict[str, Any]] = None):
+        """Set compaction results"""
+        self.requirements_met = requirements_met
+        self.missing_requirements = missing_requirements or []
+        self.compacted_artifact_path = compacted_artifact_path
+        self.pruned_paths = pruned_paths or []
+        self.generated_tasks = generated_tasks or []
 
 
 class TaskExecutionContext:

@@ -76,3 +76,6 @@ traces/
 *.log
 
 test_traces
+
+
+sop_docs/private/

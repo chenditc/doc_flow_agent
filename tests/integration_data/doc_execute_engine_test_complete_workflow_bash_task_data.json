@@ -1,22 +1,8 @@
 {
   "test_name": "doc_execute_engine_test_complete_workflow_bash_task",
   "mode": "mock_then_real",
-  "timestamp": "2025-09-24T17:41:56.452679",
+  "timestamp": "2025-09-26T15:47:33.868523",
   "tool_calls": [
-    {
-      "tool_id": "LLM",
-      "parameters": {
-        "prompt": "Given the user's request: \"Follow tools/bash.md and run cat command: 'cat ./temp_test_file_for_complete_workflow_bash_task.txt'. This will read the contents of the file and print it to the console.\"\n\nPlease select the most appropriate SOP document from the following candidates:\n\n1. doc_id: tools/bash\n   description: Execute any bash command or script in a sandbox environment.\n   aliases: \n   match_type: full_path\n\n2. doc_id: tools/bash\n   description: Execute any bash command or script in a sandbox environment.\n   aliases: \n   match_type: filename\n\nPlease respond the doc_id in xml format: <doc_id>....</doc_id> with ONLY the doc_id of the best match.\n If none of the candidates are appropriate, respond with <doc_id>NONE</doc_id>.",
-        "__sop_doc_body": null
-      },
-      "output": {
-        "content": "<doc_id>tools/bash</doc_id>",
-        "tool_calls": []
-      },
-      "timestamp": "2025-09-24T17:41:56.429134",
-      "execution_time_ms": 0.001558044459670782,
-      "parameters_hash": "ffdb85ad647cd299"
-    },
     {
       "tool_id": "LLM",
       "parameters": {
@@ -56,8 +42,8 @@
           }
         ]
       },
-      "timestamp": "2025-09-24T17:41:56.448254",
-      "execution_time_ms": 0.0011869706213474274,
+      "timestamp": "2025-09-26T15:47:33.864308",
+      "execution_time_ms": 0.0010180010576732457,
       "parameters_hash": "af8e18d716ae83c8"
     },
     {
@@ -108,8 +94,8 @@
           }
         ]
       },
-      "timestamp": "2025-09-24T17:41:56.449741",
-      "execution_time_ms": 0.0013519893400371075,
+      "timestamp": "2025-09-26T15:47:33.865736",
+      "execution_time_ms": 0.0011779993656091392,
       "parameters_hash": "3629cd0866d8b530"
     },
     {
@@ -125,17 +111,17 @@
         "executed_command": "cat ./temp_test_file_for_complete_workflow_bash_task.txt",
         "success": true
       },
-      "timestamp": "2025-09-24T17:41:56.447167",
-      "execution_time_ms": 0.0018760329112410545,
+      "timestamp": "2025-09-26T15:47:33.863476",
+      "execution_time_ms": 0.0017890051822178066,
       "parameters_hash": "a1c5895408240373"
     }
   ],
   "metadata": {
-    "total_tool_calls": 4,
+    "total_tool_calls": 3,
     "tools_used": [
       "LLM",
       "CLI"
     ]
   },
-  "saved_at": "2025-09-24T17:41:56.452758"
+  "saved_at": "2025-09-26T15:47:33.868593"
 }

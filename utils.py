@@ -155,6 +155,45 @@ def get_json_path_value(data: Dict[str, Any], json_path: str) -> Any:
         return None
 
 
+def extract_key_from_json_path(json_path: str) -> str:
+    """
+    Extract the top-level key from a JSON path.
+    
+    Args:
+        json_path: JSON path string (e.g., "$.key", "$.parent.child", "$.['key']")
+        
+    Returns:
+        The top-level key extracted from the JSON path
+        
+    Examples:
+        >>> extract_key_from_json_path("$.title")
+        "title"
+        >>> extract_key_from_json_path("$.blog.outline")  
+        "blog"
+        >>> extract_key_from_json_path("$.['complex_key']")
+        "complex_key"
+        >>> extract_key_from_json_path("$.key[0].subkey")
+        "key"
+    """
+    if not json_path or not json_path.startswith('$.'):
+        return json_path
+    
+    # Remove the '$.' prefix
+    path_part = json_path[2:]
+    
+    # Handle bracket notation: $.['key'] or $."key"
+    if path_part.startswith('['):
+        # Match patterns like ['key'] or ["key"]
+        bracket_match = re.match(r'\[[\'"](.*?)[\'"]\]', path_part)
+        if bracket_match:
+            return bracket_match.group(1)
+    
+    # Handle dot notation and array indices: $.key, $.key[0], $.key.subkey
+    # Split on '.' and '[' to get the first component
+    first_component = re.split(r'[.\[]', path_part)[0]
+    return first_component
+
+
 # Test function to verify the implementation
 def test_set_json_path_value():
     """Test the set_json_path_value function"""
@@ -194,8 +233,45 @@ def test_set_json_path_value():
     assert data5 == expected5, f"Test 5 failed: {data5}"
     print("✓ Test 5 passed: Overwriting existing value")
     
-    print("All tests passed! ✓")
+    print("All set_json_path_value tests passed! ✓")
+
+
+def test_extract_key_from_json_path():
+    """Test the extract_key_from_json_path function"""
+    print("Testing extract_key_from_json_path function...")
+    
+    # Test 1: Simple path
+    assert extract_key_from_json_path("$.title") == "title"
+    print("✓ Test 1 passed: Simple path")
+    
+    # Test 2: Nested path
+    assert extract_key_from_json_path("$.blog.outline") == "blog"
+    print("✓ Test 2 passed: Nested path")
+    
+    # Test 3: Bracket notation with single quotes
+    assert extract_key_from_json_path("$.['complex_key']") == "complex_key"
+    print("✓ Test 3 passed: Bracket notation with single quotes")
+    
+    # Test 4: Bracket notation with double quotes
+    assert extract_key_from_json_path('$.["another_key"]') == "another_key"
+    print("✓ Test 4 passed: Bracket notation with double quotes")
+    
+    # Test 5: Array index
+    assert extract_key_from_json_path("$.items[0]") == "items"
+    print("✓ Test 5 passed: Array index")
+    
+    # Test 6: Complex nested with array
+    assert extract_key_from_json_path("$.data[0].nested.field") == "data"
+    print("✓ Test 6 passed: Complex nested with array")
+    
+    # Test 7: Edge case - empty or invalid paths
+    assert extract_key_from_json_path("") == ""
+    assert extract_key_from_json_path("invalid") == "invalid"
+    print("✓ Test 7 passed: Edge cases")
+    
+    print("All extract_key_from_json_path tests passed! ✓")
 
 
 if __name__ == "__main__":
     test_set_json_path_value()
+    test_extract_key_from_json_path()
