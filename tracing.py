@@ -319,9 +319,18 @@ class TracingContext:
 
 
 class ExecutionTracer:
-    """Main tracer for capturing execution state and events"""
+    """Main tracer for capturing execution state and events.
+
+    Enhancement: allow supplying a pre-determined session trace file name so that
+    the orchestrator can expose the trace file path before the engine actually
+    starts executing tasks. If `predefined_session_file` (a path **or** just a
+    filename) is provided, the tracer will use that exact file instead of
+    generating a new timestamp-based name. The file will be created (touched)
+    immediately on tracer initialization so external watchers can start tailing
+    it while the session is in progress.
+    """
     
-    def __init__(self, output_dir: str = "traces", enabled: bool = True):
+    def __init__(self, output_dir: str = "traces", enabled: bool = True, predefined_session_file: Optional[str] = None):
         self.enabled = enabled
         self.output_dir = Path(output_dir)  # Always set output_dir regardless of enabled status
         
@@ -331,11 +340,28 @@ class ExecutionTracer:
         self._context = TracingContext()
         self.tool_call_counter: int = 0
         self.current_session_file: Optional[str] = None  # Track current session file path
+        self._predefined_session_file: Optional[str] = None
         
         if not enabled:
             return
             
         self.output_dir.mkdir(exist_ok=True)
+
+        # If a predefined file name/path is supplied, normalize and pre-create it.
+        if predefined_session_file:
+            predefined_path = Path(predefined_session_file)
+            # If only a filename (no parent) provided, put it under output_dir
+            if predefined_path.parent == Path('.'):
+                predefined_path = self.output_dir / predefined_path.name
+            else:
+                # Ensure parent directories exist (may be absolute or relative)
+                predefined_path.parent.mkdir(parents=True, exist_ok=True)
+            # Touch the file so observers can open it immediately
+            try:
+                predefined_path.touch(exist_ok=True)
+            except Exception as e:  # Touch failure shouldn't abort tracing
+                print(f"[TRACER] Warning: failed to precreate predefined session file: {e}")
+            self._predefined_session_file = str(predefined_path)
         
     def _current_time(self) -> str:
         """Get current timestamp in ISO format"""
@@ -1138,9 +1164,12 @@ class ExecutionTracer:
         
         # Generate filename if not already set (first save)
         if not self.current_session_file:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"session_{timestamp}_{self.session.session_id[:8]}.json"
-            self.current_session_file = str(self.output_dir / filename)
+            if self._predefined_session_file:
+                self.current_session_file = self._predefined_session_file
+            else:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"session_{timestamp}_{self.session.session_id[:8]}.json"
+                self.current_session_file = str(self.output_dir / filename)
         
         # Convert to dict for JSON serialization
         session_dict = asdict(self.session)

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import type { SubtreeCompactionPhase } from '../../types/trace';
 import { ContextualLLMCall } from './ContextualLLMCall';
-import { JsonViewer as NiceJsonViewer } from '@textea/json-viewer';
+import { JsonViewer as NiceJsonViewer } from '../common/JsonViewer';
 
 interface SubtreeCompactionViewerProps {
   phaseData: SubtreeCompactionPhase;
@@ -102,12 +102,12 @@ export const SubtreeCompactionViewer: React.FC<SubtreeCompactionViewerProps> = (
         </div>
       )}
 
-      {/* Aggregated Outputs */}
-      {aggregatedOutputKeys.length > 0 && (
-        <div>
-          <div className="text-sm font-medium text-gray-700 mb-2">
-            Aggregated Outputs ({aggregatedOutputKeys.length})
-          </div>
+      {/* Aggregated Outputs (always show header for count consistency, even if zero) */}
+      <div>
+        <div className="text-sm font-medium text-gray-700 mb-2">
+          Aggregated Outputs ({aggregatedOutputKeys.length})
+        </div>
+        {aggregatedOutputKeys.length > 0 && (
           <div className="space-y-2">
             {aggregatedOutputKeys.map((outputPath, index) => {
               const isUseful = usefulOutputPaths.includes(outputPath);
@@ -117,35 +117,33 @@ export const SubtreeCompactionViewer: React.FC<SubtreeCompactionViewerProps> = (
                 <CollapsibleSection
                   key={index}
                   title={
-                    <div className="flex items-center gap-2">
-                      <code className="text-sm font-mono">{outputPath}</code>
-                      {isUseful && (
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
-                          useful
-                        </span>
-                      )}
-                    </div>
+                    isUseful
+                      // Avoid duplicating the raw path text which already appears in Useful Output Paths badges
+                      ? (
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-mono text-gray-600">Useful Output</span>
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                            useful
+                          </span>
+                        </div>
+                        )
+                      : (
+                        <div className="flex items-center gap-2">
+                          <code className="text-sm font-mono">{outputPath}</code>
+                        </div>
+                        )
                   }
                   defaultExpanded={false}
                 >
                   <div className="text-xs text-gray-700 bg-gray-50 p-3 rounded border overflow-x-auto">
-                    <NiceJsonViewer
-                      value={outputData}
-                      rootName={false}
-                      defaultInspectDepth={1}
-                      enableClipboard
-                      displayDataTypes={false}
-                      collapseStringsAfterLength={120}
-                      className="text-xs"
-                      theme="light"
-                    />
+                    <NiceJsonViewer value={outputData} label="Outputs" collapsed={false} />
                   </div>
                 </CollapsibleSection>
               );
             })}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* LLM Calls */}
       <div>
@@ -160,6 +158,7 @@ export const SubtreeCompactionViewer: React.FC<SubtreeCompactionViewerProps> = (
                   llmCall={call} 
                   context="subtree_compaction" 
                   relatedData={phaseData.aggregated_outputs}
+                  // Keep collapsed by default so tests can find and click the 'Show Prompt & Response' button
                 />
               </div>
             ))}

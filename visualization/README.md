@@ -12,23 +12,68 @@ A comprehensive web-based visualization system for monitoring and analyzing doc 
 
 ## Core Features
 
-- **Real-time Trace Selection**: Auto-loads latest trace on page load with manual override
-- **Interactive Timeline**: Linear timeline view of task executions with status indicators
-- **Detailed Phase Analysis**: Click any task to see phase-by-phase execution breakdown
-- **Live Monitoring**: Real-time updates with auto-scroll and visual indicators
-- **Comprehensive Error Handling**: Graceful handling of missing data and edge cases
+- **Job Orchestration (New)**: Submit, monitor, cancel, and inspect execution jobs with linked trace files
 
 ## Component Architecture
 
 The React frontend is organized into these main components:
 
 - **App.tsx**: Main application with state management
-- **Timeline/**: Task execution timeline with visual status indicators
-- **TaskDetails/**: Modal for detailed task information
+# Frontend tests (single run, no watch)
+cd visualization/frontend-react && npm test
+
+# Frontend watch mode (optional for active development)
+cd visualization/frontend-react && npm run test:watch
 - **TraceSelector/**: Trace selection dropdown with real-time toggle
+# Frontend coverage report
+cd visualization/frontend-react && npm run coverage
 - **SOPResolution/**: SOP document resolution visualization
 - **LLMCall/**: LLM interaction details display
 
+6. **Job Lifecycle**: Submit a job, observe status transitions (QUEUED → STARTING → RUNNING → COMPLETED/FAILED), inspect logs and generated trace links
+
+### Job Orchestration Feature
+
+The visualization site now includes a Jobs section accessible via the top navigation:
+
+**Capabilities**
+- Submit a new job with task description and optional `max_tasks`
+- View all jobs with status filtering (Queued, Starting, Running, Completed, Failed, Cancelled)
+- Auto-refresh active jobs and logs (polling, upgradeable to SSE/WebSocket later)
+- Cancel an in-flight job
+- Inspect job summary (timing, duration, params)
+- Tail logs (select 100/500/1000 lines or full)
+- View discovered trace files and jump directly into the Trace Viewer
+- Inspect recorded execution context JSON (if produced)
+
+**Routes**
+- `/jobs` – Jobs list and submission dialog
+- `/jobs/:jobId` – Detailed job view with tabs (Summary, Logs, Traces, Context)
+
+**Frontend Components** (in `src/components/Jobs/`)
+- `JobsListPage.tsx`
+- `JobDetailPage.tsx`
+- `JobSubmitForm.tsx`
+- `JobStatusChip.tsx`
+
+**Service Layer**
+- `src/services/jobService.ts` wraps orchestrator FastAPI endpoints:
+	- `POST /jobs`
+	- `GET /jobs`
+	- `GET /jobs/{job_id}`
+	- `POST /jobs/{job_id}/cancel`
+	- `GET /jobs/{job_id}/logs?tail=N`
+	- `GET /jobs/{job_id}/context`
+
+**Testing Notes**
+- Default `npm test` now performs a one-shot run (`vitest --run`) and exits (CI-friendly)
+- Use `npm run test:watch` for interactive watch mode
+
+**Future Enhancements (Suggested)**
+- SSE / WebSocket stream for status + incremental log lines
+- Pagination / infinite scroll for large job history
+- Persisted filters and column preferences
+- Side-by-side embedded trace viewer inside Job Detail
 ## Quick Start
 
 ### Start Local Visualization Site

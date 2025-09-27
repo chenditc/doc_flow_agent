@@ -9,6 +9,8 @@ export interface HierarchicalTask extends Partial<TaskExecution> {
   children: HierarchicalTask[];
   level: number;
   isPending: boolean;
+  pending_status_text?: string;
+  is_currently_executing?: boolean;
 }
 
 export function buildTaskHierarchy(
@@ -47,6 +49,8 @@ export function buildTaskHierarchy(
         children: [],
         level: 0,
         isPending: true,
+        pending_status_text: pending.pending_status_text,
+        is_currently_executing: pending.is_currently_executing,
         // Add required fields from TaskExecution with default/empty values
         task_execution_id: pending.task_id, // Use task_id as a fallback
         task_execution_counter: -1,

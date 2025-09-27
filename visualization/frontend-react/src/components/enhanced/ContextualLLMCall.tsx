@@ -1,20 +1,22 @@
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import type { LLMCall } from '../../types/trace';
-import { JsonViewer as NiceJsonViewer } from '@textea/json-viewer';
+import { JsonViewer as NiceJsonViewer } from '../common/JsonViewer';
 
 interface ContextualLLMCallProps {
   llmCall: LLMCall;
   context: 'sop_validation' | 'field_extraction' | 'output_generation' | 'task_generation' | 'subtree_compaction';
   relatedData?: any;
+  defaultExpanded?: boolean;
 }
 
 export const ContextualLLMCall: React.FC<ContextualLLMCallProps> = ({ 
   llmCall,
   context: _context,
-  relatedData
+  relatedData,
+  defaultExpanded = false
 }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
   const [responseCopyFeedback, setResponseCopyFeedback] = useState<string | null>(null);
 
@@ -127,7 +129,7 @@ export const ContextualLLMCall: React.FC<ContextualLLMCallProps> = ({
         </div>
       </div>
 
-      {/* Content Toggle */}
+  {/* Content Toggle */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
         className="w-full px-3 py-2 text-left bg-gray-50 hover:bg-gray-100 focus:outline-none focus:bg-gray-100 transition-colors border rounded text-sm"
@@ -315,14 +317,7 @@ export const ContextualLLMCall: React.FC<ContextualLLMCallProps> = ({
                     <div className="text-sm text-gray-700 space-y-1">
                       <span className="font-medium block">Arguments:</span>
                       <div className="bg-white border border-blue-200 rounded p-2 text-xs">
-                        <NiceJsonViewer 
-                          value={toolCall.arguments}
-                          rootName={false}
-                          defaultInspectDepth={1}
-                          displayDataTypes={false}
-                          collapseStringsAfterLength={120}
-                          theme="light"
-                        />
+                        <NiceJsonViewer value={toolCall.arguments} label="Arguments" collapsed={false} />
                       </div>
                     </div>
                   </div>
@@ -340,14 +335,7 @@ export const ContextualLLMCall: React.FC<ContextualLLMCallProps> = ({
             <div>
               <div className="text-sm font-medium text-gray-700 mb-2">Token Usage</div>
               <div className="bg-white border rounded p-3 text-xs">
-                <NiceJsonViewer 
-                  value={llmCall.token_usage}
-                  rootName={false}
-                  defaultInspectDepth={1}
-                  displayDataTypes={false}
-                  collapseStringsAfterLength={120}
-                  theme="light"
-                />
+                <NiceJsonViewer value={llmCall.token_usage} label="Token Usage" collapsed={false} />
               </div>
             </div>
           )}
@@ -357,14 +345,7 @@ export const ContextualLLMCall: React.FC<ContextualLLMCallProps> = ({
             <div>
               <div className="text-sm font-medium text-gray-700 mb-2">Related Data</div>
               <div className="bg-white border rounded p-3 text-xs">
-                <NiceJsonViewer 
-                  value={relatedData}
-                  rootName={false}
-                  defaultInspectDepth={1}
-                  displayDataTypes={false}
-                  collapseStringsAfterLength={120}
-                  theme="light"
-                />
+                <NiceJsonViewer value={relatedData} label="Related Data" collapsed={false} />
               </div>
             </div>
           )}
@@ -378,6 +359,16 @@ export const ContextualLLMCall: React.FC<ContextualLLMCallProps> = ({
               🔧 Tune in LLM Tuning Page
             </button>
           </div>
+        </div>
+      )}
+      {!isExpanded && (
+        <div className="pt-2">
+          <button
+            onClick={handleOpenTuningPage}
+            className="w-full px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded text-xs border border-blue-200"
+          >
+            🔧 Tune in LLM Tuning Page
+          </button>
         </div>
       )}
     </div>

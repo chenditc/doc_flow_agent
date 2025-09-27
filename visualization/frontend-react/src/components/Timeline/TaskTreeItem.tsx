@@ -49,7 +49,12 @@ export const TaskTreeItem: React.FC<TaskTreeItemProps> = ({ task, onTaskClick, i
         {/* Content */}
         <div className="flex-grow">
           {task.isPending ? (
-            <PendingTaskItem taskDescription={task.description} shortName={task.short_name} />
+            <PendingTaskItem 
+              taskDescription={task.description} 
+              shortName={task.short_name} 
+              pendingStatusText={task.pending_status_text}
+              isCurrent={task.is_currently_executing}
+            />
           ) : (
             <TimelineItem
               key={task.task_execution_id}

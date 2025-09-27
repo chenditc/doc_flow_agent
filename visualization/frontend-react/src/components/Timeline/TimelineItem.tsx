@@ -139,13 +139,15 @@ export const TimelineItem: React.FC<TimelineItemProps> = ({
 
         {fullDescription && (
           <div className="mt-2">
-            <button
-              type="button"
-              className="text-xs text-blue-600 hover:underline"
-              onClick={(e) => { e.stopPropagation(); setShowFullDescription(!showFullDescription); }}
-            >
-              {showFullDescription ? 'Hide full description' : 'Show full description'}
-            </button>
+            {fullDescription.length > 120 && (
+              <button
+                type="button"
+                className="text-xs text-blue-600 hover:underline"
+                onClick={(e) => { e.stopPropagation(); setShowFullDescription(!showFullDescription); }}
+              >
+                {showFullDescription ? 'Hide full description' : 'Show full description'}
+              </button>
+            )}
             {showFullDescription && (
               <pre className="bg-gray-100 p-2 rounded text-xs text-gray-700 mt-1 whitespace-pre-wrap break-words max-h-40 overflow-auto">
                 <code>{fullDescription}</code>

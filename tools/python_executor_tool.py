@@ -23,6 +23,7 @@ import subprocess
 import uuid
 from typing import Any, Dict, Optional
 import os
+import sys
 
 from dotenv import load_dotenv
 from tools.base_tool import BaseTool
@@ -95,7 +96,7 @@ The function should return a JSON-serializable value.
         try:
             # Run subprocess
             command = [
-                "python",
+                sys.executable,
                 "tools/executor_runner.py",
                 "--code-file",
                 code_file,

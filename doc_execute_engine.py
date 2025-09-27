@@ -133,7 +133,7 @@ class DocExecuteEngine:
     
     def __init__(self, docs_dir: str = "sop_docs", context_file: str = "context.json", 
                  enable_tracing: bool = True, trace_output_dir: str = "traces", 
-                 max_tasks: Optional[int] = 5):
+                 max_tasks: Optional[int] = 5, trace_session_file: Optional[str] = None):
         self.docs_dir = Path(docs_dir)
         self.context_file = Path(context_file)
         self.context = {}
@@ -154,8 +154,8 @@ class DocExecuteEngine:
         # Task completion tracking for subtree compaction
         self.completed_tasks: Dict[str, Task] = {}  # task_id -> completed Task with final output path
         
-        # Initialize tracing
-        self.tracer = ExecutionTracer(output_dir=trace_output_dir, enabled=enable_tracing)
+        # Initialize tracing (optionally with a predefined session file so orchestrator can expose it early)
+        self.tracer = ExecutionTracer(output_dir=trace_output_dir, enabled=enable_tracing, predefined_session_file=trace_session_file)
         
         # Wrap tools with tracing if enabled
         if enable_tracing:

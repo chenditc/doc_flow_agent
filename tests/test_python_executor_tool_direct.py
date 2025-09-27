@@ -140,18 +140,15 @@ class TestPythonExecutorToolDirect(unittest.TestCase):
             expected_code_file = f"/tmp/code_{run_id}.py" 
             expected_output_file = f"/tmp/result_{run_id}.json"
             
-            mock_subprocess_run.assert_called_once_with(
-                [
-                    "python",
-                    "tools/executor_runner.py",
-                    "--code-file", expected_code_file,
-                    "--context-file", expected_context_file,
-                    "--output-file", expected_output_file,
-                ],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
+            # Allow either 'python' or sys.executable for portability
+            called_args, called_kwargs = mock_subprocess_run.call_args
+            assert called_kwargs == {"capture_output": True, "text": True, "check": False}
+            assert called_args[0][1:] == [
+                "tools/executor_runner.py",
+                "--code-file", expected_code_file,
+                "--context-file", expected_context_file,
+                "--output-file", expected_output_file,
+            ]
 
             # Verify result
             self.assertEqual(result["return_value"], {"result": 15})

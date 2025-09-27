@@ -26,3 +26,10 @@ export { SOPResolutionViewer } from './SOPResolution/SOPResolutionViewer';
 export { InputFieldInspector } from './enhanced/InputFieldInspector';
 export { TaskCreationPhaseViewer } from './enhanced/TaskCreationPhaseViewer';
 export { ContextualLLMCall } from './enhanced/ContextualLLMCall';
+
+// Job Management Components
+export { JobStatusChip, JobSubmitForm, JobsListPage, JobDetailPage } from './Jobs';
+
+// Page Components
+export { Navigation } from './Navigation';
+export { TraceViewerPage } from './TraceViewerPage';

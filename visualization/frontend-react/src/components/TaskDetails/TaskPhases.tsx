@@ -7,7 +7,7 @@ import { SubtreeCompactionViewer } from '../enhanced/SubtreeCompactionViewer';
 import { ContextualLLMCall } from '../enhanced/ContextualLLMCall';
 import { ParameterCards } from './ParameterCards';
 import { ContextUpdateViewer } from './ContextUpdateViewer';
-import { JsonViewer as NiceJsonViewer } from '@textea/json-viewer';
+import { JsonViewer as NiceJsonViewer } from '../common/JsonViewer';
 
 interface TaskPhasesProps {
   task: TaskExecution;
@@ -416,16 +416,7 @@ export const TaskPhases: React.FC<TaskPhasesProps> = ({ task }) => {
                          })()
                        ) : (
                          <div className="text-xs text-gray-700 bg-gray-50 p-3 rounded border overflow-x-auto">
-                           <NiceJsonViewer
-                             value={execPhase.tool_execution}
-                             rootName={false}
-                             defaultInspectDepth={1}
-                             enableClipboard
-                             displayDataTypes={false}
-                             collapseStringsAfterLength={120}
-                             className="text-xs"
-                             theme="light"
-                           />
+                           <NiceJsonViewer value={execPhase.tool_execution} label="Tool Execution" collapsed={false} />
                          </div>
                        )
                      ) : (
@@ -517,16 +508,7 @@ export const TaskPhases: React.FC<TaskPhasesProps> = ({ task }) => {
                 rightContent={timingInfo}
               >
                 <div className="text-xs text-gray-700 bg-gray-50 p-3 rounded border overflow-x-auto">
-                  <NiceJsonViewer
-                    value={detailsData}
-                    rootName={formatPhaseName(phaseName)}
-                    defaultInspectDepth={1}
-                    enableClipboard
-                    displayDataTypes={false}
-                    collapseStringsAfterLength={120}
-                    className="text-xs"
-                    theme="light"
-                  />
+                  <NiceJsonViewer value={detailsData} label={formatPhaseName(phaseName)} collapsed={false} />
                 </div>
               </CollapsibleSection>
             );

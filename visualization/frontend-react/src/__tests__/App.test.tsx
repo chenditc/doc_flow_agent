@@ -6,7 +6,7 @@ import App from '../App';
 describe('App (integration)', () => {
   it('renders the header and main layout', () => {
   const { getByText, getByRole } = render(<App />);
-  expect(getByText(/Doc Flow Trace Viewer/i)).toBeInTheDocument();
+  expect(getByText(/Doc Flow Agent/i)).toBeInTheDocument();
   expect(getByRole('main')).toBeInTheDocument();
   });
 });

@@ -198,11 +198,13 @@ export const usePerformanceMonitor = (name: string, threshold = 100) => {
   const warningShownRef = useRef(false);
 
   const startMeasure = useCallback(() => {
+    if (typeof performance === 'undefined') return;
     startTimeRef.current = performance.now();
     warningShownRef.current = false;
   }, []);
 
   const endMeasure = useCallback(() => {
+    if (typeof performance === 'undefined') return 0;
     if (startTimeRef.current) {
       const duration = performance.now() - startTimeRef.current;
       
@@ -220,7 +222,9 @@ export const usePerformanceMonitor = (name: string, threshold = 100) => {
   }, [name, threshold]);
 
   useEffect(() => {
-    performance.mark(`${name}-start`);
+    if (typeof performance !== 'undefined') {
+      performance.mark(`${name}-start`);
+    }
     startMeasure();
     
     return () => {

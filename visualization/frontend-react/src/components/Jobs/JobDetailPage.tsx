@@ -1,0 +1,380 @@
+/**
+ * Job detail page with tabs for summary, logs, traces, and context
+ */
+
+import React, { useState } from 'react';
+import {
+  Box,
+  Card,
+  Typography,
+  Tabs,
+  Tab,
+  Button,
+  Alert,
+  CircularProgress,
+  Paper,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemButton,
+  TextField,
+  MenuItem,
+  IconButton,
+  Tooltip
+} from '@mui/material';
+import {
+  ArrowLeft as BackIcon,
+  RefreshCw as RefreshIcon,
+  X as CancelIcon,
+  ExternalLink as ExternalLinkIcon
+} from 'lucide-react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useParams, useNavigate } from 'react-router-dom';
+import { JsonViewer } from '../common/JsonViewer';
+import { jobService } from '../../services';
+import { JobStatusChip } from './JobStatusChip';
+
+
+interface TabPanelProps {
+  children?: React.ReactNode;
+  index: number;
+  value: number;
+}
+
+const TabPanel: React.FC<TabPanelProps> = ({ children, value, index, ...other }) => {
+  return (
+    <div
+      role="tabpanel"
+      hidden={value !== index}
+      id={`job-tabpanel-${index}`}
+      aria-labelledby={`job-tab-${index}`}
+      {...other}
+    >
+      {value === index && <Box sx={{ p: 3 }}>{children}</Box>}
+    </div>
+  );
+};
+
+export const JobDetailPage: React.FC = () => {
+  const { jobId } = useParams<{ jobId: string }>();
+  const [activeTab, setActiveTab] = useState(0);
+  const [logTailLines, setLogTailLines] = useState(500);
+  
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+
+  // Fetch job details
+  const {
+    data: job,
+    isLoading,
+    error,
+    refetch
+  } = useQuery({
+    queryKey: ['job', jobId],
+    queryFn: () => jobService.getJob(jobId!),
+    enabled: !!jobId,
+    refetchInterval: 3000 // Simple 3 second polling for now
+  });
+
+  // Fetch job logs
+  const {
+    data: logsData,
+    isLoading: logsLoading,
+    refetch: refetchLogs
+  } = useQuery({
+    queryKey: ['job-logs', jobId, logTailLines],
+    queryFn: () => jobService.getJobLogs(jobId!, logTailLines),
+    enabled: !!jobId && activeTab === 1,
+    refetchInterval: 2000 // Simple 2 second polling for logs
+  });
+
+  // Fetch job context
+  const {
+    data: contextData,
+    isLoading: contextLoading
+  } = useQuery({
+    queryKey: ['job-context', jobId],
+    queryFn: () => jobService.getJobContext(jobId!),
+    enabled: !!jobId && activeTab === 3
+  });
+
+  // Cancel job mutation
+  const cancelJobMutation = useMutation({
+    mutationFn: () => jobService.cancelJob(jobId!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['job', jobId] });
+      queryClient.invalidateQueries({ queryKey: ['jobs'] });
+    }
+  });
+
+  const handleCancelJob = () => {
+    if (window.confirm('Are you sure you want to cancel this job?')) {
+      cancelJobMutation.mutate();
+    }
+  };
+
+  const formatDuration = (startTime?: string | null, endTime?: string | null) => {
+    if (!startTime) return '-';
+    
+    const start = new Date(startTime);
+    const end = endTime ? new Date(endTime) : new Date();
+    const durationMs = end.getTime() - start.getTime();
+    
+    if (durationMs < 1000) return '< 1s';
+    if (durationMs < 60000) return `${Math.floor(durationMs / 1000)}s`;
+    if (durationMs < 3600000) return `${Math.floor(durationMs / 60000)}m`;
+    return `${Math.floor(durationMs / 3600000)}h ${Math.floor((durationMs % 3600000) / 60000)}m`;
+  };
+
+  const handleTraceClick = (traceFile: string) => {
+    // Navigate to trace viewer with the trace file
+    navigate(`/?trace=${encodeURIComponent(traceFile)}`);
+  };
+
+  if (isLoading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  if (error) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Alert severity="error">
+          Failed to load job: {(error as Error).message}
+          <Button onClick={() => refetch()} sx={{ ml: 2 }}>
+            Retry
+          </Button>
+        </Alert>
+      </Box>
+    );
+  }
+
+  if (!job) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Alert severity="warning">Job not found</Alert>
+      </Box>
+    );
+  }
+
+  return (
+    <Box sx={{ p: 3 }}>
+      {/* Header */}
+      <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+        <IconButton onClick={() => navigate('/jobs')} sx={{ mr: 2 }}>
+          <BackIcon />
+        </IconButton>
+        
+        <Box sx={{ flexGrow: 1 }}>
+          <Typography variant="h4" component="h1">
+            Job {job.job_id}
+          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mt: 1 }}>
+            <JobStatusChip status={job.status} />
+            {job.status === 'RUNNING' && (
+              <Typography variant="body2" color="text.secondary">
+                Live updates enabled
+              </Typography>
+            )}
+          </Box>
+        </Box>
+        
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Tooltip title="Refresh">
+            <IconButton onClick={() => refetch()} disabled={isLoading}>
+              <RefreshIcon />
+            </IconButton>
+          </Tooltip>
+          
+          {['QUEUED', 'STARTING', 'RUNNING'].includes(job.status) && (
+            <Button
+              variant="outlined"
+              color="error"
+              startIcon={<CancelIcon />}
+              onClick={handleCancelJob}
+              disabled={cancelJobMutation.isPending}
+            >
+              Cancel Job
+            </Button>
+          )}
+        </Box>
+      </Box>
+
+      {/* Error display */}
+      {job.error && (
+        <Alert severity="error" sx={{ mb: 3 }}>
+          <Typography variant="subtitle2">Job Error:</Typography>
+          <pre style={{ margin: '8px 0 0 0', fontSize: '0.875rem' }}>
+            {JSON.stringify(job.error, null, 2)}
+          </pre>
+        </Alert>
+      )}
+
+      {/* Tabs */}
+      <Card>
+        <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
+          <Tabs value={activeTab} onChange={(_, newValue) => setActiveTab(newValue)}>
+            <Tab label="Summary" />
+            <Tab label="Logs" />
+            <Tab label={`Traces (${job.trace_files.length})`} />
+            <Tab label="Context" />
+          </Tabs>
+        </Box>
+
+        {/* Summary Tab */}
+        <TabPanel value={activeTab} index={0}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+              <Paper sx={{ p: 2, flex: 1, minWidth: 300 }}>
+                <Typography variant="h6" gutterBottom>Job Details</Typography>
+                <List dense>
+                  <ListItem>
+                    <ListItemText 
+                      primary="Job ID" 
+                      secondary={job.job_id} 
+                    />
+                  </ListItem>
+                  <ListItem>
+                    <ListItemText 
+                      primary="Status" 
+                      secondary={<JobStatusChip status={job.status} />} 
+                    />
+                  </ListItem>
+                  <ListItem>
+                    <ListItemText 
+                      primary="Max Tasks" 
+                      secondary={job.max_tasks || 'Not specified'} 
+                    />
+                  </ListItem>
+                </List>
+              </Paper>
+              
+              <Paper sx={{ p: 2, flex: 1, minWidth: 300 }}>
+                <Typography variant="h6" gutterBottom>Timing</Typography>
+                <List dense>
+                  <ListItem>
+                    <ListItemText 
+                      primary="Created" 
+                      secondary={new Date(job.created_at).toLocaleString()} 
+                    />
+                  </ListItem>
+                  <ListItem>
+                    <ListItemText 
+                      primary="Started" 
+                      secondary={job.started_at ? new Date(job.started_at).toLocaleString() : 'Not started'} 
+                    />
+                  </ListItem>
+                  <ListItem>
+                    <ListItemText 
+                      primary="Finished" 
+                      secondary={job.finished_at ? new Date(job.finished_at).toLocaleString() : 'Not finished'} 
+                    />
+                  </ListItem>
+                  <ListItem>
+                    <ListItemText 
+                      primary="Duration" 
+                      secondary={formatDuration(job.started_at, job.finished_at)} 
+                    />
+                  </ListItem>
+                </List>
+              </Paper>
+            </Box>
+            
+            <Paper sx={{ p: 2 }}>
+              <Typography variant="h6" gutterBottom>Task Description</Typography>
+              <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
+                {job.task_description}
+              </Typography>
+            </Paper>
+          </Box>
+        </TabPanel>
+
+        {/* Logs Tab */}
+        <TabPanel value={activeTab} index={1}>
+          <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
+            <TextField
+              select
+              size="small"
+              label="Tail Lines"
+              value={logTailLines}
+              onChange={(e) => setLogTailLines(Number(e.target.value))}
+              sx={{ width: 150 }}
+            >
+              <MenuItem value={100}>100 lines</MenuItem>
+              <MenuItem value={500}>500 lines</MenuItem>
+              <MenuItem value={1000}>1000 lines</MenuItem>
+              <MenuItem value={0}>All lines</MenuItem>
+            </TextField>
+            
+            <Button
+              variant="outlined"
+              startIcon={<RefreshIcon />}
+              onClick={() => refetchLogs()}
+              disabled={logsLoading}
+            >
+              Refresh
+            </Button>
+          </Box>
+          
+          {logsLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+              <CircularProgress />
+            </Box>
+          ) : (
+            <Paper sx={{ p: 2, backgroundColor: '#000', color: '#fff', maxHeight: 600, overflow: 'auto' }}>
+              <pre style={{ margin: 0, fontSize: '0.875rem', fontFamily: 'monospace' }}>
+                {(logsData as any)?.logs || 'No logs available'}
+              </pre>
+            </Paper>
+          )}
+        </TabPanel>
+
+        {/* Traces Tab */}
+        <TabPanel value={activeTab} index={2}>
+          {job.trace_files.length === 0 ? (
+            <Typography color="text.secondary">
+              No trace files available yet
+            </Typography>
+          ) : (
+            <List>
+              {job.trace_files.map((traceFile, index) => (
+                <ListItem key={index} disablePadding>
+                  <ListItemButton
+                    onClick={() => handleTraceClick(traceFile)}
+                    sx={{ borderRadius: 1 }}
+                  >
+                    <ListItemText
+                      primary={traceFile}
+                      secondary="Click to view in trace viewer"
+                    />
+                    <ExternalLinkIcon size={16} />
+                  </ListItemButton>
+                </ListItem>
+              ))}
+            </List>
+          )}
+        </TabPanel>
+
+        {/* Context Tab */}
+        <TabPanel value={activeTab} index={3}>
+          {contextLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+              <CircularProgress />
+            </Box>
+          ) : contextData ? (
+            <Box sx={{ '& .json-viewer': { fontSize: '14px' } }}>
+              <JsonViewer value={contextData.context} label="Context" collapsed={false} />
+            </Box>
+          ) : (
+            <Typography color="text.secondary">
+              No context data available
+            </Typography>
+          )}
+        </TabPanel>
+      </Card>
+    </Box>
+  );
+};

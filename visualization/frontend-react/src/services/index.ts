@@ -5,3 +5,4 @@
 export * from './api';
 export * from './traceService';
 export * from './realtimeService';
+export * from './jobService';
