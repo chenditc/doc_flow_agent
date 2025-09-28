@@ -1,7 +1,7 @@
 {
   "test_name": "tool_recording_test_error_recording_and_playback",
   "mode": "mock_then_real",
-  "timestamp": "2025-09-26T15:50:33.723454",
+  "timestamp": "2025-09-28T22:23:31.080544",
   "tool_calls": [
     {
       "tool_id": "CLI",
@@ -15,8 +15,8 @@
         "returncode": 127,
         "executed_command": "this-command-does-not-exist-12345"
       },
-      "timestamp": "2025-09-26T15:50:33.723149",
-      "execution_time_ms": 0.0009880022844299674,
+      "timestamp": "2025-09-28T22:23:31.080100",
+      "execution_time_ms": 0.0008700008038431406,
       "parameters_hash": "11654ffdda72470f"
     }
   ],
@@ -26,5 +26,5 @@
       "CLI"
     ]
   },
-  "saved_at": "2025-09-26T15:50:33.723487"
+  "saved_at": "2025-09-28T22:23:31.080615"
 }

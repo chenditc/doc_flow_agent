@@ -279,7 +279,11 @@ export const TaskPhases: React.FC<TaskPhasesProps> = ({ task }) => {
             const compactionPhase = phaseData as SubtreeCompactionPhase;
             const outputCount = Object.keys(compactionPhase.aggregated_outputs || {}).length;
             const taskCount = compactionPhase.subtree_task_ids?.length || 0;
-            const titleSuffix = ` (${outputCount} output${outputCount === 1 ? '' : 's'}, ${taskCount} task${taskCount === 1 ? '' : 's'})`;
+            // Optional generated tasks summary (just a count)
+            const generatedTasks: any[] = (compactionPhase as any).generated_tasks || [];
+            const generatedCount = generatedTasks.length;
+            const generatedPart = generatedCount > 0 ? `, ${generatedCount} generated` : '';
+            const titleSuffix = ` (${outputCount} output${outputCount === 1 ? '' : 's'}, ${taskCount} compact task${taskCount === 1 ? '' : 's'}${generatedPart})`;
             
             const statusBadge = (
               <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeColor(compactionPhase.status)}`}>

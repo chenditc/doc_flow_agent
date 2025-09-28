@@ -20,7 +20,9 @@ import {
 
 export const Navigation: React.FC = () => {
   const location = useLocation();
-  const isJobsPath = location.pathname.startsWith('/jobs');
+  // Treat root path '/' the same as '/jobs' so the highlighted tab matches
+  // the default route content rendered at '/'.
+  const isJobsPath = location.pathname === '/' || location.pathname.startsWith('/jobs');
 
   return (
     <AppBar position="static" elevation={1} sx={{ backgroundColor: 'white', color: 'text.primary' }}>
@@ -34,22 +36,21 @@ export const Navigation: React.FC = () => {
             <Box sx={{ display: 'flex', gap: 1 }}>
               <Button
                 component={Link}
-                to="/"
-                variant={!isJobsPath ? 'contained' : 'text'}
-                startIcon={<TimelineIcon size={18} />}
-                sx={{ textTransform: 'none' }}
-              >
-                Trace Viewer
-              </Button>
-              
-              <Button
-                component={Link}
                 to="/jobs"
                 variant={isJobsPath ? 'contained' : 'text'}
                 startIcon={<JobsIcon size={18} />}
                 sx={{ textTransform: 'none' }}
               >
                 Jobs
+              </Button>
+              <Button
+                component={Link}
+                to="/traces"
+                variant={!isJobsPath ? 'contained' : 'text'}
+                startIcon={<TimelineIcon size={18} />}
+                sx={{ textTransform: 'none' }}
+              >
+                Trace Viewer
               </Button>
             </Box>
           </Box>

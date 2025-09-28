@@ -34,14 +34,21 @@ const TimelineComponent: React.FC<TimelineProps> = ({
   const getPendingTasks = useCallback((): any[] => {
     if (!trace) return [];
 
-    const buildObjects = (stack: string[]): any[] => stack.map((desc, idx) => {
-      const lower = desc.toLowerCase();
-      const isCurrent = lower.includes('currently executing');
+  // We reverse the stack coming from backend so that the top-of-stack (next to execute)
+  // appears first in the UI. Engine stores task_stack oldest->newest (index 0 oldest, last = next to execute).
+  // Displaying newest (next to execute) first improves operator ergonomics.
+  const buildObjects = (stack: any[]): any[] => stack.map((raw, idx) => {
+      // Assume latest structured PendingTask-like object shape from backend
+      const description: string = raw.description;
+      const shortName: string | undefined = raw.short_name;
+      const parentTaskId: string | null | undefined = raw.parent_task_id;
+      const existingId: string = raw.task_id;
+      const isCurrent = description.toLowerCase().includes('currently executing');
       return {
-        task_id: `pending-${idx}-${Math.abs(desc.length)}`,
-        description: desc,
-        short_name: undefined,
-        parent_task_id: null,
+        task_id: `pending-${existingId || idx}`,
+        description,
+        short_name: shortName,
+        parent_task_id: parentTaskId ?? null,
         is_currently_executing: isCurrent,
         pending_status_text: isCurrent ? 'currently executing' : 'not started'
       };
@@ -52,17 +59,17 @@ const TimelineComponent: React.FC<TimelineProps> = ({
       const lastExec = execs[execs.length - 1];
       const beforeStack = (lastExec as any)?.engine_state_before?.task_stack;
       if (Array.isArray(beforeStack) && beforeStack.length > 0) {
-        return buildObjects(beforeStack);
+        return buildObjects([...beforeStack].reverse());
       }
       // Fallback when before stack empty: use end snapshot
       const endStackFromExec = trace.engine_snapshots?.end?.task_stack;
       if (Array.isArray(endStackFromExec)) {
-        return buildObjects(endStackFromExec);
+        return buildObjects([...endStackFromExec].reverse());
       }
     } else {
       const endStack = trace.engine_snapshots?.end?.task_stack;
       if (Array.isArray(endStack)) {
-        return buildObjects(endStack);
+        return buildObjects([...endStack].reverse());
       }
     }
     return [];

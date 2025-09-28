@@ -1,0 +1,41 @@
+#############################
+# Orchestrator Service Image
+# Multi-stage build for smaller runtime image
+#############################
+
+FROM python:3.12-slim AS base
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+	PYTHONUNBUFFERED=1 \
+	PIP_NO_CACHE_DIR=1 \
+	PIP_DISABLE_PIP_VERSION_CHECK=1 \
+	PYTHONPATH=/app
+
+WORKDIR /app
+
+# System deps (curl for healthcheck, build tools if needed)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+	build-essential curl && \
+	rm -rf /var/lib/apt/lists/*
+
+# Copy only requirements first for caching
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY . .
+
+# Expose orchestrator API port
+EXPOSE 8001
+
+# Create mount points for runtime data (volumes in compose)
+RUN mkdir -p traces jobs log
+VOLUME ["/app/traces", "/app/jobs", "/app/log"]
+
+# Healthcheck queries the FastAPI endpoint once server is up
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+	CMD curl -f http://localhost:8001/health || exit 1
+
+# Default command runs uvicorn for orchestrator API
+CMD ["uvicorn", "orchestrator_service.api:app", "--host", "0.0.0.0", "--port", "8001"]
+

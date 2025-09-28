@@ -21,9 +21,10 @@ limitations under the License.
 import json
 import subprocess
 import uuid
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 import os
 import sys
+from importlib import metadata as importlib_metadata
 
 from dotenv import load_dotenv
 from tools.base_tool import BaseTool
@@ -51,12 +52,19 @@ class PythonExecutorTool(BaseTool):
             if sop_doc_body.strip():
                 sop_guidance = f"<Document Guidance>\n{sop_doc_body.strip()}\n</Document Guidance>\n"
 
+            # Collect available top-level python libraries to guide generation (limits hallucination)
+            available_libs = self._get_available_python_libraries()
+
             prompt = f"""
 You are a Python code generation assistant.
 Your task is to write a single Python function named `process_step` that takes one argument: `context: dict`.
 This function will be executed to perform following specific task. Import necessary library if you used any.
 The context object will contain all the necessary data. The json serialized context object has been attached here for you to understand the input data structure.
 The function should return a JSON-serializable value.
+
+<available library>
+{available_libs}
+</available library>
 
 <Task Description>
 {task_description}
@@ -132,6 +140,42 @@ The function should return a JSON-serializable value.
             "stderr": process.stderr,
             "exception": exception_details,
         }
+
+    def _get_available_python_libraries(self, limit: int = 300) -> str:
+        """Return a newline separated list of available installed top-level libraries.
+
+        We only expose a capped, alphabetically sorted set of distinct distribution names to
+        the model to reduce prompt size and guide import choices. Internal / meta packages
+        (like dist-info) are filtered out. If collection fails we return an empty string.
+
+        Args:
+            limit: maximum number of package names to include to keep prompt concise.
+        """
+        dists = list(importlib_metadata.distributions())
+        names: List[str] = []
+        for d in dists:
+            name = d.metadata.get("Name") or d.metadata.get("Summary") or ""
+            if not name:
+                continue
+            # Normalize
+            name = name.strip()
+            # Basic filters
+            if not name or name.startswith(('_', 'python-')):
+                continue
+            if name.endswith('.dist-info'):
+                continue
+            names.append(name)
+        # De-duplicate preserving order
+        seen = set()
+        unique = []
+        for n in names:
+            k = n.lower()
+            if k in seen:
+                continue
+            seen.add(k)
+            unique.append(n)
+        unique = sorted(unique, key=lambda x: x.lower())[:limit]
+        return "\n".join(unique)
 
     def _create_python_code_tool_schema(self) -> Dict[str, Any]:
         """Create tool schema for Python code generation

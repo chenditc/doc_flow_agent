@@ -499,7 +499,6 @@ class TestDocExecuteEngineUnits(unittest.TestCase):
         self.assertEqual(artifact["summary"], "All objectives are satisfied.")
         expected_useful = {"root_output": {"summary": "draft"}, "child_output": "details"}
         self.assertEqual(artifact["useful_outputs"], expected_useful)
-        self.assertIn("raw_outputs", artifact)
         self.assertNotIn("root_output", engine.context)
         self.assertNotIn("child_output", engine.context)
         self.assertEqual(root_task.output_json_path, "$.compacted_result")

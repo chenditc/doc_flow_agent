@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pytest_cache/
+.eggs/
+
+# Node
+node_modules/
+visualization/frontend-react/node_modules/
+visualization/frontend-react/dist/
+
+# VCS
+.git
+.gitignore
+
+# Env
+.env
+.venv/
+
+# IDE
+.vscode/
+.idea/
+
+# Data runtime (mount as volumes instead)
+traces/
+jobs/
+log/
+
+# Tests & artifacts
+.coverage
+htmlcov/
+pytest.xml
+reports/
+
+# Docker (keep .dockerignore but DO include Dockerfiles for builds)
+.dockerignore

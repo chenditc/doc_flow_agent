@@ -24,7 +24,6 @@ import {
   InputLabel,
   Select,
   MenuItem,
-  Chip,
   Dialog,
   DialogTitle,
   DialogContent,
@@ -186,14 +185,13 @@ export const JobsListPage: React.FC = () => {
                     <TableCell>Task Description</TableCell>
                     <TableCell>Created</TableCell>
                     <TableCell>Duration</TableCell>
-                    <TableCell>Traces</TableCell>
                     <TableCell align="center">Actions</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {jobs.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} align="center" sx={{ py: 4 }}>
+                      <TableCell colSpan={6} align="center" sx={{ py: 4 }}>
                         <Typography color="text.secondary">
                           {statusFilter === 'ALL' ? 'No jobs found' : `No ${statusFilter.toLowerCase()} jobs found`}
                         </Typography>
@@ -236,13 +234,6 @@ export const JobsListPage: React.FC = () => {
                           <Typography variant="body2">
                             {formatDuration(job.started_at, job.finished_at)}
                           </Typography>
-                        </TableCell>
-                        <TableCell>
-                          <Chip 
-                            label={job.trace_files.length} 
-                            size="small" 
-                            variant="outlined"
-                          />
                         </TableCell>
                         <TableCell align="center">
                           <Tooltip title="View Details">

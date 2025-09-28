@@ -155,13 +155,6 @@ class ExecutionManager:
         self._persist_status(job)
         loop = asyncio.get_running_loop()
         exit_code = await loop.run_in_executor(None, proc.wait)
-        # No need to diff anymore; tracer will reuse predefined file. In case additional
-        # trace files were generated (future multi-session runs), add any missing ones.
-        if self.traces_dir.exists():
-            current_traces = {f.name for f in self.traces_dir.glob("session_*.json")}
-            for f in sorted(current_traces):
-                if f not in job.trace_files:
-                    job.trace_files.append(f)
         job.finished_at = datetime.now(timezone.utc)
         if exit_code == 0 and job.status != "CANCELLED":
             job.status = "COMPLETED"
@@ -173,7 +166,9 @@ class ExecutionManager:
     # Task is done; keep entry for introspection (not deleting) so wait_for still works
 
     def list_jobs(self) -> List[Job]:
-        return list(self._jobs.values())
+        # Return jobs ordered by creation time (most recent first) to make UI display intuitive
+        # Sorting here centralizes ordering so all callers (API, tests) see consistent order.
+        return sorted(self._jobs.values(), key=lambda j: j.created_at, reverse=True)
 
     def get_job(self, job_id: str) -> Optional[Job]:
         return self._jobs.get(job_id)

@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
+import ReactMarkdown from 'react-markdown';
 import { JsonViewer } from '../common/JsonViewer';
 import { jobService } from '../../services';
 import { JobStatusChip } from './JobStatusChip';
@@ -63,6 +64,22 @@ export const JobDetailPage: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
+  // Helper function to check if content is JSON parsable
+  const isJsonParsable = (content: any): boolean => {
+    if (typeof content === 'object' && content !== null) {
+      return true; // Already a parsed object
+    }
+    if (typeof content === 'string') {
+      try {
+        JSON.parse(content);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  };
+
   // Fetch job details
   const {
     data: job,
@@ -95,7 +112,7 @@ export const JobDetailPage: React.FC = () => {
   } = useQuery({
     queryKey: ['job-context', jobId],
     queryFn: () => jobService.getJobContext(jobId!),
-    enabled: !!jobId && activeTab === 3
+    enabled: !!jobId && (activeTab === 3 || activeTab === 4)
   });
 
   // Cancel job mutation
@@ -127,8 +144,9 @@ export const JobDetailPage: React.FC = () => {
   };
 
   const handleTraceClick = (traceFile: string) => {
-    // Navigate to trace viewer with the trace file
-    navigate(`/?trace=${encodeURIComponent(traceFile)}`);
+    // Normalize trace id: backend provides filenames (possibly with .json); viewer expects raw session id
+    const normalized = traceFile.endsWith('.json') ? traceFile.replace(/\.json$/,'') : traceFile;
+    navigate(`/traces?trace=${encodeURIComponent(normalized)}`);
   };
 
   if (isLoading) {
@@ -221,6 +239,7 @@ export const JobDetailPage: React.FC = () => {
             <Tab label="Logs" />
             <Tab label={`Traces (${job.trace_files.length})`} />
             <Tab label="Context" />
+            <Tab label="Last Task Output" />
           </Tabs>
         </Box>
 
@@ -371,6 +390,109 @@ export const JobDetailPage: React.FC = () => {
           ) : (
             <Typography color="text.secondary">
               No context data available
+            </Typography>
+          )}
+        </TabPanel>
+
+        {/* Last Task Output Tab */}
+        <TabPanel value={activeTab} index={4}>
+          {contextLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+              <CircularProgress />
+            </Box>
+          ) : contextData?.context?.last_task_output ? (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              {(() => {
+                const lastTaskOutput = contextData.context.last_task_output;
+                
+                // If last_task_output is a dict/object, display each key as a separate block
+                if (typeof lastTaskOutput === 'object' && lastTaskOutput !== null && !Array.isArray(lastTaskOutput)) {
+                  return Object.entries(lastTaskOutput).map(([key, value]) => (
+                    <Paper key={key} sx={{ p: 2 }}>
+                      <Typography variant="h6" gutterBottom sx={{ 
+                        fontFamily: 'monospace', 
+                        backgroundColor: 'action.hover', 
+                        px: 1, 
+                        py: 0.5, 
+                        borderRadius: 1,
+                        display: 'inline-block'
+                      }}>
+                        {key}
+                      </Typography>
+                      <Box sx={{ mt: 2 }}>
+                        {isJsonParsable(value) ? (
+                          <JsonViewer 
+                            value={value} 
+                            collapsed={false} 
+                            maxHeight={300}
+                          />
+                        ) : (
+                          <Box sx={{ 
+                            border: '1px solid var(--mui-palette-divider)',
+                            borderRadius: 1,
+                            p: 2,
+                            backgroundColor: 'background.paper',
+                            '& .markdown-content': {
+                              fontFamily: 'inherit',
+                              '& pre': {
+                                backgroundColor: 'action.hover',
+                                padding: '8px',
+                                borderRadius: 1,
+                                overflow: 'auto'
+                              },
+                              '& code': {
+                                backgroundColor: 'action.hover',
+                                padding: '2px 4px',
+                                borderRadius: 1,
+                                fontFamily: 'monospace'
+                              }
+                            }
+                          }}>
+                            <div className="markdown-content">
+                              <ReactMarkdown>
+                                {typeof value === 'string' ? value : String(value)}
+                              </ReactMarkdown>
+                            </div>
+                          </Box>
+                        )}
+                      </Box>
+                    </Paper>
+                  ));
+                } else {
+                  // If last_task_output is not a dict, display it as a single block
+                  return (
+                    <Paper sx={{ p: 2 }}>
+                      <Typography variant="h6" gutterBottom>
+                        Last Task Output
+                      </Typography>
+                      <Box sx={{ mt: 2 }}>
+                        {isJsonParsable(lastTaskOutput) ? (
+                          <JsonViewer 
+                            value={lastTaskOutput} 
+                            collapsed={false} 
+                            maxHeight={400}
+                          />
+                        ) : (
+                          <Box sx={{ 
+                            border: '1px solid var(--mui-palette-divider)',
+                            borderRadius: 1,
+                            p: 2,
+                            backgroundColor: 'background.paper'
+                          }}>
+                            <ReactMarkdown>
+                              {typeof lastTaskOutput === 'string' ? lastTaskOutput : String(lastTaskOutput)}
+                            </ReactMarkdown>
+                          </Box>
+                        )}
+                      </Box>
+                    </Paper>
+                  );
+                }
+              })()}
+            </Box>
+          ) : (
+            <Typography color="text.secondary">
+              No last task output available
             </Typography>
           )}
         </TabPanel>

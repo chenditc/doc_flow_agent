@@ -70,7 +70,7 @@ async def list_jobs(
     if status:
         jobs = [job for job in jobs if job.status == status]
     
-    # Apply limit if specified
+    # Apply limit if specified (after filtering, ordering already descending)
     if limit:
         jobs = jobs[:limit]
     

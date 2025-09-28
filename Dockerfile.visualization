@@ -1,0 +1,52 @@
+#############################
+# Visualization API Service Image
+#############################
+
+FROM node:20-alpine AS frontend-build
+
+WORKDIR /frontend
+
+# Install dependencies and build the React app
+COPY visualization/frontend-react/package*.json ./
+RUN npm ci
+COPY visualization/frontend-react/ ./
+RUN npm run build
+
+#############################
+# Backend / Final Runtime Image
+#############################
+FROM python:3.12-slim AS base
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+	PYTHONUNBUFFERED=1 \
+	PIP_NO_CACHE_DIR=1 \
+	PIP_DISABLE_PIP_VERSION_CHECK=1 \
+	PYTHONPATH=/app
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+	build-essential curl && \
+	rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy only parts needed for visualization to reduce context (still copy all for simplicity now)
+COPY . .
+
+# Copy built frontend dist from build stage into expected location
+COPY --from=frontend-build /frontend/dist /app/visualization/frontend-react/dist
+
+EXPOSE 8000
+
+# Ensure directories exist (volumes will mount)
+# Ensure runtime directories exist (dist already copied)
+RUN mkdir -p traces log
+VOLUME ["/app/traces", "/app/log"]
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+	CMD curl -f http://localhost:8000/health || exit 1
+
+CMD ["uvicorn", "visualization.server.viz_server:app", "--host", "0.0.0.0", "--port", "8000"]
+

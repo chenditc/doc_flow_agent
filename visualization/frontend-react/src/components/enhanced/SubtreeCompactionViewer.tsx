@@ -102,6 +102,7 @@ export const SubtreeCompactionViewer: React.FC<SubtreeCompactionViewerProps> = (
         </div>
       )}
 
+
       {/* Aggregated Outputs (always show header for count consistency, even if zero) */}
       <div>
         <div className="text-sm font-medium text-gray-700 mb-2">

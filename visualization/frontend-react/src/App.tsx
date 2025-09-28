@@ -1,14 +1,11 @@
-import { useMemo } from 'react';
-import { Routes, Route, useLocation } from 'react-router-dom';
+import { Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TraceContextProvider } from './context/TraceContext';
-import { Header } from './components/common/Header';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { Navigation } from './components/Navigation';
 import { TraceViewerPage } from './components/TraceViewerPage';
 import { JobsListPage, JobDetailPage } from './components/Jobs';
 import { useAnnouncement } from './utils/accessibility';
-import { DebugPendingPage } from './debug/DebugPendingPage';
 
 // Create a client
 const queryClient = new QueryClient({
@@ -21,25 +18,9 @@ const queryClient = new QueryClient({
 });
 
 function AppContent() {
-  const location = useLocation();
   const { announce } = useAnnouncement();
 
-  // Lightweight debug route switch (driven by query string)
-  const debugMode = useMemo(() => {
-    const params = new URLSearchParams(location.search);
-    return params.get('debug');
-  }, [location.search]);
-
-  if (debugMode === 'pending') {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <Header />
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <DebugPendingPage />
-        </main>
-      </div>
-    );
-  }
+  // DebugPendingPage removed to simplify routing; query param based debug mode eliminated.
 
   return (
     <ErrorBoundary 
@@ -50,16 +31,20 @@ function AppContent() {
     >
       <div className="min-h-screen bg-gray-50">
         <Navigation />
-        
-        <Routes>
-          <Route path="/" element={<TraceViewerPage />} />
-          <Route path="/jobs" element={<JobsListPage />} />
-          <Route path="/jobs/:jobId" element={<JobDetailPage />} />
-        </Routes>
+        <main role="main" aria-label="Application content">
+          <Routes>
+            <Route path="/" element={<JobsListPage />} />
+            <Route path="/jobs" element={<JobsListPage />} />
+            <Route path="/jobs/:jobId" element={<JobDetailPage />} />
+            <Route path="/traces" element={<TraceViewerPage />} />
+          </Routes>
+        </main>
       </div>
     </ErrorBoundary>
   );
-}function App() {
+}
+
+function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TraceContextProvider baseUrl={window.location.origin}>

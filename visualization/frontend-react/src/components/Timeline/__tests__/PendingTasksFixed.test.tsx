@@ -18,9 +18,9 @@ const mockTraceWithPendingTasks: TraceSession = {
     },
     end: {
       task_stack: [
-        'First pending task - should be currently executing',
-        'Second pending task - should be not started',
-        'Third pending task - should be not started'
+        { description: 'First pending task - should be currently executing', task_id: 'fix-1', short_name: 'Fix 1' },
+        { description: 'Second pending task - should be not started', task_id: 'fix-2', short_name: 'Fix 2' },
+        { description: 'Third pending task - should be not started', task_id: 'fix-3', short_name: 'Fix 3' }
       ],
       context: {},
       task_execution_counter: 3

@@ -19,21 +19,24 @@ output_description: A breakdown of the task into multiple clear, actionable subs
 ## parameters.prompt
 
 ### Objective
-You are given a complex task that needs to be broken down into multiple manageable substeps. Please analyze the task and create a step-by-step plan where each step is clear, specific, and can be executed independently. Use the language as the original task
+You are given a complex task that needs to be broken down into multiple manageable sub task. Please analyze the task and create a plan. Use the language as the original task
 
-For each substep, explicitly mark it using the format:
+For each sub task, explicitly mark it using the format:
 <new_task_to_execute>
 ...
 </new_task_to_execute>
 
 ### Guidelines for Task Breakdown:
-1. **Each substep should be atomic**: One clear action per step
-2. **Include all necessary context**: Each step should contain enough information to be understood independently
+1. **Each sub task should be atomic**: One clear goal to achieve.
+2. **Include all necessary context**: Each step should contain enough information to be understood independently, if you don't have these information right now, use a vague description. Eg. If you don't know the content format in a paper, do not say "extract line xx-xx", say "extract the introduction part of the paper".
 3. **Maintain logical order**: Steps should flow logically
-4. **Complete information**: Each step must have complete information and no ambiguity. If there is missing information, do not generate full plan, just generate a task to ask user for more information. The task should provide detailed message.
-5. **An agent will be execute these tasks on behalf of the user**: Make sure the task description has enough information for agent.
+4. **An agent will be execute these tasks on behalf of the user**: Make sure the task description has enough information for agent.
+5. **Use declarative task description**: Just declare what needs to be achieved as sub goal, do not use "If xxx, then xxx". Specify what needs to achieve, not "how" to achieve.
+6. **Limit sub task count**: Do not plan too much detail tasks, plan 2-6 sub tasks. 
+7. **Each sub task must be necessary**: Give out reason first, then your plan. Only plan necessary task, less tasks is better.
+8. **Avoid user interaction**: Avoid user interaction when possible, only involve user feedback if you can't proceed without it.
 
-### Task Analysis:
+### Task Info:
 
 <COMPLEX_TASK_TO_BREAK_DOWN>
 {task_description}

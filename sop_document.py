@@ -151,11 +151,15 @@ class SOPDocumentParser:
             from tracing import ExecutionTracer
             self.tracer = ExecutionTracer(enabled=False)
     
-    async def parse_sop_doc_id_from_description(self, description: str) -> tuple[str, str]:
+    async def parse_sop_doc_id_from_description(self, description: str, completed_tasks_info: List[Dict[str, str]] = None) -> tuple[str, str]:
         """Parse sop_doc_id from natural language description using patterns
         
         This is a unified interface for natural language -> sop_doc_id mapping.
         Can be extended to more sophisticated parsing in the future.
+        
+        Args:
+            description: The task description to parse
+            completed_tasks_info: Optional list of completed task info dicts with 'short_name' and 'output_json_path' keys
         
         Returns:
             tuple[str, str]: (sop_doc_id, doc_selection_message)
@@ -188,7 +192,7 @@ class SOPDocumentParser:
             if not candidates:
                 print("No candidate documents found, trying tool selection")
                 # No direct matches found, use LLM to determine if task can be completed by a tool
-                selected_tool_doc, doc_selection_message = await self._select_tool_for_task(description)
+                selected_tool_doc, doc_selection_message = await self._select_tool_for_task(description, completed_tasks_info)
                 
                 doc_ctx.set_result(
                     candidate_docs=[],
@@ -280,8 +284,12 @@ class SOPDocumentParser:
         
         return available_tools
     
-    async def _select_tool_for_task(self, description: str) -> tuple[str, str]:
+    async def _select_tool_for_task(self, description: str, completed_tasks_info: List[Dict[str, str]] = None) -> tuple[str, str]:
         """Use LLM to determine if task can be completed by any available tool or needs planning
+        
+        Args:
+            description: The task description to analyze
+            completed_tasks_info: Optional list of completed task info dicts with 'short_name' and 'output_json_path' keys
         
         Returns:
             tuple[str, str]: (selected_doc_id, message_to_user)
@@ -331,13 +339,23 @@ class SOPDocumentParser:
         }
         
         # Create prompt for tool selection
-        prompt = f"""Analyze this task description and determine if it can be completed without more information, then determine if it can be completed using one of the available tools, or if it needs to be broken down into multiple steps.
+        prompt = f"""Analyze this task description and determine if it can be completed without more information, then determine if it can be completed using one of the available tools, or if it needs to be broken down into multiple steps. Only use the tool if the tool is good at it, eg. LLM is good at non exact match, python is good at exact match. 
 
 Available tools:
 """
         
         for tool in available_tools:
             prompt += f"- {tool['doc_id']}: {tool['description']}\n  Use cases: {tool['use_case']}\n\n"
+        
+        # Add previous executed tasks information if available
+        previous_tasks_section = ""
+        if completed_tasks_info:
+            previous_tasks_section = "\n<previous executed tasks and output json paths>\n"
+            for task_info in completed_tasks_info:
+                short_name = task_info.get('short_name', 'Unknown Task')
+                output_path = task_info.get('output_json_path', 'No output path')
+                previous_tasks_section += f"- Task: {short_name}\n  Output available at: {output_path}\n\n"
+            previous_tasks_section += "</previous executed tasks and output json paths>\n"
         
         prompt += f"""
 Guidelines:
@@ -346,7 +364,8 @@ Guidelines:
 - If the task If the task can be completed but it is complex and needs to be broken down into multiple steps, set can_complete_with_tool to false and select 'general/plan' 
 - Consider the complexity, scope, and whether all necessary information is available.
 - If you select 'tools/user_communicate', you MUST provide a message_to_user that clearly explains what information is missing and asks the user to provide it.
-
+- Consider the information available from previously executed tasks when determining if enough information is available.
+{previous_tasks_section}
 <task to analyze>
 {description}
 </task to analyze>

@@ -68,6 +68,81 @@ cd visualization/frontend-react && npm install && npm run build && cd .. && sour
 
 Visit http://localhost:8000 to view execution traces, task timelines, and debug information. See [`visualization/README.md`](visualization/README.md) for detailed setup and development instructions.
 
+### Deploy with Docker Compose (All Services)
+
+Run orchestrator API, visualization API, and production React frontend behind nginx with one command.
+
+Prerequisites:
+- Docker & Docker Compose plugin installed
+- `.env` file with any required secrets (e.g. `OPENAI_API_KEY`) in project root (excluded from image)
+
+Steps:
+```bash
+# From repo root
+cp .env.example .env  # if you have an example; then edit credentials
+docker compose build   # build images (only needed first time or after changes)
+docker compose up -d   # start services
+
+# Tail logs
+docker compose logs -f orchestrator
+docker compose logs -f visualization
+docker compose logs -f frontend
+```
+
+Services:
+- Frontend (React + nginx): http://localhost:8080
+  - Proxies `/api` → orchestrator
+  - Proxies `/traces`, `/api/llm-tuning`, `/debug`, `/health` → visualization
+- Orchestrator API (internal): `orchestrator:8001` (reachable via compose network)
+- Visualization API (internal): `visualization:8000`
+
+Persistent Data Volumes:
+- `traces` (shared trace JSON files)
+- `jobs` (job metadata & logs)
+- `log` (general logs)
+
+### Environment Variables & Credentials
+
+`docker-compose.yml` now loads environment variables from your root `.env` using `env_file` and also (optionally) bind‑mounts the file into `/app/.env` inside the Python service containers. This allows libraries or custom code that explicitly reads an `.env` file to still function (though FastAPI + pydantic settings typically rely on process env already).
+
+Example `.env` snippet:
+```
+OPENAI_API_KEY=sk-...
+OPENAI_API_BASE=https://api.openai.com/v1
+OPENAI_MODEL=openai/gpt-4o-2024-11-20
+```
+
+Security notes:
+- Local developer convenience mounts should not be copied directly into production infrastructure.
+- Prefer managed secrets (e.g., Docker secrets, Vault, AWS/GCP secret stores) for deployment beyond localhost.
+- Ensure `.env` stays excluded from version control (already handled by `.dockerignore` & `.gitignore`).
+
+You can inspect volumes with `docker volume ls` and remove them via `docker compose down -v` if you want a clean slate.
+
+Health Checks:
+- Frontend: `/healthz` (nginx static JSON)
+- Orchestrator: `/health`
+- Visualization: `/health`
+
+Submit a Job (example):
+```bash
+curl -X POST http://localhost:8080/api/jobs \
+     -H 'Content-Type: application/json' \
+     -d '{"task_description": "Check Beijing time using bash"}'
+```
+
+Tear down:
+```bash
+docker compose down
+# Remove volumes too:
+docker compose down -v
+```
+
+Rebuild after code changes:
+```bash
+docker compose up --build --force-recreate --remove-orphans -d
+```
+
 ## License
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this project except in compliance with the License. You may obtain a copy of the License at:

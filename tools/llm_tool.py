@@ -31,7 +31,13 @@ class LLMTool(BaseTool):
 
     def __init__(self):
         super().__init__("LLM")
-        # Initialize OpenAI client with custom endpoint
+        # Disabled mode for offline / test execution
+        self.disabled = os.getenv("LLM_DISABLED", "false").lower() in {"1", "true", "yes", "on"}
+        if self.disabled:
+            print("[LLM INIT] LLM_DISABLED=TRUE -> operating in stub mode (no external API calls)")
+            self.client = None  # type: ignore
+            self.model = "stub-model"
+            return
 
         api_key = os.getenv("OPENAI_API_KEY", "")
         base_url = os.getenv("OPENAI_API_BASE", "https://openrouter.ai/api/v1")
@@ -43,7 +49,7 @@ class LLMTool(BaseTool):
             base_url=base_url,
             api_key=api_key
         )
-        self.model = os.getenv("OPENAI_MODEL", "openai/gpt-4o-2024-11-20")   
+        self.model = os.getenv("OPENAI_MODEL", "openai/gpt-4o-2024-11-20")  
     
     def create_azure_token_provider(self):
         from azure.identity.aio import DefaultAzureCredential, get_bearer_token_provider
@@ -66,6 +72,26 @@ class LLMTool(BaseTool):
             ValueError: If prompt parameter is missing
         """
         self.validate_parameters(parameters, ['prompt'])
+
+        # Disabled stub path: craft predictable output (optionally simulate a tool call)
+        if self.disabled:
+            prompt = parameters.get('prompt', '')
+            tools = parameters.get('tools') or []
+            tool_calls = []
+            if tools:
+                # Create a deterministic fake tool call using first tool schema
+                first = tools[0]
+                fname = first.get('function', {}).get('name', 'stub_tool')
+                tool_calls.append({
+                    'id': 'stub-call-1',
+                    'name': fname,
+                    'arguments': {"note": "stubbed tool call due to LLM_DISABLED", "echo_prompt_fragment": prompt[:60]}
+                })
+            return {
+                "content": f"[LLM_DISABLED STUB RESPONSE] Truncated prompt: {prompt[:120]}",
+                "tool_calls": tool_calls
+            }
+
         if not await self._test_connection():
             raise RuntimeError("Failed to connect to LLM API")
         
@@ -210,6 +236,8 @@ class LLMTool(BaseTool):
     
     async def _test_connection(self) -> bool:
         """Test connection to the API endpoint"""
+        if self.disabled:
+            return True
         try:
             stream = await self.client.chat.completions.create(
                 model=self.model,

@@ -1,0 +1,41 @@
+#############################
+# Frontend (React) Production Image
+#############################
+
+# Build stage
+FROM node:20-alpine AS build
+WORKDIR /app
+
+# Copy only frontend package files first for caching
+COPY visualization/frontend-react/package*.json visualization/frontend-react/tsconfig*.json visualization/frontend-react/vite.config.ts visualization/frontend-react/tailwind.config.js visualization/frontend-react/postcss.config.js ./visualization/frontend-react/
+WORKDIR /app/visualization/frontend-react
+RUN npm ci || npm install
+
+# Copy rest of frontend source
+COPY visualization/frontend-react /app/visualization/frontend-react
+RUN npm run build
+
+# Runtime stage
+FROM nginx:1.27-alpine AS runtime
+WORKDIR /usr/share/nginx/html
+
+# Remove default nginx static content
+RUN rm -rf ./*
+
+# Copy built assets
+COPY --from=build /app/visualization/frontend-react/dist ./
+
+# Copy custom nginx config (added separately in repository at nginx/frontend.conf)
+COPY nginx.conf /etc/nginx/nginx.conf
+
+EXPOSE 80
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+	CMD wget -q -O - http://localhost/healthz || exit 1
+
+# Add a lightweight health endpoint via an index fragment (served by SPA) - or rely on 200 root
+# We'll create /healthz via a small file so Nginx returns 200 without hitting SPA routing logic.
+RUN echo '{"status":"ok"}' > /usr/share/nginx/html/healthz
+
+CMD ["nginx", "-g", "daemon off;"]
+

@@ -1,0 +1,77 @@
+version: "3.9"
+
+services:
+  orchestrator:
+    build:
+      context: .
+      dockerfile: Dockerfile.orchestrator
+    image: docflow/orchestrator:latest
+    env_file:
+      - .env
+    volumes:
+      - traces:/app/traces
+      - jobs:/app/jobs
+      - log:/app/log
+      # Mount .env read-only so code that reads file directly (if any) can access; env vars already loaded via env_file
+      - type: bind
+        source: ./.env
+        target: /app/.env
+        read_only: true
+    expose:
+      - "8001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  visualization:
+    build:
+      context: .
+      dockerfile: Dockerfile.visualization
+    image: docflow/visualization:latest
+    env_file:
+      - .env
+    volumes:
+      - traces:/app/traces:ro
+      - log:/app/log
+      - type: bind
+        source: ./.env
+        target: /app/.env
+        read_only: true
+    expose:
+      - "8000"
+    depends_on:
+      orchestrator:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    image: docflow/frontend:latest
+    depends_on:
+      orchestrator:
+        condition: service_healthy
+      visualization:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+    healthcheck:
+      test: ["CMD", "wget", "-qO", "-", "http://localhost/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  traces:
+  jobs:
+  log:

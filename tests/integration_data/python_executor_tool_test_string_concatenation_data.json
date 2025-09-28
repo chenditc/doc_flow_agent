@@ -1,12 +1,12 @@
 {
   "test_name": "python_executor_tool_test_string_concatenation",
-  "mode": "mock_then_real",
-  "timestamp": "2025-09-26T15:50:33.873006",
+  "mode": "real",
+  "timestamp": "2025-09-28T23:00:46.701705",
   "tool_calls": [
     {
       "tool_id": "LLM",
       "parameters": {
-        "prompt": "\nYou are a Python code generation assistant.\nYour task is to write a single Python function named `process_step` that takes one argument: `context: dict`.\nThis function will be executed to perform following specific task. Import necessary library if you used any.\nThe context object will contain all the necessary data. The json serialized context object has been attached here for you to understand the input data structure.\nThe function should return a JSON-serializable value.\n\n<Task Description>\nCombine first_name and last_name from context with a space between them, return as dict with key 'full_name'\n</Task Description>\n\n<Json serialized context object>\n{\n  \"first_name\": \"John\",\n  \"last_name\": \"Doe\"\n}\n</Json serialized context object>\n",
+        "prompt": "\nYou are a Python code generation assistant.\nYour task is to write a single Python function named `process_step` that takes one argument: `context: dict`.\nThis function will be executed to perform following specific task. Import necessary library if you used any.\nThe context object will contain all the necessary data. The json serialized context object has been attached here for you to understand the input data structure.\nThe function should return a JSON-serializable value.\n\n<available library>\naiohappyeyeballs\naiohttp\naiosignal\nannotated-types\nanyio\nattrs\nazure-core\nazure-identity\nazure-identity-broker\nazure-kusto-data\ncertifi\ncffi\ncharset-normalizer\nclick\ncryptography\ndistro\nexecnet\nfastapi\nfrozenlist\ngenson\ngit-filter-repo\nh11\nhttpcore\nhttptools\nhttpx\nidna\nijson\niniconfig\njiter\njson_repair\njsonpath-ng\nmsal\nmsal-extensions\nmultidict\nopenai\npackaging\npip\npluggy\nply\npropcache\npycparser\npydantic\npydantic_core\nPygments\nPyJWT\npymsalruntime\npytest\npytest-asyncio\npytest-xdist\npytz\nPyYAML\nrequests\nsix\nsniffio\nstarlette\ntqdm\ntyping-inspection\ntyping_extensions\nurllib3\nuvicorn\nuvloop\nwatchdog\nwatchfiles\nwebsockets\nxmltodict\nyarl\n</available library>\n\n<Task Description>\nCombine first_name and last_name from context with a space between them, return as dict with key 'full_name'\n</Task Description>\n\n<Json serialized context object>\n{\n  \"first_name\": \"John\",\n  \"last_name\": \"Doe\"\n}\n</Json serialized context object>\n",
         "temperature": 0.0,
         "tools": [
           {
@@ -35,17 +35,17 @@
         "content": "",
         "tool_calls": [
           {
-            "id": "call_0LuO2p9DVtQBDCPcpY0UMDjW",
+            "id": "call_u2c60gNrYRpUJBAzTiXat1MF",
             "name": "generate_python_code",
             "arguments": {
-              "python_code": "def process_step(context: dict):\n    \"\"\"Combine first_name and last_name from context with a space between them.\n\n    Args:\n        context (dict): Should contain 'first_name' and 'last_name'.\n\n    Returns:\n        dict: {\"full_name\": \"<first_name> <last_name>\"}\n    \"\"\"\n    first = context.get(\"first_name\", \"\")\n    last = context.get(\"last_name\", \"\")\n\n    # Ensure values are strings and trim whitespace, then combine with a single space.\n    full_name = f\"{str(first).strip()} {str(last).strip()}\".strip()\n\n    return {\"full_name\": full_name}\n"
+              "python_code": "def process_step(context: dict):\n    \"\"\"\n    Combine first_name and last_name from context with a space between them,\n    return as dict with key 'full_name'.\n    \"\"\"\n    first_name = context.get(\"first_name\", \"\")\n    last_name = context.get(\"last_name\", \"\")\n    full_name = f\"{str(first_name)} {str(last_name)}\"\n    return {\"full_name\": full_name}\n"
             }
           }
         ]
       },
-      "timestamp": "2025-09-26T15:50:33.830453",
-      "execution_time_ms": 0.00108100357465446,
-      "parameters_hash": "d5f2c83734bf172b"
+      "timestamp": "2025-09-28T23:00:46.660660",
+      "execution_time_ms": 25230.395767997834,
+      "parameters_hash": "1fa98110324e6cad"
     }
   ],
   "metadata": {
@@ -54,5 +54,5 @@
       "LLM"
     ]
   },
-  "saved_at": "2025-09-26T15:50:33.873132"
+  "saved_at": "2025-09-28T23:00:46.701780"
 }

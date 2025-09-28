@@ -15,8 +15,17 @@ export interface TraceSession {
   task_executions: TaskExecution[];
 }
 
+// Pending task stack entries (latest format from backend)
+export interface PendingStackItem {
+  description: string;
+  task_id: string;
+  short_name?: string;
+  parent_task_id?: string | null;
+  generated_by_phase?: string | null;
+}
+
 export interface EngineState {
-  task_stack: any[];
+  task_stack: PendingStackItem[]; // Ordered stack (top at index 0 per engine implementation)
   context: Record<string, any>;
   task_execution_counter: number;
 }
@@ -225,6 +234,8 @@ export interface SubtreeCompactionPhase {
   subtree_task_ids: string[];
   aggregated_outputs: Record<string, any>;
   llm_calls?: LLMCall[] | null;
+  // Newly added: tasks generated during compaction (could be strings or structured GeneratedTask objects)
+  generated_tasks?: (string | GeneratedTask)[] | null;
   error?: string | null;
 }
 

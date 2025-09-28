@@ -18,9 +18,9 @@ const mockTraceWithPendingTasks: TraceSession = {
     },
     end: {
       task_stack: [
-        'First pending task description',
-        'Second pending task description',
-        'Third pending task that is currently executing'
+        { description: 'First pending task description', task_id: 'pt-1', short_name: 'Pending 1' },
+        { description: 'Second pending task description', task_id: 'pt-2', short_name: 'Pending 2' },
+        { description: 'Third pending task that is currently executing', task_id: 'pt-3', short_name: 'Pending 3' }
       ],
       context: {},
       task_execution_counter: 3
@@ -87,8 +87,8 @@ const mockTraceOnlyPendingTasks: TraceSession = {
     },
     end: {
       task_stack: [
-        'Only pending task 1',
-        'Only pending task 2 - currently executing'
+        { description: 'Only pending task 1', task_id: 'op-1', short_name: 'Only 1' },
+        { description: 'Only pending task 2 - currently executing', task_id: 'op-2', short_name: 'Only 2' }
       ],
       context: {},
       task_execution_counter: 0
@@ -192,7 +192,7 @@ describe('Timeline with Pending Tasks', () => {
         end: {
           ...mockTraceWithPendingTasks.engine_snapshots.end!,
           task_stack: [
-            'This is a very long task description that should be truncated when displayed in the timeline to ensure the UI remains clean and readable for users while still providing access to the full description through expansion'
+            { description: 'This is a very long task description that should be truncated when displayed in the timeline to ensure the UI remains clean and readable for users while still providing access to the full description through expansion', task_id: 'long-1', short_name: 'Long pending task' }
           ]
         }
       }
@@ -206,8 +206,9 @@ describe('Timeline with Pending Tasks', () => {
       />
     );
 
-    // Should show truncated text with ellipsis
-  expect(getByText(/This is a very long task description that should be truncated when displayed in the timeline to ensure the UI remains clean.../)).toBeInTheDocument();
-  expect(getByText('Show full description')).toBeInTheDocument();
+    // Should show truncated text with ellipsis (first part + ...)
+  // The truncated preview appears in a separate div; match starting fragment plus ellipsis
+  expect(getByText(/This is a very long task description that should be truncated when displayed in the timeline to ensure the UI remains\.{3}/)).toBeInTheDocument();
+    expect(getByText('Show full description')).toBeInTheDocument();
   });
 });
