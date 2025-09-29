@@ -173,15 +173,24 @@ class SOPDocumentParser:
         # Try match each one in the description and get possible doc_id
         candidates = []
         
-        # 1. Try match full path.
+        # 1. Try match full path with word boundaries.
         for doc_id in all_doc_ids:
-            if doc_id.lower() in description.lower():
+            # Skip doc IDs that contain only alphanumeric characters (too generic)
+            if re.match(r'^[a-zA-Z0-9]+$', doc_id):
+                continue
+            
+            # Use word boundary matching instead of substring matching
+            pattern = r'\b' + re.escape(doc_id.lower()) + r'\b'
+            if re.search(pattern, description.lower()):
                 candidates.append((doc_id, "full_path"))
         
-        # 2. Try match file name without extension.
+        # 2. Try match file name without extension with word boundaries.
         for doc_id in all_doc_ids:
             filename = Path(doc_id).name
-            if filename.lower() in description.lower():
+            
+            # Use word boundary matching instead of substring matching
+            pattern = r'\b' + re.escape(filename.lower()) + r'\b'
+            if re.search(pattern, description.lower()):
                 candidates.append((doc_id, "filename"))
 
         # Log candidate documents to tracing system

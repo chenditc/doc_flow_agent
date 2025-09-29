@@ -1,7 +1,7 @@
 {
   "test_name": "doc_execute_engine_test_create_task_from_description_valid_sop",
-  "mode": "mock_then_real",
-  "timestamp": "2025-09-28T22:23:28.220385",
+  "mode": "real",
+  "timestamp": "2025-09-29T14:42:44.104866",
   "tool_calls": [
     {
       "tool_id": "LLM",
@@ -55,18 +55,18 @@
         "content": "",
         "tool_calls": [
           {
-            "id": "call_0yCq82JG0RGQCrHsOc8GnRzA",
+            "id": "call_yPuRtsbOYb6dAJ6X8xOsT5ZJ",
             "name": "select_tool_for_task",
             "arguments": {
               "can_complete_with_tool": true,
-              "reasoning": "The task is a straightforward shell command to list the home directory contents. Sufficient information is provided and can be executed directly with the bash tool.",
+              "reasoning": "The task is explicit: execute `ls -la ~/` to list the home directory. This can be accomplished directly with a single bash command using the bash tool.",
               "selected_tool_doc": "tools/bash"
             }
           }
         ]
       },
-      "timestamp": "2025-09-28T22:23:28.219499",
-      "execution_time_ms": 0.0011270021786913276,
+      "timestamp": "2025-09-29T14:42:44.101081",
+      "execution_time_ms": 11063.393884000106,
       "parameters_hash": "65b918e899feb9ba"
     }
   ],
@@ -76,5 +76,5 @@
       "LLM"
     ]
   },
-  "saved_at": "2025-09-28T22:23:28.220436"
+  "saved_at": "2025-09-29T14:42:44.104976"
 }
