@@ -6,6 +6,7 @@ input_description:
   human_setup: 小红书的账号人设
   post_target_audience: 干货贴的对象
 output_description: 干货贴的生成方案
+result_validation_rule: 只要能提供若干篇符合该人设的小红书笔记即可，用户会自行选择合适的进行发送。
 ---
 ## Execution Plan
 

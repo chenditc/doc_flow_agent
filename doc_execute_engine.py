@@ -94,6 +94,7 @@ class Task:
     short_name: str = None  # Short name for visualization (auto-generated if None)
     parent_task_id: Optional[str] = None  # Parent task relationship  
     output_description: str = None  # Store output description for dynamic path generation
+    result_validation_rule: str = None  # Rule for validating task result in subtree compaction
     
     def __post_init__(self):
         # Auto-generate short_name if not provided
@@ -118,7 +119,8 @@ class Task:
                 f"Tool: {self.tool.get('tool_id', 'N/A')}\n"
                 f"Input JSON Paths: {json.dumps(self.input_json_path, ensure_ascii=False)}\n"
                 f"Output JSON Path: {self.output_json_path}\n"
-                f"Output Description: {self.output_description}")
+                f"Output Description: {self.output_description}\n"
+                f"Result Validation Rule: {self.result_validation_rule}")
     
     def __repr__(self):
         # Return a concise representation for debugging
@@ -126,7 +128,8 @@ class Task:
                 f"short_name={self.short_name}, parent_task_id={self.parent_task_id}, "
                 f"sop_doc_id={self.sop_doc_id}, tool={self.tool.get('tool_id', 'N/A')}, "
                 f"input_json_path={self.input_json_path}, output_json_path={self.output_json_path}, "
-                f"output_description={self.output_description})")
+                f"output_description={self.output_description}, "
+                f"result_validation_rule={self.result_validation_rule})")
 
 class DocExecuteEngine:
     """Main execution engine for document-driven tasks"""
@@ -447,6 +450,7 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
         # For output, we now defer generation until after tool execution if we have output_description
         output_json_path = sop_doc.output_json_path
         output_description = sop_doc.output_description
+        result_validation_rule = sop_doc.result_validation_rule
         
         return Task(
             task_id=pending_task.task_id,
@@ -457,7 +461,8 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
             tool=sop_doc.tool,
             input_json_path=input_json_path,
             output_json_path=output_json_path,
-            output_description=output_description
+            output_description=output_description,
+            result_validation_rule=result_validation_rule
         )
     
     async def create_task_from_description(self, pending_task: PendingTask) -> Task:
@@ -1163,6 +1168,10 @@ Please return only the task description as a single paragraph, without additiona
             f"<output_path>{path}</output_path>\n<content>{value}</content>\n"
             for path, value in aggregated_outputs.items()
         ])
+
+        root_task_evaluation_hint = ""
+        if root_task.result_validation_rule and root_task.result_validation_rule.strip() != "":
+            root_task_evaluation_hint = f"<root task requirement evaluation rule>\n{root_task.result_validation_rule}\n</root task requirement evaluation rule>"
         
         prompt = f"""<instructions>
 You are a helpful agent which can perform task like run comamnd / code / search data / thinking on behalf of user. You are receiving root task description to execute, and you have performed some work for it. Your work's output is provided in aggregated_outputs.
@@ -1178,6 +1187,7 @@ Use the evaluate_and_summarize_subtree function to provide your evaluation.
 
 <root_task_description>{root_description}</root_task_description>
 <root_task_short_name>{root_short_name}</root_task_short_name>
+{root_task_evaluation_hint}
 
 <work you have performed>
 {outputs_xml}

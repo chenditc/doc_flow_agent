@@ -30,7 +30,8 @@ class TestSOPDocument(unittest.TestCase):
             body="## Test\nContent",
             parameters={"Test": "Content"},
             input_description={"input": "Test input"},
-            output_description="Test output"
+            output_description="Test output",
+            result_validation_rule="Test validation rule"
         )
         
         self.assertEqual(doc.doc_id, "test/doc")
@@ -43,6 +44,7 @@ class TestSOPDocument(unittest.TestCase):
         self.assertEqual(doc.parameters["Test"], "Content")
         self.assertEqual(doc.input_description["input"], "Test input")
         self.assertEqual(doc.output_description, "Test output")
+        self.assertEqual(doc.result_validation_rule, "Test validation rule")
 
 
 class TestSOPDocumentLoader(unittest.TestCase):

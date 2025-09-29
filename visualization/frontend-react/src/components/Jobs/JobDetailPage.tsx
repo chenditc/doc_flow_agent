@@ -20,13 +20,17 @@ import {
   TextField,
   MenuItem,
   IconButton,
-  Tooltip
+  Tooltip,
+  Dialog,
+  DialogTitle,
+  DialogContent
 } from '@mui/material';
 import {
   ArrowLeft as BackIcon,
   RefreshCw as RefreshIcon,
   X as CancelIcon,
-  ExternalLink as ExternalLinkIcon
+  ExternalLink as ExternalLinkIcon,
+  Play as RerunIcon
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -34,6 +38,7 @@ import ReactMarkdown from 'react-markdown';
 import { JsonViewer } from '../common/JsonViewer';
 import { jobService } from '../../services';
 import { JobStatusChip } from './JobStatusChip';
+import { JobSubmitForm } from './JobSubmitForm';
 
 
 interface TabPanelProps {
@@ -60,6 +65,7 @@ export const JobDetailPage: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
   const [activeTab, setActiveTab] = useState(0);
   const [logTailLines, setLogTailLines] = useState(500);
+  const [showRerunForm, setShowRerunForm] = useState(false);
   
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -206,6 +212,15 @@ export const JobDetailPage: React.FC = () => {
               <RefreshIcon />
             </IconButton>
           </Tooltip>
+          
+          <Button
+            variant="outlined"
+            color="primary"
+            startIcon={<RerunIcon />}
+            onClick={() => setShowRerunForm(true)}
+          >
+            Rerun Job
+          </Button>
           
           {['QUEUED', 'STARTING', 'RUNNING'].includes(job.status) && (
             <Button
@@ -497,6 +512,26 @@ export const JobDetailPage: React.FC = () => {
           )}
         </TabPanel>
       </Card>
+
+      {/* Rerun job dialog */}
+      <Dialog
+        open={showRerunForm}
+        onClose={() => setShowRerunForm(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          Rerun Job
+        </DialogTitle>
+        <DialogContent>
+          <JobSubmitForm
+            onCancel={() => setShowRerunForm(false)}
+            onSuccess={() => setShowRerunForm(false)}
+            initialTaskDescription={job?.task_description || ''}
+            initialMaxTasks={job?.max_tasks || 50}
+          />
+        </DialogContent>
+      </Dialog>
     </Box>
   );
 };

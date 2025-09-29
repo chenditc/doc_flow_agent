@@ -180,6 +180,8 @@ ls -la /home/user/documents | grep '.txt'
                 for entry in os.listdir(directory):
                     if entry.startswith('.'):
                         continue
+                    if '.' in entry and not entry.endswith('.exe'):
+                        continue
                     if ' ' in entry:
                         continue
                     if entry in seen:

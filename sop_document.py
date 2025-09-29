@@ -37,6 +37,7 @@ class SOPDocument:
     parameters: Dict[str, str]  # New field for markdown sections
     input_description: Dict[str, str]  # New field for input descriptions
     output_description: str  # New field for output description
+    result_validation_rule: str  # New field for result validation rule
 
 
 class SOPDocumentLoader:
@@ -94,7 +95,8 @@ class SOPDocumentLoader:
             body=body,
             parameters=parameters,
             input_description=doc_data.get('input_description', {}),  # New field for input descriptions
-            output_description=doc_data.get('output_description', '')  # New field for output description
+            output_description=doc_data.get('output_description', ''),  # New field for output description
+            result_validation_rule=doc_data.get('result_validation_rule', '')  # New field for result validation rule
         )
     
     def _parse_markdown_sections(self, body: str) -> Dict[str, str]:
@@ -428,7 +430,11 @@ Please use the select_tool_for_task function to provide your analysis.
             })
         
         # Create prompt for LLM validation
-        prompt = f"""Given the user's request: "{description}"
+        prompt = f"""Given the user's request: 
+        
+<user request>
+{description}
+</user request>
 
 Please select the most appropriate SOP document from the following candidates:
 
@@ -488,15 +494,15 @@ Please select the most appropriate SOP document from the following candidates:
         file_name = Path(doc_id).name
         doc_id_escaped = re.escape(doc_id)
         file_name_escaped = re.escape(file_name)
-        patterns = [
-            re.compile(rf"Follow\s+{doc_id_escaped}\b", re.IGNORECASE),
-            re.compile(rf"!`{doc_id_escaped}`"),
-            # Chinese patterns (space optional before file name), allow both full doc_id and just file name
-            re.compile(rf"根据\s*{doc_id_escaped}\s*\.md"),
-            re.compile(rf"根据\s*{file_name_escaped}\s*\.md"),
-            re.compile(rf"根据文档\s*{doc_id_escaped}\b"),
-            re.compile(rf"根据文档\s*{file_name_escaped}\b"),
-        ]
+        patterns = []
+        for key_word in [file_name, doc_id_escaped, file_name_escaped]:
+            patterns += [
+                re.compile(rf"Follow\s+{key_word}", re.IGNORECASE),
+                re.compile(rf"!`{key_word}`"),
+                # Chinese patterns (space optional before file name), allow both full doc_id and just file name
+                re.compile(rf"根据\s*{key_word}"),
+                re.compile(rf"根据文档\s*{key_word}"),
+            ]
         return patterns
 
     def _matches_explicit_doc_reference(self, description: str, doc_id: str) -> bool:

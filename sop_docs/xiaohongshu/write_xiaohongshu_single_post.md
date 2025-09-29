@@ -9,11 +9,12 @@ input_description:
   topic: 当前任务需要生成的小红书的图文主题
   post_target_audience: 小红书图文的受众
 output_description: 小红书图文的内容
+result_validation_rule: 只要能提供大致符合该方向的小红书帖子即可，不需要所有要求都满足。
 ---
 ## parameters.prompt
 
 ### Objective
-请针对于小红书图文的受众“{post_target_audience}”，撰写一个符合小红书图文：{topic}
+请针对于小红书图文的受众“{post_target_audience}”，撰写一个符合小红书图文：{topic}。
 
 ### Guidance
 小红书的图文贴需要：

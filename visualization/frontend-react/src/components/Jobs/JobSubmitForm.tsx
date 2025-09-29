@@ -22,14 +22,18 @@ import type { SubmitJobRequest } from '../../types';
 interface JobSubmitFormProps {
   onCancel?: () => void;
   onSuccess?: (jobId: string) => void;
+  initialTaskDescription?: string;
+  initialMaxTasks?: number;
 }
 
 export const JobSubmitForm: React.FC<JobSubmitFormProps> = ({ 
   onCancel, 
-  onSuccess 
+  onSuccess,
+  initialTaskDescription = '',
+  initialMaxTasks = 50
 }) => {
-  const [taskDescription, setTaskDescription] = useState('');
-  const [maxTasks, setMaxTasks] = useState<number>(50);
+  const [taskDescription, setTaskDescription] = useState(initialTaskDescription);
+  const [maxTasks, setMaxTasks] = useState<number>(initialMaxTasks);
   const [errors, setErrors] = useState<Record<string, string>>({});
   
   const navigate = useNavigate();
@@ -84,8 +88,8 @@ export const JobSubmitForm: React.FC<JobSubmitFormProps> = ({
   };
 
   const handleReset = () => {
-    setTaskDescription('');
-    setMaxTasks(50);
+    setTaskDescription(initialTaskDescription);
+    setMaxTasks(initialMaxTasks);
     setErrors({});
   };
 
