@@ -449,6 +449,19 @@ export const JobDetailPage: React.FC = () => {
                             backgroundColor: 'background.paper',
                             '& .markdown-content': {
                               fontFamily: 'inherit',
+                              '& ul, & ol': {
+                                margin: '0.5em 0',
+                                paddingLeft: '1.5rem'
+                              },
+                              '& ul': {
+                                listStyle: 'disc outside'
+                              },
+                              '& ol': {
+                                listStyle: 'decimal outside'
+                              },
+                              '& li': {
+                                marginBottom: '0.25em'
+                              },
                               '& pre': {
                                 backgroundColor: 'action.hover',
                                 padding: '8px',
@@ -492,7 +505,20 @@ export const JobDetailPage: React.FC = () => {
                             border: '1px solid var(--mui-palette-divider)',
                             borderRadius: 1,
                             p: 2,
-                            backgroundColor: 'background.paper'
+                            backgroundColor: 'background.paper',
+                            '& ul, & ol': {
+                              margin: '0.5em 0',
+                              paddingLeft: '1.5rem'
+                            },
+                            '& ul': {
+                              listStyle: 'disc outside'
+                            },
+                            '& ol': {
+                              listStyle: 'decimal outside'
+                            },
+                            '& li': {
+                              marginBottom: '0.25em'
+                            }
                           }}>
                             <ReactMarkdown>
                               {typeof lastTaskOutput === 'string' ? lastTaskOutput : String(lastTaskOutput)}

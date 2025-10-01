@@ -276,8 +276,8 @@ class SOPDocumentParser:
                 use_case_map = {
                     "CLI": "File operations, system commands, running scripts, installing packages",
                     "LLM": "Text analysis, content generation, writing, planning, reasoning tasks", 
-                    "PYTHON_EXECUTOR": "Data processing, calculations, API calls, complex logic, file manipulation",
-                    "USER_COMMUNICATE": "Getting user input, asking questions, manual tasks requiring human intervention"
+                    "PYTHON_EXECUTOR": "Data processing, calculations, REST API calls, complex logic, file manipulation",
+                    "USER_COMMUNICATE": "Getting user input, asking questions, manual tasks requiring human intervention, use it very carefully, only ask user question when you are sure you need the user's input."
                 }
                 
                 tool_id = sop_doc.tool.get('tool_id', '')
@@ -351,6 +351,8 @@ class SOPDocumentParser:
         
         # Create prompt for tool selection
         prompt = f"""Analyze this task description and determine if it can be completed without more information, then determine if it can be completed using one of the available tools, or if it needs to be broken down into multiple steps. Only use the tool if the tool is good at it, eg. LLM is good at non exact match, python is good at exact match. 
+
+You can complete almost anything using python + llm tool. Any task can be completed by using code to automate and use llm to think.
 
 Available tools:
 """

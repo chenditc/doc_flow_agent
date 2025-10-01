@@ -367,7 +367,7 @@ class OnebyOneJsonPathGenerator(BaseJsonPathGenerator):
         ])
         
         prompt = f"""## Task: Generate Parameter Extraction Code
-Generate Python code to extract and reformat parameter for the request parameter from candidate fields. User has raise a request and we need to extract and reformat the parameter from the candidate fields in the context.
+Generate Python code to extract and reformat parameter for the request parameter from candidate fields. User has raise a request and we need to extract and reformat the parameter from the candidate fields in the context. 
 
 ## User Original Request
 {user_original_ask}
@@ -390,6 +390,7 @@ Context object is a dictionary, here we represent them using json_path syntax:
 5. If there is no perfect match, return a piece of code which return "<NOT_FOUND_IN_CANDIDATES>".
 6. If you rephrase the information, make sure you use the same language as the input_description.
 7. Just generate the minimum required code, Eg. If there is no requirement to be structured, use plain text. Make sure the code has minimum possibility to fail.
+8. The returned parameter should satisfy the requirement from the ## Required Request Parameter Description
 
 ## Examples
 ```python
