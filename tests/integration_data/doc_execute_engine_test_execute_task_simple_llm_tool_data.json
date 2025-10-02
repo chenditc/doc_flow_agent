@@ -1,7 +1,7 @@
 {
   "test_name": "doc_execute_engine_test_execute_task_simple_llm_tool",
-  "mode": "real",
-  "timestamp": "2025-09-29T14:43:17.061661",
+  "mode": "mock_then_real",
+  "timestamp": "2025-10-02T11:07:08.413551",
   "tool_calls": [
     {
       "tool_id": "LLM",
@@ -14,8 +14,8 @@
         "content": "Welcome to {PlatformName}!\n\nWe\u2019re excited to have you here. You\u2019ve just joined a community built to help you {core value proposition \u2013 e.g., \u201ccollaborate effortlessly,\u201d \u201cgrow your business,\u201d \u201clearn faster,\u201d etc.}. Let\u2019s get you set up for success.\n\nQuick start (takes 3 minutes):\n1. Confirm your email (if you haven\u2019t already).\n2. Complete your profile (add a photo, bio, and any relevant preferences).\n3. Explore your dashboard to see recommended next steps.\n4. Try a first action (e.g., create a project, join a group, start a trial task).\n5. Set your notifications so you only get what matters.\n\nKey features you can use today:\n- Dashboard: Your personalized activity and insights.\n- Search & Discover: Find people, content, or tools quickly.\n- Workspaces / Projects: Organize everything in one place.\n- Notifications & Alerts: Stay informed without noise.\n- Help Center & Tutorials: Learn at your own pace.\n\nCommunity guidelines (the essentials):\n- Be respectful and constructive.\n- Protect privacy\u2014yours and others\u2019.\n- Share accurate, lawful content.\n- Report issues; don\u2019t engage in harassment.\n- No spam or unsolicited promotions.\n\nNeed help?\n- Help Center: {HelpCenterLink}\n- Email support: {SupportEmail}\n- Live chat: Available weekdays 9:00\u201317:00 (UTC)\n- Status page: {StatusPageLink} (for uptime and incidents)\n\nPro tips:\n- Bookmark your dashboard for faster access.\n- Enable two-factor authentication for better security.\n- Follow topics or categories to tailor your feed.\n- Check your weekly summary email for progress insights.\n\nWe\u2019re listening:\nSend feedback anytime via the Feedback button or at {FeedbackEmail}. Your input directly shapes our roadmap.\n\nShort versions you can reuse:\n\nIn-app banner:\nWelcome aboard! Explore your dashboard, complete your profile, and start your first action. Need help? Visit {HelpCenterLink}.\n\nEmail subject:\nWelcome to {PlatformName} \u2013 Let\u2019s get you started\n\nEmail preview text:\nActivate your account and unlock your personalized experience in just a few clicks.\n\nSocial/Community post:\nA warm welcome to all our new members this week! Dive in, introduce yourself, and let us know what you\u2019re building.\n\nIf you\u2019d like a version tailored to a specific audience (developers, educators, creators, teams, etc.), just let me know.\n\nWe\u2019re glad you\u2019re here\u2014let\u2019s build something great together.\n\n\u2014 The {PlatformName} Team",
         "tool_calls": []
       },
-      "timestamp": "2025-09-29T14:42:56.621068",
-      "execution_time_ms": 12357.787801000086,
+      "timestamp": "2025-10-02T11:07:08.402539",
+      "execution_time_ms": 0.003610999556258321,
       "parameters_hash": "3d61a1abcdb4a277"
     },
     {
@@ -66,8 +66,8 @@
           }
         ]
       },
-      "timestamp": "2025-09-29T14:43:01.632985",
-      "execution_time_ms": 5009.852091998255,
+      "timestamp": "2025-10-02T11:07:08.403937",
+      "execution_time_ms": 0.002943997969850898,
       "parameters_hash": "5961c561a469ba57"
     },
     {
@@ -138,8 +138,8 @@
           }
         ]
       },
-      "timestamp": "2025-09-29T14:43:10.438237",
-      "execution_time_ms": 6534.435090999978,
+      "timestamp": "2025-10-02T11:07:08.412708",
+      "execution_time_ms": 0.0008030037861317396,
       "parameters_hash": "15dcd8781992075c"
     },
     {
@@ -200,8 +200,8 @@
           }
         ]
       },
-      "timestamp": "2025-09-29T14:43:17.058232",
-      "execution_time_ms": 6619.721867999033,
+      "timestamp": "2025-10-02T11:07:08.412810",
+      "execution_time_ms": 0.000400003045797348,
       "parameters_hash": "64b7317d653955fd"
     }
   ],
@@ -211,5 +211,5 @@
       "LLM"
     ]
   },
-  "saved_at": "2025-09-29T14:43:17.061837"
+  "saved_at": "2025-10-02T11:07:08.413646"
 }

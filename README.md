@@ -110,12 +110,39 @@ Example `.env` snippet:
 OPENAI_API_KEY=sk-...
 OPENAI_API_BASE=https://api.openai.com/v1
 OPENAI_MODEL=openai/gpt-4o-2024-11-20
+VISUALIZATION_SERVER_URL=http://localhost:8000  # For web user communication forms
+NOTIFICATION_CHANNEL=stdout  # User notification channel ('stdout', 'slack', 'wechat')
 ```
 
 Security notes:
 - Local developer convenience mounts should not be copied directly into production infrastructure.
 - Prefer managed secrets (e.g., Docker secrets, Vault, AWS/GCP secret stores) for deployment beyond localhost.
 - Ensure `.env` stays excluded from version control (already handled by `.dockerignore` & `.gitignore`).
+
+### User Notification System
+
+The Doc Flow Agent includes a flexible notification system that can send user alerts through different channels. This is used by tools like the Web User Communication Tool to notify users when input is required.
+
+**Supported Channels:**
+- `stdout` (default): Prints notifications to terminal/console
+- `slack`: Slack webhook integration (planned, falls back to stdout)
+- `wechat`: WeChat API integration (planned, falls back to stdout)
+
+**Configuration:**
+Set the `NOTIFICATION_CHANNEL` environment variable to choose your preferred channel:
+
+```bash
+# Use stdout (default)
+export NOTIFICATION_CHANNEL=stdout
+
+# Use Slack (when implemented)
+export NOTIFICATION_CHANNEL=slack
+
+# Use WeChat (when implemented)
+export NOTIFICATION_CHANNEL=wechat
+```
+
+The notification system automatically falls back to `stdout` if the specified channel is not yet implemented or fails to initialize.
 
 You can inspect volumes with `docker volume ls` and remove them via `docker compose down -v` if you want a clean slate.
 
@@ -735,6 +762,7 @@ async def parse_sop_doc_id_from_description(description: str) -> str:
 - **LLM Tool**: Support template rendering, step identification
 - **CLI Tool**: Execute bash commands, return stdout/stderr
 - **User Interaction Tool**: Bidirectional communication, confirmation mechanisms
+- **Web User Communication Tool**: LLM-generated web forms for rich user interaction
 
 **Tool Wrappers (TracingToolWrapper)**:
 - Transparent tracing integration

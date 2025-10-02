@@ -29,6 +29,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 # Import the LLM tuning API router
 from visualization.server.llm_tuning_api import router as llm_tuning_router
+# Import the user communication API router
+from visualization.server.user_comm_api import router as user_comm_router, serve_user_comm_form
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -212,6 +214,8 @@ REACT_BUILD_DIR = PROJECT_ROOT / "visualization" / "frontend-react" / "dist"
 
 # Include the LLM tuning router
 app.include_router(llm_tuning_router)
+# Include the user communication router
+app.include_router(user_comm_router)
 
 @app.get("/health")
 async def health_check():
@@ -450,6 +454,12 @@ async def log_requests(request: Request, call_next):
 if REACT_BUILD_DIR.exists() and (REACT_BUILD_DIR / "index.html").exists():
     # Mount static assets (CSS, JS, etc.)
     app.mount("/assets", StaticFiles(directory=REACT_BUILD_DIR / "assets"), name="assets")
+    
+    # Serve user communication forms
+    @app.get("/user-comm/{session_id}/{task_id}/")
+    async def serve_user_comm(session_id: str, task_id: str):
+        """Serve user communication form or confirmation page."""
+        return await serve_user_comm_form(session_id, task_id)
     
     # Serve the LLM tuning HTML page
     @app.get("/llm-tuning")

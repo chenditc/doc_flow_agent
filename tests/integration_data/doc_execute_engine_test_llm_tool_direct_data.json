@@ -1,7 +1,7 @@
 {
   "test_name": "doc_execute_engine_test_llm_tool_direct",
   "mode": "mock_then_real",
-  "timestamp": "2025-09-28T22:23:31.019474",
+  "timestamp": "2025-10-02T11:07:10.324287",
   "tool_calls": [
     {
       "tool_id": "LLM",
@@ -13,8 +13,8 @@
         "content": "def add_numbers(a, b):\n    \"\"\"Return the sum of two numbers.\"\"\"\n    return a + b",
         "tool_calls": []
       },
-      "timestamp": "2025-09-28T22:23:31.019158",
-      "execution_time_ms": 0.0009089999366551638,
+      "timestamp": "2025-10-02T11:07:10.323567",
+      "execution_time_ms": 0.0021939922589808702,
       "parameters_hash": "27e91c44276c7140"
     }
   ],
@@ -24,5 +24,5 @@
       "LLM"
     ]
   },
-  "saved_at": "2025-09-28T22:23:31.019511"
+  "saved_at": "2025-10-02T11:07:10.324356"
 }

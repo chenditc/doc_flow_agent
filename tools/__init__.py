@@ -12,6 +12,7 @@ from .json_path_generator import (
 	BatchJsonPathGenerator,
 )
 from .user_communicate_tool import UserCommunicateTool
+from .web_user_communicate_tool import WebUserCommunicateTool
 
 __all__ = [
 	'BaseTool',
@@ -19,6 +20,7 @@ __all__ = [
 	'CLITool',
 	'TemplateTool',
 	'UserCommunicateTool',
+	'WebUserCommunicateTool',
 	# JSON path generators
 	'BaseJsonPathGenerator',
 	'OnebyOneJsonPathGenerator',

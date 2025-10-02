@@ -12,7 +12,7 @@ import json
 import tempfile
 import shutil
 from pathlib import Path
-from unittest.mock import patch, mock_open
+from unittest.mock import patch, mock_open, AsyncMock
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -451,6 +451,78 @@ class TestDocExecuteEngineIntegration:
             assert isinstance(new_tasks, list)
         
         print("✅ User communication tool execution works correctly")
+    
+    @pytest.mark.asyncio
+    async def test_execute_task_web_user_communicate_tool_auto_injection(self):
+        """Test execution of WEB_USER_COMMUNICATE tool with auto-injection of session_id and task_id"""
+        # Create task using web user communication tool
+        task = Task(
+            task_id="test-web-comm-task",
+            description="Collect user feedback via web form",
+            sop_doc_id="tools/web_user_communicate",
+            tool={
+                "tool_id": "WEB_USER_COMMUNICATE", 
+                "parameters": {
+                    "instruction": "{instruction}",
+                    "timeout_seconds": 0.1,  # Short timeout for testing
+                    "poll_interval": 0.05
+                }
+            },
+            input_json_path={"instruction": "$.feedback_instruction"},
+            output_json_path="$.web_user_response"
+        )
+        
+        # Populate context with instruction
+        self.engine.context = {"feedback_instruction": "Please rate our service from 1-5 stars"}
+        
+        # Create a mock web user communicate tool to capture the parameters
+        from tools.web_user_communicate_tool import WebUserCommunicateTool
+        mock_web_tool = AsyncMock(spec=WebUserCommunicateTool)
+        mock_web_tool.tool_id = "WEB_USER_COMMUNICATE"
+        # Mock the execute method to return a timeout response
+        mock_web_tool.execute.return_value = {
+            "instruction": "Please rate our service from 1-5 stars",
+            "form_url": "http://localhost:8000/user-comm/test_session/test-web-comm-task/",
+            "status": "timeout"
+        }
+        
+        # Replace the web tool in the engine
+        original_web_tool = self.engine.tools.get("WEB_USER_COMMUNICATE")
+        self.engine.tools["WEB_USER_COMMUNICATE"] = mock_web_tool
+        
+        try:
+            # Execute task
+            # Patch parse_new_tasks_from_output to avoid needing LLM mock data for this test
+            with patch.object(self.engine, 'parse_new_tasks_from_output', new=AsyncMock(return_value=[])):
+                # Also patch subtree compaction to avoid LLM evaluation
+                with patch.object(self.engine, '_attempt_subtree_compaction', new=AsyncMock(return_value=None)):
+                    new_tasks = await self.engine.execute_task(task)
+            
+            # Verify execution
+            assert self.engine.task_execution_counter == 1
+            assert "web_user_response" in self.engine.context
+            assert isinstance(new_tasks, list)
+            
+            # Verify that the tool was called with auto-injected parameters
+            mock_web_tool.execute.assert_called_once()
+            call_args = mock_web_tool.execute.call_args[0][0]  # Get the parameters passed to execute
+            
+            # Check that session_id and task_id were auto-injected
+            assert "session_id" in call_args, "session_id should be auto-injected"
+            assert "task_id" in call_args, "task_id should be auto-injected"
+            assert call_args["task_id"] == "test-web-comm-task", "task_id should match the task ID"
+            assert call_args["instruction"] == "Please rate our service from 1-5 stars", "instruction should be resolved from context"
+            assert call_args["timeout_seconds"] == 0.1, "timeout_seconds should be preserved"
+            assert call_args["poll_interval"] == 0.05, "poll_interval should be preserved"
+            
+            print("✅ Web user communication tool auto-injection works correctly")
+            print(f"Auto-injected session_id: {call_args['session_id']}")
+            print(f"Auto-injected task_id: {call_args['task_id']}")
+            
+        finally:
+            # Restore original tool if it existed
+            if original_web_tool:
+                self.engine.tools["WEB_USER_COMMUNICATE"] = original_web_tool
     
     @pytest.mark.asyncio
     async def test_execute_task_with_input_resolution(self):

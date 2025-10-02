@@ -12,6 +12,7 @@ services:
       - traces:/app/traces
       - jobs:/app/jobs
       - log:/app/log
+      - user_comm:/app/user_comm
       # Mount .env read-only so code that reads file directly (if any) can access; env vars already loaded via env_file
       - type: bind
         source: ./.env
@@ -36,6 +37,7 @@ services:
     volumes:
       - traces:/app/traces:ro
       - log:/app/log
+      - user_comm:/app/user_comm
       - type: bind
         source: ./.env
         target: /app/.env
@@ -75,3 +77,4 @@ volumes:
   traces:
   jobs:
   log:
+  user_comm:

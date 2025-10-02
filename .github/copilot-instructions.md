@@ -24,5 +24,5 @@
 - Do not reinvent the wheel, use mature library if the functionality has been implemented before.
 - Do not repeat yourself, when you see duplicate code, try to deduplicate it.
 - No need to keep backward compatibility, remove unused or deprecated code.
-- Do not use 'except Excetion' or 'except:' to catch all exception, only catch the exception you can handle.
+- Do not use 'except Exception as e:' or 'except:' to catch all exception, only catch the exception you can handle.
 - Use break early when possible, so that you can reduce the indentation level. Try to avoid nested if-else.

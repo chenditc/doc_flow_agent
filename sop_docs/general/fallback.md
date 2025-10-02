@@ -32,7 +32,7 @@ If you can complete the task in one go without additional information by using o
 If you need additional information or the task is too big to complete in one go, please break down the task into multiple sub tasks, each sub task should be clear and include all required information. Generate multiple <new_task_to_execute> object.
 
 #### Case 3
-If there are certain tool that can be used to complete the task but it's not listed in the tools section, you can use 'user_communicate' tool to send the detailed instruction for using that tool and consider this task as completed. Generate one <new_task_to_execute> object starting with 'Follow user_communicate.md to xxxx'
+If there are certain tool that can be used to complete the task but it's not listed in the tools section, you can use 'user_communicate' tool to send the detailed instruction for using that tool and consider this task as completed. Generate one <new_task_to_execute> object starting with 'Follow web_user_communicate.md to xxxx'
 
 #### Tools
  - cli tool: 
@@ -46,7 +46,7 @@ If there are certain tool that can be used to complete the task but it's not lis
     - Task description example: "<new_task_to_execute>Follow python.md, call api xxx and convert numberical data into vectors.</new_task_to_execute>".
  - user_communicate tool: 
     - Functionality: You can give text to user and let user to do actual work, eg, operate machine / browser / software. The tool will collect user's feedback and let you know if the instruction has been completed. Use this tool only if previous tool doesn't satify your need
-    - Task description example: "<new_task_to_execute>Follow user_communicate.md, ask user to plugin network cabel</new_task_to_execute>".
+    - Task description example: "<new_task_to_execute>Follow web_user_communicate.md, ask user to plugin network cabel</new_task_to_execute>".
 
 <USER_TASK_WANT_TO_COMPLETE>
 {task_description}

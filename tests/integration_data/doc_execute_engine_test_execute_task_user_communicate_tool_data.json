@@ -1,7 +1,7 @@
 {
   "test_name": "doc_execute_engine_test_execute_task_user_communicate_tool",
-  "mode": "real",
-  "timestamp": "2025-09-29T14:43:42.708187",
+  "mode": "mock_then_real",
+  "timestamp": "2025-10-02T11:07:08.559874",
   "tool_calls": [
     {
       "tool_id": "LLM",
@@ -51,8 +51,8 @@
           }
         ]
       },
-      "timestamp": "2025-09-29T14:43:34.961753",
-      "execution_time_ms": 7050.950536000528,
+      "timestamp": "2025-10-02T11:07:08.539444",
+      "execution_time_ms": 0.0009950017556548119,
       "parameters_hash": "85fda39775bf71b8"
     },
     {
@@ -120,8 +120,8 @@
           }
         ]
       },
-      "timestamp": "2025-09-29T14:43:42.690492",
-      "execution_time_ms": 5412.26019700116,
+      "timestamp": "2025-10-02T11:07:08.549744",
+      "execution_time_ms": 0.0012789969332516193,
       "parameters_hash": "052bc34aae56f13e"
     },
     {
@@ -135,8 +135,8 @@
         "question": "Current task needs your help:\n\nPlease describe the main features you want in your new application",
         "user_reply": "I want a simple todo list app with user authentication and task sharing capabilities"
       },
-      "timestamp": "2025-09-29T14:43:27.909757",
-      "execution_time_ms": 0.06960700011404697,
+      "timestamp": "2025-10-02T11:07:08.538406",
+      "execution_time_ms": 0.0017940037650987506,
       "parameters_hash": "ce24db1aa23d866a"
     }
   ],
@@ -147,5 +147,5 @@
       "LLM"
     ]
   },
-  "saved_at": "2025-09-29T14:43:42.708408"
+  "saved_at": "2025-10-02T11:07:08.559967"
 }

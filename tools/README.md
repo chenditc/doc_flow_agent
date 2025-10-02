@@ -32,6 +32,15 @@ All tools inherit from `BaseTool` which provides:
 - **Returns**: JSON with user's reply
 - **Usage**: Supports multiline input; users can end input with Ctrl+D/Ctrl+Z or by typing `###END###`
 
+#### WebUserCommunicateTool (`web_user_communicate_tool.py`)
+- **Tool ID**: `WEB_USER_COMMUNICATE`
+- **Purpose**: Web-based user communication with LLM-generated forms
+- **Required Parameters**: `instruction`, `session_id`, `task_id`
+- **Optional Parameters**: `timeout_seconds` (default: 1800), `poll_interval` (default: 2.0)
+- **Returns**: JSON with user's response and form URL
+- **Usage**: Generates HTML forms using LLM, serves via visualization server, polls for responses
+- **Environment**: Requires `VISUALIZATION_SERVER_URL` (default: http://localhost:8000)
+
 #### WordCountTool (`word_count_tool.py`)
 - **Tool ID**: `WORD_COUNT`
 - **Purpose**: Count words, characters, lines in text
