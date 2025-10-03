@@ -80,8 +80,10 @@ class LLMTool(BaseTool):
             print(f"[LLM CALL] Tools provided: {[tool.get('function', {}).get('name', 'unknown') for tool in tools]}")
         
         # Prepare API call parameters
+        # Allow per-call model override
+        call_model = parameters.get('model', self.model)
         api_params = {
-            "model": self.model,
+            "model": call_model,
             "messages": [
                 {
                     "role": "user",

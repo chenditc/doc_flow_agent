@@ -4,6 +4,7 @@ tool:
   tool_id: LLM
   parameters:
     prompt: "{parameters.prompt}"
+    model: "gemini-2.5-pro"
 input_description:
   human_setup: 当前小红书博主的人设
   topic: 当前任务需要生成的小红书的图文主题
