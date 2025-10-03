@@ -1,32 +1,21 @@
 ---
-description: 生成小红书的图文帖子
+description: 生成小红书单个帖子
 tool:
-  tool_id: LLM
-  parameters:
-    prompt: "{parameters.prompt}"
+  tool_id: TEMPLATE
 input_description:
-  human_setup: 当前小红书博主的人设
-  topic: 当前任务需要生成的小红书的图文主题
-  post_target_audience: 小红书图文的受众
-output_description: 小红书图文的内容
-result_validation_rule: 只要能提供大致符合该方向的小红书帖子即可，不需要所有要求都满足。
+  human_setup: 小红书的账号人设
+  post_target_audience: 干货贴的对象
+  topic: 小红书帖子的主题
+  emotion_target: 当前帖子需要重点刺激的受众情感共鸣点
+input_json_path:
+  current_task: $.current_task
+output_description: 干货贴的生成方案
+result_validation_rule: 需要有小红书帖子的文字内容以及图片（url 或本地路径皆可)。
 ---
-## parameters.prompt
+## Execution Plan
 
-### Objective
-请针对于小红书图文的受众“{post_target_audience}”，撰写一个符合小红书图文：{topic}。
-
-### Guidance
-小红书的图文贴需要：
-- 文字内容要包含 emoji，一般出现在句首或者段首。
-- 以短句为主，充分换行保持呼吸感。
-- 以生活化的语气为主，同时保持一定专业度。
-- 符合博主人设：{human_setup}
-- 不要直接点出博主人设，只要不违反博主人设即可。
-
-首图一般用带有 emoji 的大字图即可。
-
-### Return Format
-请返回：
-1. 该图文贴的首图设计（用文字描述清楚）。
-2. 该图文贴的文字内容。
+<new task to execute>
+1. 根据文档 write_xiaohongshu_post_text.md, 为 {human_setup} 的博主，写一篇给 {post_target_audience} 看的，关于{topic}的干货帖子，情感共鸣点：{emotion_target}。
+2. 根据文档 llm.md，为前面写好的这篇帖子生成一个小红书帖子的封面图的提示词，封面要符合小红书爆款帖子的样子。小红书封面上的文字（3-10个字）是帖子的结论和精华。封面图片通常色彩鲜艳、明亮、对比度高。“手帐感”和“涂鸦感”十足，加圈画框：用不同颜色的画笔框出重点，像老师划重点一样。使用手绘箭头：指引视线，告诉你先看哪里，后看哪里。使用可爱的贴纸和Emoji：✨ Bling Bling的星星、❤️爱心、🔥火焰等，用来烘托氛围和情绪。使用手写字体：使用可爱、随性的手写字体，增加亲切感。
+3. 根据文档 generate_seed_dream_pic.md，为前面写好的这篇帖子生成一个首页的封面图。
+</new task to execute>

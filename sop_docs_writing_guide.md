@@ -196,7 +196,7 @@ def process_step(context: dict):
 - **Use Case**: Human interaction, input collection, approvals
 - **Dify Equivalent**: User input nodes, approval steps
 - **Parameters**: `message` (prompt for user, often referencing a section like `{parameters.message}`)
-- **Examples**: Collecting requirements, confirmation steps, selecting among alternatives (see `sop_docs/tools/user_communicate.md`)
+- **Examples**: Collecting requirements, confirmation steps, selecting among alternatives (see `sop_docs/tools/web_user_communicate.md`)
 - **Design Tip**: Only insert when genuine human judgment or missing data is required—avoid unnecessary interruptions.
 
 ## Examples from xiaohongshu Workflow

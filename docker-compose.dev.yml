@@ -1,0 +1,44 @@
+# Development overrides for Doc Flow Agent
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+
+services:
+  orchestrator:
+    environment:
+      NOTIFICATION_CHANNEL: "stdout"  # Can be 'stdout', 'slack', 'wechat'
+    volumes:
+      - ./:/app:delegated
+      - traces:/app/traces
+      - jobs:/app/jobs
+      - log:/app/log
+    command: uvicorn orchestrator_service.api:app --host 0.0.0.0 --port 8001 --reload
+
+  visualization:
+    environment:
+      NOTIFICATION_CHANNEL: "stdout"  # Can be 'stdout', 'slack', 'wechat'
+    volumes:
+      - ./:/app:delegated
+      - traces:/app/traces:ro
+      - log:/app/log
+    command: uvicorn visualization.server.viz_server:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    # Use live dev server instead of nginx static build
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    # Override command by running in build stage? Simpler: run node image separately.
+    image: node:20-alpine
+    working_dir: /app/visualization/frontend-react
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 5173"
+    volumes:
+      - ./visualization/frontend-react:/app/visualization/frontend-react:delegated
+    ports:
+      - "5173:5173"
+    environment:
+      # Frontend will call window.location.origin; during dev you may directly hit backends or add proxy config.
+      VITE_DEV_SERVER: "true"
+    depends_on:
+      orchestrator:
+        condition: service_started
+      visualization:
+        condition: service_started

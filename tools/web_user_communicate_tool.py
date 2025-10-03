@@ -32,8 +32,9 @@ from .llm_tool import LLMTool
 class WebUserCommunicateTool(BaseTool):
     """Web-based user communication tool for interactive message exchange"""
     
-    def __init__(self):
+    def __init__(self, llm_tool):
         super().__init__("WEB_USER_COMMUNICATE")
+        self.llm_tool = llm_tool
     
     async def execute(self, parameters: Dict[str, Any], sop_doc_body: Optional[str] = None) -> Dict[str, Any]:
         """Execute web user communicate tool with given parameters
@@ -170,7 +171,7 @@ Requirements:
        body: JSON.stringify({{
            session_id: '{session_id}',
            task_id: '{task_id}',
-           answer: 'Which data center do you prefer? User response text here'
+           answer: 'Which data center do you prefer? Answer: User response text here'
        }})
    }})
    ```
@@ -187,13 +188,12 @@ Generate ONLY the complete HTML content, no explanations or markdown formatting.
         tool_schema = self._create_html_generation_tool_schema()
 
         # Use LLM tool to generate the HTML with tool calls
-        llm_tool = LLMTool()
         llm_params = {
             "prompt": llm_prompt,
             "temperature": 0.0,
             "tools": [tool_schema]
         }
-        llm_result = await llm_tool.execute(llm_params)
+        llm_result = await self.llm_tool.execute(llm_params)
         
         # Extract HTML from tool call response (no manual cleanup needed)
         html_content = self._extract_html_from_response(llm_result)
@@ -260,4 +260,4 @@ Generate ONLY the complete HTML content, no explanations or markdown formatting.
         return html_content
 
     def get_result_validation_hint(self) -> str:
-        return "The result is a JSON object with keys: instruction (string), form_url (string), answer (string, if received), status ('ok' or 'timeout'). If status is 'ok', answer contains the user's response."
+        return "As long as we get some meaningful answer, consider this task as success."

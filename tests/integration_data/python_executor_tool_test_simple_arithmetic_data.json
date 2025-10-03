@@ -1,12 +1,12 @@
 {
   "test_name": "python_executor_tool_test_simple_arithmetic",
   "mode": "mock_then_real",
-  "timestamp": "2025-10-02T11:07:10.453819",
+  "timestamp": "2025-10-03T21:06:15.554700",
   "tool_calls": [
     {
       "tool_id": "LLM",
       "parameters": {
-        "prompt": "\nYou are a Python code generation assistant.\nYour task is to write a single Python function named `process_step` that takes one argument: `context: dict`.\nThis function will be executed to perform following specific task. Import necessary library if you used any.\nThe context object will contain all the necessary data. The json serialized context object has been attached here for you to understand the input data structure.\nThe function should return a JSON-serializable value.\n\n<available library>\naiohappyeyeballs\naiohttp\naiosignal\nannotated-types\nanyio\nattrs\nazure-core\nazure-identity\nazure-identity-broker\nazure-kusto-data\ncertifi\ncffi\ncharset-normalizer\nclick\ncryptography\ndistro\nexecnet\nfastapi\nfrozenlist\ngenson\ngit-filter-repo\nh11\nhttpcore\nhttptools\nhttpx\nidna\nijson\niniconfig\njiter\njson_repair\njsonpath-ng\nmsal\nmsal-extensions\nmultidict\nopenai\npackaging\npip\npluggy\nply\npropcache\npycparser\npydantic\npydantic_core\nPygments\nPyJWT\npymsalruntime\npytest\npytest-asyncio\npytest-xdist\npytz\nPyYAML\nrequests\nsix\nsniffio\nstarlette\ntqdm\ntyping-inspection\ntyping_extensions\nurllib3\nuvicorn\nuvloop\nwatchdog\nwatchfiles\nwebsockets\nxmltodict\nyarl\n</available library>\n\n<Task Description>\nCalculate the sum of numbers a and b from context, and return the result as a dictionary with key 'sum'\n</Task Description>\n\n<Json serialized context object>\n{\n  \"a\": 15,\n  \"b\": 25\n}\n</Json serialized context object>\n",
+        "prompt": "\nYou are a Python code generation assistant.\nYour task is to write a single Python function named `process_step` that takes one argument: `context: dict`.\nThis function will be executed to perform following specific task. Import necessary library if you used any.\nThe context object will contain all the necessary data. The json serialized context object has been attached here for you to understand the input data structure.\nThe function should return a JSON-serializable value.\n\n<available library>\naiohappyeyeballs\naiohttp\naiosignal\nannotated-types\nanyio\nattrs\nazure-core\nazure-identity\nazure-identity-broker\nazure-kusto-data\ncertifi\ncffi\ncharset-normalizer\nclick\ncryptography\ndistro\nexecnet\nfastapi\nfrozenlist\ngenson\ngit-filter-repo\nh11\nhttpcore\nhttptools\nhttpx\nidna\nijson\niniconfig\njiter\njson_repair\njsonpath-ng\nmsal\nmsal-extensions\nmultidict\nopenai\npackaging\npip\npluggy\nply\npropcache\npycparser\npydantic\npydantic_core\nPygments\nPyJWT\npymsalruntime\npytest\npytest-asyncio\npytest-xdist\npytz\nPyYAML\nrequests\nsix\nsniffio\nstarlette\ntqdm\ntyping-inspection\ntyping_extensions\nurllib3\nuvicorn\nuvloop\nwatchdog\nwatchfiles\nwebsockets\nxmltodict\nyarl\n</available library>\n\n<Task Description>\nCalculate the sum of numbers a and b from context, and return the result as a dictionary with key 'sum'\n</Task Description>\n\n<context object type><class 'dict'></context object type>\n<Json serialized context object>\n{\n  \"a\": 15,\n  \"b\": 25\n}\n</Json serialized context object>\n",
         "temperature": 0.0,
         "tools": [
           {
@@ -35,17 +35,17 @@
         "content": "",
         "tool_calls": [
           {
-            "id": "call_yynlwxDjlKXuqR379JIKvVPm",
+            "id": "call_zUay8AgrgVIinpAUvhvIx6gV",
             "name": "generate_python_code",
             "arguments": {
-              "python_code": "def process_step(context: dict):\n    \"\"\"\n    Calculate the sum of numbers a and b from context, and return the result as\n    a dictionary with key 'sum'.\n\n    Args:\n        context (dict): A dictionary containing keys 'a' and 'b'. Values may be\n                        numbers or numeric strings.\n\n    Returns:\n        dict: {'sum': <a + b>}\n    \"\"\"\n    if not isinstance(context, dict):\n        raise TypeError(\"context must be a dict\")\n\n    def _to_number(x):\n        if isinstance(x, (int, float)):\n            return x\n        if isinstance(x, str):\n            s = x.strip()\n            # Try int first for whole numbers, then float\n            try:\n                return int(s)\n            except ValueError:\n                try:\n                    return float(s)\n                except ValueError as e:\n                    raise TypeError(f\"Value '{x}' is not a valid number\") from e\n        raise TypeError(f\"Unsupported type for numeric conversion: {type(x).__name__}\")\n\n    if 'a' not in context or 'b' not in context:\n        raise KeyError(\"context must contain keys 'a' and 'b'\")\n\n    a = _to_number(context['a'])\n    b = _to_number(context['b'])\n\n    return {'sum': a + b}\n"
+              "python_code": "def process_step(context: dict):\n    \"\"\"Calculate the sum of numbers a and b from context and return it.\n\n    Args:\n        context (dict): A dictionary expected to contain numeric values under keys 'a' and 'b'.\n\n    Returns:\n        dict: A dictionary with a single key 'sum' whose value is the sum of a and b.\n    \"\"\"\n    # Extract values with basic validation\n    try:\n        a = context.get('a')\n        b = context.get('b')\n        if a is None or b is None:\n            raise ValueError(\"Missing 'a' or 'b' in context\")\n        # Attempt numeric conversion (in case values are strings)\n        a_num = float(a)\n        b_num = float(b)\n        result = a_num + b_num\n        # If both original inputs were ints and sum is integral, cast back to int\n        if all(isinstance(x, int) or (isinstance(x, str) and x.isdigit()) for x in (a, b)) and result.is_integer():\n            result = int(result)\n        return {'sum': result}\n    except Exception as e:\n        # Return error in a structured way\n        return {'error': str(e)}\n"
             }
           }
         ]
       },
-      "timestamp": "2025-10-02T11:07:10.411112",
-      "execution_time_ms": 0.0013620010577142239,
-      "parameters_hash": "2f7b46d95b413294"
+      "timestamp": "2025-10-03T21:06:15.503447",
+      "execution_time_ms": 0.0015269906725734472,
+      "parameters_hash": "240fc51eaa19b83c"
     }
   ],
   "metadata": {
@@ -54,5 +54,5 @@
       "LLM"
     ]
   },
-  "saved_at": "2025-10-02T11:07:10.453941"
+  "saved_at": "2025-10-03T21:06:15.554823"
 }

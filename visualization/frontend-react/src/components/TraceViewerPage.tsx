@@ -44,6 +44,15 @@ export const TraceViewerPage: React.FC = () => {
     }
   });
 
+  // Sync local selected trace id (initialized from URL) into context so hooks relying
+  // on context (e.g. realtime subscription / invalidation) have the correct value
+  // even before the user manually re-selects a trace.
+  useEffect(() => {
+    if (selectedTraceId !== state.selectedTraceId) {
+      setCtxSelectedTraceId(selectedTraceId);
+    }
+  }, [selectedTraceId, state.selectedTraceId, setCtxSelectedTraceId]);
+
   // Update URL when trace selection changes
   useEffect(() => {
     if (selectedTraceId) {

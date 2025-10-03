@@ -36,6 +36,7 @@ from sop_document import SOPDocument, SOPDocumentLoader, SOPDocumentParser
 from tools import BaseTool, LLMTool, CLITool, TemplateTool, UserCommunicateTool
 from tools.python_executor_tool import PythonExecutorTool
 from tools.web_user_communicate_tool import WebUserCommunicateTool
+from tools.web_result_delivery_tool import WebResultDeliveryTool
 from tools.json_path_generator import SmartJsonPathGenerator
 from jsonpath_ng.ext import parse
 from utils import set_json_path_value, get_json_path_value, extract_key_from_json_path
@@ -169,17 +170,20 @@ class DocExecuteEngine:
                 "CLI": TracingToolWrapper(CLITool(llm_tool=llm_tool), self.tracer),
                 "TEMPLATE": TracingToolWrapper(TemplateTool(), self.tracer),
                 "USER_COMMUNICATE": TracingToolWrapper(UserCommunicateTool(), self.tracer),
-                "WEB_USER_COMMUNICATE": TracingToolWrapper(WebUserCommunicateTool(), self.tracer),
+                "WEB_USER_COMMUNICATE": TracingToolWrapper(WebUserCommunicateTool(llm_tool=llm_tool), self.tracer),
+                "WEB_RESULT_DELIVERY": TracingToolWrapper(WebResultDeliveryTool(llm_tool=llm_tool), self.tracer),
                 "PYTHON_EXECUTOR": TracingToolWrapper(PythonExecutorTool(llm_tool=llm_tool), self.tracer)
             }
         else:
+            llm_tool = LLMTool()
             self.tools = {
-                "LLM": LLMTool(),
+                "LLM": llm_tool,
                 "CLI": CLITool(),
                 "TEMPLATE": TemplateTool(),
                 "USER_COMMUNICATE": UserCommunicateTool(),
-                "WEB_USER_COMMUNICATE": WebUserCommunicateTool(),
-                "PYTHON_EXECUTOR": PythonExecutorTool(llm_tool=LLMTool())
+                "WEB_USER_COMMUNICATE": WebUserCommunicateTool(llm_tool=llm_tool),
+                "WEB_RESULT_DELIVERY": WebResultDeliveryTool(llm_tool=llm_tool),
+                "PYTHON_EXECUTOR": PythonExecutorTool(llm_tool=llm_tool)
             }
         
         # Initialize SOPDocument components
@@ -431,7 +435,7 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
         for field, field_description in sop_doc.input_description.items():
             if not input_json_path.get(field):
                 # Special case: if we have a doc_selection_message and this is the message_to_user field, use it directly
-                if field == "message_to_user" and doc_selection_message and sop_doc.doc_id == "tools/user_communicate":
+                if field == "message_to_user" and doc_selection_message and sop_doc.doc_id == "tools/web_user_communicate":
                     # Store the message directly in context and create a path to it
                     temp_message_key = f"_temp_input_{field}"
                     self.context[temp_message_key] = doc_selection_message
@@ -588,7 +592,7 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
                 raise ValueError(f"Unknown tool: {tool_id}")
             
             # Auto-inject session_id and task_id for WEB_USER_COMMUNICATE tool
-            if tool_id == 'WEB_USER_COMMUNICATE':
+            if tool_id == 'WEB_USER_COMMUNICATE' or tool_id == "WEB_RESULT_DELIVERY":
                 if 'session_id' not in tool_params:
                     tool_params['session_id'] = self.tracer.session.session_id if self.tracer.session else 'default_session'
                     print(f"Auto-injected session_id: {tool_params['session_id']}")
@@ -1191,7 +1195,7 @@ You are a helpful agent which can perform task like run comamnd / code / search 
 Right now, you need to evaluate whether your work has satisfied the root task requirements. 
 
 1. First, you need to think about what user wants to achieve, what is expected process and output, what we have performed. Only consider requirement not met if some requirement totally missed. Eg. We need to run a command and command not exists. Or if we need to write a paragraph and no text outputed.
-2. If requirements are NOT met, list specific failing aspects and create new tasks to address them, so that user's end goal can be achieved.
+2. If requirements are NOT met, list specific failing aspects and create new tasks to address them, so that user's end goal can be achieved. If there are multiple failing aspect and only some of them are root cause, you should only generate new task to address root cause. You should NOT generate new task to address non-root-cause issue or issue you are not confirmed.
 3. If requirements ARE met, provide a summary and which path in the aggregated_outputs should be used to consider as the output, put them in the useful_output_path.
 
 Use the evaluate_and_summarize_subtree function to provide your evaluation.

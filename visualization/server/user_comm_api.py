@@ -234,3 +234,50 @@ async def serve_user_comm_form(session_id: str, task_id: str) -> HTMLResponse:
         content = f.read()
     
     return HTMLResponse(content=content)
+
+
+# Result Delivery Routes (reuse same directory structure)
+async def serve_result_delivery_page(session_id: str, task_id: str) -> HTMLResponse:
+    """
+    Serve the result delivery page.
+    This function is called from viz_server.py routing.
+    """
+    session_dir = get_session_task_dir(session_id, task_id)
+    index_file = session_dir / "index.html"
+    
+    if not index_file.exists():
+        raise HTTPException(status_code=404, detail="Result page not found")
+    
+    with open(index_file, 'r', encoding='utf-8') as f:
+        content = f.read()
+    
+    return HTMLResponse(content=content)
+
+
+async def serve_result_delivery_file(session_id: str, task_id: str, filename: str):
+    """
+    Serve files from result delivery directory.
+    This function is called from viz_server.py routing.
+    """
+    from fastapi.responses import FileResponse
+    
+    # Sanitize filename to prevent path traversal
+    safe_filename = sanitize_path_component(filename)
+    
+    session_dir = get_session_task_dir(session_id, task_id)
+    file_path = session_dir / "files" / safe_filename
+    
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    # Verify the file is within the expected directory (extra security check)
+    try:
+        file_path.resolve().relative_to(session_dir.resolve())
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    return FileResponse(
+        path=str(file_path),
+        filename=safe_filename,
+        media_type='application/octet-stream'
+    )

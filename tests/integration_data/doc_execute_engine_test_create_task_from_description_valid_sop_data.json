@@ -1,12 +1,12 @@
 {
   "test_name": "doc_execute_engine_test_create_task_from_description_valid_sop",
-  "mode": "real",
-  "timestamp": "2025-10-02T11:20:57.721399",
+  "mode": "mock_then_real",
+  "timestamp": "2025-10-03T21:04:35.658804",
   "tool_calls": [
     {
       "tool_id": "LLM",
       "parameters": {
-        "prompt": "Analyze this task description and determine if it can be completed without more information, then determine if it can be completed using one of the available tools, or if it needs to be broken down into multiple steps. Only use the tool if the tool is good at it, eg. LLM is good at non exact match, python is good at exact match. \n\nYou can complete almost anything using python + llm tool. Any task can be completed by using code to automate and use llm to think.\n\nAvailable tools:\n- tools/web_user_communicate: Use to collect user input through dynamically generated web forms. The LLM will analyze the instruction and create appropriate form fields (text, radio buttons, checkboxes, etc.) automatically.\n  Use cases: Use to collect user input through dynamically generated web forms. The LLM will analyze the instruction and create appropriate form fields (text, radio buttons, checkboxes, etc.) automatically.\n\n- tools/user_communicate: Use to send message to user and collect response. The message needs to be prepared before this step. This doc is not used to generate messasge.\n  Use cases: Getting user input, asking questions, manual tasks requiring human intervention, use it very carefully, only ask user question when you are sure you need the user's input.\n\n- tools/bash: Execute any bash command or script in a sandbox environment. If user not mention which environment specifically, assume user meant for this environment.\n  Use cases: File operations, system commands, running scripts, installing packages\n\n- tools/python: Generate and execute python code. It has access to data stored in context dictionary, usually reference by json path.\n  Use cases: Data processing, calculations, REST API calls, complex logic, file manipulation\n\n- tools/llm: General Large Language Model Text Generation\n  Use cases: Text analysis, content generation, writing, planning, reasoning tasks\n\n\nGuidelines:\n- If the task already contain enough information to complete or we can provide good guess for missing information, then try to see if there is suitable tool to complete it in one go. Otherwise, the information can only be obtain from user, select 'tools/user_communicate' to ask for more information.\n- If the task can be completed in one step using a single tool, set can_complete_with_tool to true and select the appropriate tool\n- If the task If the task can be completed but it is complex and needs to be broken down into multiple steps, set can_complete_with_tool to false and select 'general/plan' \n- Consider the complexity, scope, and whether all necessary information is available.\n- If you select 'tools/user_communicate', you MUST provide a message_to_user that clearly explains what information is missing and asks the user to provide it.\n- Consider the information available from previously executed tasks when determining if enough information is available.\n\n<task to analyze>\nRun ls command to list home directory contents using: ls -la ~/\n</task to analyze>\n\nPlease use the select_tool_for_task function to provide your analysis.\n",
+        "prompt": "Analyze this task description and determine if it can be completed without more information, then determine if it can be completed using one of the available tools, or if it needs to be broken down into multiple steps. Only use the tool if the tool is good at it, eg. LLM is good at non exact match, python is good at exact match. \n\nYou can complete almost anything using python + llm tool. Any task can be completed by using code to automate and use llm to think.\n\nAvailable tools:\n- tools/web_result_delivery: Use to deliver task results to users through dynamically generated web pages. The LLM will create an appropriate result page based on the content type (text, JSON, files, images). Unlike WEB_USER_COMMUNICATE, this tool does not wait for user response and returns immediately.\n  Use cases: Use to deliver task results to users through dynamically generated web pages. The LLM will create an appropriate result page based on the content type (text, JSON, files, images). Unlike WEB_USER_COMMUNICATE, this tool does not wait for user response and returns immediately.\n\n- tools/web_user_communicate: Use to collect user input through dynamically generated web forms. The LLM will analyze the instruction and create appropriate form fields (text, radio buttons, checkboxes, etc.) automatically.\n  Use cases: Getting user input, asking questions, manual tasks requiring human intervention, use it very carefully, only ask user question when you are sure you need the user's input.\n\n- tools/user_communicate: Use to send message to user and collect response. The message needs to be prepared before this step. This doc is not used to generate messasge.\n  Use cases: Use to send message to user and collect response. The message needs to be prepared before this step. This doc is not used to generate messasge.\n\n- tools/bash: Execute any bash command or script in a sandbox environment. If user not mention which environment specifically, assume user meant for this environment.\n  Use cases: File operations, system commands, running scripts, installing packages\n\n- tools/python: Generate and execute python code. It has access to data stored in context dictionary, usually reference by json path.\n  Use cases: Data processing, calculations, REST API calls, complex logic, file manipulation\n\n- tools/llm: General Large Language Model Text Generation\n  Use cases: Text analysis, content generation, writing, planning, reasoning tasks\n\n\nGuidelines:\n- If the task already contain enough information to complete or we can provide good guess for missing information, then try to see if there is suitable tool to complete it in one go. Otherwise, the information can only be obtain from user, select 'tools/web_user_communicate' to ask for more information.\n- If the task can be completed in one step using a single tool, set can_complete_with_tool to true and select the appropriate tool\n- If the task If the task can be completed but it is complex and needs to be broken down into multiple steps, set can_complete_with_tool to false and select 'general/plan' \n- Consider the complexity, scope, and whether all necessary information is available.\n- If you select 'tools/web_user_communicate', you MUST provide a message_to_user that clearly explains what information is missing and asks the user to provide it.\n- Consider the information available from previously executed tasks when determining if enough information is available.\n\n<task to analyze>\nRun ls command to list home directory contents using: ls -la ~/\n</task to analyze>\n\nPlease use the select_tool_for_task function to provide your analysis.\n",
         "tools": [
           {
             "type": "function",
@@ -26,8 +26,9 @@
                   },
                   "selected_tool_doc": {
                     "type": "string",
-                    "description": "The doc_id of the selected tool or 'general/plan' if needs breakdown. Valid options: tools/web_user_communicate, tools/user_communicate, tools/bash, tools/python, tools/llm, general/plan",
+                    "description": "The doc_id of the selected tool or 'general/plan' if needs breakdown. Valid options: tools/web_result_delivery, tools/web_user_communicate, tools/user_communicate, tools/bash, tools/python, tools/llm, general/plan",
                     "enum": [
+                      "tools/web_result_delivery",
                       "tools/web_user_communicate",
                       "tools/user_communicate",
                       "tools/bash",
@@ -38,7 +39,7 @@
                   },
                   "message_to_user": {
                     "type": "string",
-                    "description": "If selected_tool_doc is 'tools/user_communicate', provide a clear message asking the user for the missing information needed to complete the task"
+                    "description": "If selected_tool_doc is 'tools/web_user_communicate', provide a clear message asking the user for the missing information needed to complete the task"
                   }
                 },
                 "required": [
@@ -56,19 +57,19 @@
         "content": "",
         "tool_calls": [
           {
-            "id": "call_pktWzGDXiedgJyHqbxipaDAS",
+            "id": "call_aWdurFgH5NcJKWlcPrAvAPzl",
             "name": "select_tool_for_task",
             "arguments": {
               "can_complete_with_tool": true,
-              "reasoning": "The task is a straightforward shell command execution (listing home directory). This can be directly completed with the bash tool in a single step.",
+              "reasoning": "The task is to execute a simple shell command (ls -la ~/) to list the home directory contents. All required information is provided and this is best done directly in a shell. The bash tool is appropriate.",
               "selected_tool_doc": "tools/bash"
             }
           }
         ]
       },
-      "timestamp": "2025-10-02T11:20:57.717701",
-      "execution_time_ms": 4396.459208990564,
-      "parameters_hash": "a1f906ffdf7e036b"
+      "timestamp": "2025-10-03T21:04:35.655782",
+      "execution_time_ms": 6224.791660002666,
+      "parameters_hash": "838e85fbe0f6c94b"
     }
   ],
   "metadata": {
@@ -77,5 +78,5 @@
       "LLM"
     ]
   },
-  "saved_at": "2025-10-02T11:20:57.721492"
+  "saved_at": "2025-10-03T21:04:35.658937"
 }

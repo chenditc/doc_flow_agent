@@ -277,7 +277,7 @@ class SOPDocumentParser:
                     "CLI": "File operations, system commands, running scripts, installing packages",
                     "LLM": "Text analysis, content generation, writing, planning, reasoning tasks", 
                     "PYTHON_EXECUTOR": "Data processing, calculations, REST API calls, complex logic, file manipulation",
-                    "USER_COMMUNICATE": "Getting user input, asking questions, manual tasks requiring human intervention, use it very carefully, only ask user question when you are sure you need the user's input."
+                    "WEB_USER_COMMUNICATE": "Getting user input, asking questions, manual tasks requiring human intervention, use it very carefully, only ask user question when you are sure you need the user's input."
                 }
                 
                 tool_id = sop_doc.tool.get('tool_id', '')
@@ -341,7 +341,7 @@ class SOPDocumentParser:
                         },
                         "message_to_user": {
                             "type": "string",
-                            "description": "If selected_tool_doc is 'tools/user_communicate', provide a clear message asking the user for the missing information needed to complete the task"
+                            "description": "If selected_tool_doc is 'tools/web_user_communicate', provide a clear message asking the user for the missing information needed to complete the task"
                         }
                     },
                     "required": ["can_complete_with_tool", "selected_tool_doc", "reasoning"]
@@ -372,11 +372,11 @@ Available tools:
         
         prompt += f"""
 Guidelines:
-- If the task already contain enough information to complete or we can provide good guess for missing information, then try to see if there is suitable tool to complete it in one go. Otherwise, the information can only be obtain from user, select 'tools/user_communicate' to ask for more information.
+- If the task already contain enough information to complete or we can provide good guess for missing information, then try to see if there is suitable tool to complete it in one go. Otherwise, the information can only be obtain from user, select 'tools/web_user_communicate' to ask for more information.
 - If the task can be completed in one step using a single tool, set can_complete_with_tool to true and select the appropriate tool
 - If the task If the task can be completed but it is complex and needs to be broken down into multiple steps, set can_complete_with_tool to false and select 'general/plan' 
 - Consider the complexity, scope, and whether all necessary information is available.
-- If you select 'tools/user_communicate', you MUST provide a message_to_user that clearly explains what information is missing and asks the user to provide it.
+- If you select 'tools/web_user_communicate', you MUST provide a message_to_user that clearly explains what information is missing and asks the user to provide it.
 - Consider the information available from previously executed tasks when determining if enough information is available.
 {previous_tasks_section}
 <task to analyze>

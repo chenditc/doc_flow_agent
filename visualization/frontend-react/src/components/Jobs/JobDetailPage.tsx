@@ -30,7 +30,8 @@ import {
   RefreshCw as RefreshIcon,
   X as CancelIcon,
   ExternalLink as ExternalLinkIcon,
-  Play as RerunIcon
+  Play as RerunIcon,
+  Download as DownloadIcon
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -66,6 +67,7 @@ export const JobDetailPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState(0);
   const [logTailLines, setLogTailLines] = useState(500);
   const [showRerunForm, setShowRerunForm] = useState(false);
+  const [showSuccessAlert, setShowSuccessAlert] = useState(false);
   
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -155,6 +157,19 @@ export const JobDetailPage: React.FC = () => {
     navigate(`/traces?trace=${encodeURIComponent(normalized)}`);
   };
 
+  const handleDownloadLogs = () => {
+    const logs = (logsData as any)?.logs || 'No logs available';
+    const blob = new Blob([logs], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `job_${jobId}_logs.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   if (isLoading) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
@@ -186,6 +201,17 @@ export const JobDetailPage: React.FC = () => {
 
   return (
     <Box sx={{ p: 3 }}>
+      {/* Success Alert */}
+      {showSuccessAlert && (
+        <Alert 
+          severity="success" 
+          onClose={() => setShowSuccessAlert(false)}
+          sx={{ mb: 3 }}
+        >
+          New job submitted successfully! You are now viewing the new job.
+        </Alert>
+      )}
+
       {/* Header */}
       <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
         <IconButton onClick={() => navigate('/jobs')} sx={{ mr: 2 }}>
@@ -350,6 +376,15 @@ export const JobDetailPage: React.FC = () => {
               disabled={logsLoading}
             >
               Refresh
+            </Button>
+            
+            <Button
+              variant="outlined"
+              startIcon={<DownloadIcon />}
+              onClick={handleDownloadLogs}
+              disabled={logsLoading || !(logsData as any)?.logs}
+            >
+              Download
             </Button>
           </Box>
           
@@ -552,7 +587,13 @@ export const JobDetailPage: React.FC = () => {
         <DialogContent>
           <JobSubmitForm
             onCancel={() => setShowRerunForm(false)}
-            onSuccess={() => setShowRerunForm(false)}
+            onSuccess={(newJobId) => {
+              setShowRerunForm(false);
+              setShowSuccessAlert(true);
+              navigate(`/jobs/${newJobId}`);
+              // Auto-hide alert after 5 seconds
+              setTimeout(() => setShowSuccessAlert(false), 5000);
+            }}
             initialTaskDescription={job?.task_description || ''}
             initialMaxTasks={job?.max_tasks || 50}
           />

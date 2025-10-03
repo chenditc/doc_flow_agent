@@ -70,6 +70,7 @@ The function should return a JSON-serializable value.
 {task_description}
 </Task Description>
 {sop_guidance}
+<context object type>{type(related_context_content)}</context object type>
 <Json serialized context object>
 {json.dumps(related_context_content, indent=2, ensure_ascii=False)}
 </Json serialized context object>

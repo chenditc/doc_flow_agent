@@ -30,7 +30,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 # Import the LLM tuning API router
 from visualization.server.llm_tuning_api import router as llm_tuning_router
 # Import the user communication API router
-from visualization.server.user_comm_api import router as user_comm_router, serve_user_comm_form
+from visualization.server.user_comm_api import (
+    router as user_comm_router, 
+    serve_user_comm_form,
+    serve_result_delivery_page,
+    serve_result_delivery_file
+)
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -460,6 +465,18 @@ if REACT_BUILD_DIR.exists() and (REACT_BUILD_DIR / "index.html").exists():
     async def serve_user_comm(session_id: str, task_id: str):
         """Serve user communication form or confirmation page."""
         return await serve_user_comm_form(session_id, task_id)
+    
+    # Serve result delivery pages
+    @app.get("/result-delivery/{session_id}/{task_id}/")
+    async def serve_result_page(session_id: str, task_id: str):
+        """Serve result delivery page."""
+        return await serve_result_delivery_page(session_id, task_id)
+    
+    # Serve result delivery files
+    @app.get("/result-delivery/{session_id}/{task_id}/files/{filename}")
+    async def serve_result_file(session_id: str, task_id: str, filename: str):
+        """Serve files from result delivery directory."""
+        return await serve_result_delivery_file(session_id, task_id, filename)
     
     # Serve the LLM tuning HTML page
     @app.get("/llm-tuning")

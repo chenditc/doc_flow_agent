@@ -24,8 +24,9 @@ class TestWebUserCommunicateTool:
     
     @pytest.fixture
     def tool(self):
-        """Create a tool instance for testing"""
-        return WebUserCommunicateTool()
+        """Create a tool instance for testing with mocked LLM"""
+        mock_llm = AsyncMock()
+        return WebUserCommunicateTool(llm_tool=mock_llm)
     
     @pytest.fixture
     def temp_project_dir(self):
@@ -40,27 +41,24 @@ class TestWebUserCommunicateTool:
         with tempfile.TemporaryDirectory() as tmpdir:
             temp_project = Path(tmpdir)
             
-            # Mock LLM tool to raise an exception
-            with patch('tools.web_user_communicate_tool.LLMTool') as mock_llm_class:
-                mock_llm_instance = AsyncMock()
-                mock_llm_instance.execute.side_effect = Exception("LLM failed")
-                mock_llm_class.return_value = mock_llm_instance
+            # Configure the tool's llm_tool mock to raise an exception
+            tool.llm_tool.execute.side_effect = Exception("LLM failed")
+            
+            # Simpler approach: patch the __file__ variable in the module
+            with patch('tools.web_user_communicate_tool.__file__', str(temp_project / 'tools' / 'web_user_communicate_tool.py')):
+                parameters = {
+                    "instruction": "Please provide feedback",
+                    "session_id": "test_session",
+                    "task_id": "test_task",
+                    "timeout_seconds": 0.1,
+                    "poll_interval": 0.05
+                }
                 
-                # Simpler approach: patch the __file__ variable in the module
-                with patch('tools.web_user_communicate_tool.__file__', str(temp_project / 'tools' / 'web_user_communicate_tool.py')):
-                    parameters = {
-                        "instruction": "Please provide feedback", 
-                        "session_id": "test_session",
-                        "task_id": "test_task",
-                        "timeout_seconds": 0.1,
-                        "poll_interval": 0.05
-                    }
-                    
-                    # Mock environment variable
-                    with patch.dict(os.environ, {'VISUALIZATION_SERVER_URL': 'http://test:8000'}):
-                        # Expect the exception to propagate (no fallback)
-                        with pytest.raises(Exception, match="LLM failed"):
-                            await tool.execute(parameters)
+                # Mock environment variable
+                with patch.dict(os.environ, {'VISUALIZATION_SERVER_URL': 'http://test:8000'}):
+                    # Expect the exception to propagate (no fallback)
+                    with pytest.raises(Exception, match="LLM failed"):
+                        await tool.execute(parameters)
     
     @pytest.mark.asyncio
     async def test_llm_form_generation_success(self, tool):
@@ -97,34 +95,32 @@ class TestWebUserCommunicateTool:
             }]
         }
         
-        with patch('tools.web_user_communicate_tool.LLMTool') as mock_llm_class:
-            mock_llm_instance = AsyncMock()
-            mock_llm_instance.execute.return_value = mock_llm_result
-            mock_llm_class.return_value = mock_llm_instance
+        # Configure the tool's llm_tool mock
+        tool.llm_tool.execute.return_value = mock_llm_result
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            temp_project = Path(tmpdir)
             
-            with tempfile.TemporaryDirectory() as tmpdir:
-                temp_project = Path(tmpdir)
+            # Patch the __file__ variable to point to the temp directory structure
+            with patch('tools.web_user_communicate_tool.__file__', str(temp_project / 'tools' / 'web_user_communicate_tool.py')):
+                parameters = {
+                    "instruction": "Rate our service from 1 to 5 stars",
+                    "session_id": "llm_test",
+                    "task_id": "rating",
+                    "timeout_seconds": 0.1,
+                    "poll_interval": 0.05
+                }
                 
-                # Patch the __file__ variable to point to the temp directory structure
-                with patch('tools.web_user_communicate_tool.__file__', str(temp_project / 'tools' / 'web_user_communicate_tool.py')):
-                    parameters = {
-                        "instruction": "Rate our service from 1 to 5 stars",
-                        "session_id": "llm_test",
-                        "task_id": "rating",
-                        "timeout_seconds": 0.1,
-                        "poll_interval": 0.05
-                    }
-                    
-                    with patch.dict(os.environ, {'VISUALIZATION_SERVER_URL': 'http://localhost:8000'}):
-                        result = await tool.execute(parameters)
-                    
-                    # Verify LLM was called
-                    mock_llm_instance.execute.assert_called_once()
-                    
-                    # Check that the result contains expected data
-                    assert result["status"] == "timeout"  # Expected since no response file
-                    assert "llm_test" in result["form_url"]
-                    assert "rating" in result["form_url"]
+                with patch.dict(os.environ, {'VISUALIZATION_SERVER_URL': 'http://localhost:8000'}):
+                    result = await tool.execute(parameters)
+                
+                # Verify LLM was called
+                tool.llm_tool.execute.assert_called_once()
+                
+                # Check that the result contains expected data
+                assert result["status"] == "timeout"  # Expected since no response file
+                assert "llm_test" in result["form_url"]
+                assert "rating" in result["form_url"]
     
     @pytest.mark.asyncio
     async def test_existing_response_handling(self, tool):
@@ -271,7 +267,8 @@ if __name__ == "__main__":
     print("Running WebUserCommunicateTool tests...")
     
     runner = SimpleTestRunner()
-    tool = WebUserCommunicateTool()
+    mock_llm = AsyncMock()
+    tool = WebUserCommunicateTool(llm_tool=mock_llm)
     
     # Run basic tests that don't require complex mocking
     test_cases = []
