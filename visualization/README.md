@@ -12,7 +12,10 @@ A comprehensive web-based visualization system for monitoring and analyzing doc 
 
 ## Core Features
 
-- **Job Orchestration (New)**: Submit, monitor, cancel, and inspect execution jobs with linked trace files
+- **Job Orchestration**: Submit, monitor, cancel, and inspect execution jobs with linked trace files
+- **SOP Document Management**: View, edit, search, and manage Standard Operating Procedure documents
+- **Trace Visualization**: Real-time trace monitoring with hierarchical task display
+- **LLM Tool Tuning**: Interactive LLM testing and debugging interface
 
 ## Component Architecture
 
@@ -65,7 +68,39 @@ The visualization site now includes a Jobs section accessible via the top naviga
 	- `GET /jobs/{job_id}/logs?tail=N`
 	- `GET /jobs/{job_id}/context`
 
-**Testing Notes**
+### SOP Document Management Feature
+
+A comprehensive web-based UI for managing Standard Operating Procedure (SOP) documents. Access via the **SOP Docs** tab in the navigation.
+
+**Key Features**
+- **Directory Tree**: Hierarchical view with collapsible folders and search filtering
+- **Document Search**: Fast search using ripgrep with context previews
+- **Structured Editor**: Form-based YAML metadata editing with validation
+- **Markdown Editor**: Body editing with preview and section management
+- **Document Operations**: Create, copy, update, delete documents with atomic writes
+- **URL Navigation**: Deep linking to documents (e.g., `/sop-docs/tools/bash`)
+
+**API Endpoints** (`/api/sop-docs`)
+- `GET /tree` – Directory structure
+- `GET /doc/{path}` – Document details
+- `GET /search?q={query}` – Search documents
+- `POST /validate` – Validate without saving
+- `POST /create` – Create new document
+- `PUT /doc/{path}` – Update document
+- `POST /copy` – Copy document
+- `DELETE /doc/{path}` – Delete document
+
+**Frontend Components** (in `src/components/SOPDocs/`)
+- `SopDocsPage.tsx` – Main page layout
+- `SopDocTree.tsx` – Directory tree
+- `SearchBar.tsx` – Search with results
+- `SopDocEditor.tsx` – Document editor
+- `MetadataForm.tsx` – YAML metadata form
+- `MarkdownEditor.tsx` – Markdown body editor
+
+**Documentation**: See [SOP_DOCS_MANAGEMENT.md](./SOP_DOCS_MANAGEMENT.md) for detailed usage guide
+
+### Testing Notes
 - Default `npm test` now performs a one-shot run (`vitest --run`) and exits (CI-friendly)
 - Use `npm run test:watch` for interactive watch mode
 

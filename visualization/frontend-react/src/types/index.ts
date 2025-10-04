@@ -6,3 +6,4 @@ export * from './api';
 export * from './trace';
 export * from './task';
 export * from './jobs';
+export * from './sopDocs';

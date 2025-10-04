@@ -5,6 +5,7 @@ import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { Navigation } from './components/Navigation';
 import { TraceViewerPage } from './components/TraceViewerPage';
 import { JobsListPage, JobDetailPage } from './components/Jobs';
+import { SopDocsPage } from './components/SOPDocs/SopDocsPage';
 import { useAnnouncement } from './utils/accessibility';
 
 // Create a client
@@ -37,6 +38,7 @@ function AppContent() {
             <Route path="/jobs" element={<JobsListPage />} />
             <Route path="/jobs/:jobId" element={<JobDetailPage />} />
             <Route path="/traces" element={<TraceViewerPage />} />
+            <Route path="/sop-docs/*" element={<SopDocsPage />} />
           </Routes>
         </main>
       </div>

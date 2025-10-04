@@ -15,7 +15,8 @@ import {
 } from '@mui/material';
 import { 
   Activity as TimelineIcon,
-  Briefcase as JobsIcon
+  Briefcase as JobsIcon,
+  FileText as DocsIcon
 } from 'lucide-react';
 
 export const Navigation: React.FC = () => {
@@ -23,6 +24,8 @@ export const Navigation: React.FC = () => {
   // Treat root path '/' the same as '/jobs' so the highlighted tab matches
   // the default route content rendered at '/'.
   const isJobsPath = location.pathname === '/' || location.pathname.startsWith('/jobs');
+  const isTracesPath = location.pathname.startsWith('/traces');
+  const isSopDocsPath = location.pathname.startsWith('/sop-docs');
 
   return (
     <AppBar position="static" elevation={1} sx={{ backgroundColor: 'white', color: 'text.primary' }}>
@@ -46,11 +49,20 @@ export const Navigation: React.FC = () => {
               <Button
                 component={Link}
                 to="/traces"
-                variant={!isJobsPath ? 'contained' : 'text'}
+                variant={isTracesPath ? 'contained' : 'text'}
                 startIcon={<TimelineIcon size={18} />}
                 sx={{ textTransform: 'none' }}
               >
                 Trace Viewer
+              </Button>
+              <Button
+                component={Link}
+                to="/sop-docs"
+                variant={isSopDocsPath ? 'contained' : 'text'}
+                startIcon={<DocsIcon size={18} />}
+                sx={{ textTransform: 'none' }}
+              >
+                SOP Docs
               </Button>
             </Box>
           </Box>

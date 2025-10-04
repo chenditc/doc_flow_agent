@@ -1,0 +1,131 @@
+/* Markdown Editor Styles */
+.markdown-editor {
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.editor-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background-color: #f5f5f5;
+  border-bottom: 1px solid #ddd;
+}
+
+.toolbar-left,
+.toolbar-right {
+  display: flex;
+  gap: 4px;
+}
+
+.toolbar-btn {
+  padding: 6px 12px;
+  background-color: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s;
+}
+
+.toolbar-btn:hover {
+  background-color: #e0e0e0;
+}
+
+.toolbar-btn.active {
+  background-color: #2196F3;
+  color: white;
+  border-color: #2196F3;
+}
+
+.editor-sections-list {
+  padding: 8px 12px;
+  background-color: #fafafa;
+  border-bottom: 1px solid #e0e0e0;
+  font-size: 13px;
+  color: #666;
+}
+
+.section-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  margin: 0 4px;
+  background-color: #e3f2fd;
+  border-radius: 3px;
+  font-family: monospace;
+  font-size: 12px;
+  color: #1976D2;
+}
+
+.no-sections {
+  color: #999;
+  font-style: italic;
+}
+
+.editor-textarea {
+  width: 100%;
+  min-height: 400px;
+  padding: 16px;
+  border: none;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.editor-textarea:focus {
+  outline: none;
+}
+
+.editor-preview {
+  padding: 16px;
+  min-height: 400px;
+  overflow-y: auto;
+  background-color: white;
+}
+
+.editor-preview h1 {
+  font-size: 24px;
+  margin: 16px 0;
+  color: #333;
+}
+
+.editor-preview h2 {
+  font-size: 20px;
+  margin: 14px 0;
+  color: #333;
+  border-bottom: 1px solid #e0e0e0;
+  padding-bottom: 4px;
+}
+
+.editor-preview h3 {
+  font-size: 18px;
+  margin: 12px 0;
+  color: #333;
+}
+
+.editor-preview code {
+  background-color: #f5f5f5;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: monospace;
+  font-size: 13px;
+  color: #d32f2f;
+}
+
+.editor-preview pre {
+  background-color: #f5f5f5;
+  padding: 12px;
+  border-radius: 4px;
+  overflow-x: auto;
+  margin: 12px 0;
+}
+
+.editor-preview pre code {
+  background: none;
+  padding: 0;
+  color: #333;
+}

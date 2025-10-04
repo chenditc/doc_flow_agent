@@ -36,6 +36,8 @@ from visualization.server.user_comm_api import (
     serve_result_delivery_page,
     serve_result_delivery_file
 )
+# Import the SOP docs API router
+from visualization.server.sop_doc_api import router as sop_docs_router
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -221,6 +223,8 @@ REACT_BUILD_DIR = PROJECT_ROOT / "visualization" / "frontend-react" / "dist"
 app.include_router(llm_tuning_router)
 # Include the user communication router
 app.include_router(user_comm_router)
+# Include the SOP docs router
+app.include_router(sop_docs_router)
 
 @app.get("/health")
 async def health_check():
