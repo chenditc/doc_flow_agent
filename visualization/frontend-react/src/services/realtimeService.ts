@@ -97,7 +97,8 @@ export class RealtimeService {
   private connectToTrace(traceId: string): void {
     this.disconnect(); // Close any existing connection
 
-    const url = `${this.baseUrl}/traces/${encodeURIComponent(traceId)}/stream`;
+  // NOTE: Backend SSE endpoint is namespaced under /api now; previous path without /api would 404 via nginx
+  const url = `${this.baseUrl}/api/traces/${encodeURIComponent(traceId)}/stream`;
     console.log('[RealtimeService] Creating SSE connection to:', url, 'traceId:', traceId);
 
     try {

@@ -206,6 +206,9 @@ app.add_middleware(
         "http://127.0.0.1:5173",
         "http://localhost:8080",
         "http://127.0.0.1:8080",
+        # Added 28080 mappings after external port change
+        "http://localhost:28080",
+        "http://127.0.0.1:28080",
         "http://localhost:8000",
         "http://127.0.0.1:8000",
     ],
