@@ -4,7 +4,7 @@
 services:
   orchestrator:
     environment:
-      NOTIFICATION_CHANNEL: "stdout"  # Can be 'stdout', 'slack', 'wechat'
+      NOTIFICATION_CHANNEL: "stdout"  # Can be 'stdout', 'slack', 'work_wechat'
     volumes:
       - ./:/app:delegated
       - traces:/app/traces
@@ -14,7 +14,7 @@ services:
 
   visualization:
     environment:
-      NOTIFICATION_CHANNEL: "stdout"  # Can be 'stdout', 'slack', 'wechat'
+      NOTIFICATION_CHANNEL: "stdout"  # Can be 'stdout', 'slack', 'work_wechat'
     volumes:
       - ./:/app:delegated
       - traces:/app/traces:ro

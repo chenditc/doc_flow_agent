@@ -65,7 +65,7 @@ services:
       visualization:
         condition: service_healthy
     ports:
-      - "8080:80"
+      - "28080:80"
     healthcheck:
       test: ["CMD", "wget", "-qO", "-", "http://localhost/healthz"]
       interval: 30s

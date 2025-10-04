@@ -99,7 +99,7 @@ docker compose logs -f frontend
 ```
 
 Services:
-- Frontend (React + nginx): http://localhost:8080
+- Frontend (React + nginx): http://localhost:28080 (updated port)
   - Proxies `/api` → orchestrator
   - Proxies `/api/traces`, `/api/llm-tuning`, `/debug`, `/health` → visualization (UI route `/traces` now handled client-side)
 - Orchestrator API (internal): `orchestrator:8001` (reachable via compose network)
@@ -120,7 +120,8 @@ OPENAI_API_KEY=sk-...
 OPENAI_API_BASE=https://api.openai.com/v1
 OPENAI_MODEL=openai/gpt-4o-2024-11-20
 VISUALIZATION_SERVER_URL=http://localhost:8000  # For web user communication forms
-NOTIFICATION_CHANNEL=stdout  # User notification channel ('stdout', 'slack', 'wechat')
+NOTIFICATION_CHANNEL=stdout  # User notification channel ('stdout', 'slack', 'work_wechat')
+WORK_WECHAT_WEBHOOK_URL=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxxxx-xxxxx  # Set if using work_wechat channel
 ```
 
 Security notes:
@@ -135,7 +136,7 @@ The Doc Flow Agent includes a flexible notification system that can send user al
 **Supported Channels:**
 - `stdout` (default): Prints notifications to terminal/console
 - `slack`: Slack webhook integration (planned, falls back to stdout)
-- `wechat`: WeChat API integration (planned, falls back to stdout)
+- `work_wechat`: Enterprise WeChat (Work WeChat) webhook integration (simple text message)
 
 **Configuration:**
 Set the `NOTIFICATION_CHANNEL` environment variable to choose your preferred channel:
@@ -147,8 +148,9 @@ export NOTIFICATION_CHANNEL=stdout
 # Use Slack (when implemented)
 export NOTIFICATION_CHANNEL=slack
 
-# Use WeChat (when implemented)
-export NOTIFICATION_CHANNEL=wechat
+# Use Work WeChat (Enterprise WeChat) webhook
+export NOTIFICATION_CHANNEL=work_wechat
+export WORK_WECHAT_WEBHOOK_URL="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY"
 ```
 
 The notification system automatically falls back to `stdout` if the specified channel is not yet implemented or fails to initialize.
@@ -162,7 +164,7 @@ Health Checks:
 
 Submit a Job (example):
 ```bash
-curl -X POST http://localhost:8080/api/jobs \
+curl -X POST http://localhost:28080/api/jobs \
      -H 'Content-Type: application/json' \
      -d '{"task_description": "Check Beijing time using bash"}'
 ```

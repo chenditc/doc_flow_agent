@@ -31,7 +31,7 @@ def notify_user(message: str) -> bool:
         True if notification was sent successfully, False otherwise
         
     Environment Variables:
-        NOTIFICATION_CHANNEL: Channel to use ('stdout', 'slack', 'wechat'). Defaults to 'stdout'.
+    NOTIFICATION_CHANNEL: Channel to use ('stdout', 'slack', 'work_wechat'). Defaults to 'stdout'.
     """
     channel = get_default_channel()
     
@@ -39,8 +39,8 @@ def notify_user(message: str) -> bool:
         return _notify_stdout(message)
     elif channel == 'slack':
         return _notify_slack(message)
-    elif channel == 'wechat':
-        return _notify_wechat(message)
+    elif channel == 'work_wechat':
+        return _notify_work_wechat(message)
     else:
         print(f"[USER_NOTIFY] Warning: Unknown notification channel '{channel}', falling back to stdout")
         return _notify_stdout(message)
@@ -62,17 +62,49 @@ def _notify_slack(message: str) -> bool:
     return _notify_stdout(message)
 
 
-def _notify_wechat(message: str) -> bool:
-    """Send notification via WeChat (future implementation)."""
-    # TODO: Implement WeChat API integration
-    # Will need WeChat API credentials in environment
-    print(f"[USER_NOTIFY] WeChat notification not implemented yet, falling back to stdout")
-    return _notify_stdout(message)
+def _notify_work_wechat(message: str) -> bool:
+    """Send notification via Work WeChat webhook.
+
+    Uses environment variable WORK_WECHAT_WEBHOOK_URL. Payload per docs:
+    {
+        "msgtype": "text",
+        "text": {"content": message}
+    }
+    """
+    import json
+    import urllib.request
+    import urllib.error
+
+    webhook = os.getenv('WORK_WECHAT_WEBHOOK_URL')
+    if not webhook:
+        print("[USER_NOTIFY] WORK_WECHAT_WEBHOOK_URL not set, falling back to stdout")
+        return _notify_stdout(message)
+
+    payload = {
+        "msgtype": "text",
+        "text": {"content": message[:2048]}  # Truncate to reasonable length
+    }
+    data = json.dumps(payload).encode('utf-8')
+    req = urllib.request.Request(
+        webhook,
+        data=data,
+        headers={'Content-Type': 'application/json'}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            if 200 <= resp.status < 300:
+                return True
+            else:
+                print(f"[USER_NOTIFY] Work WeChat webhook non-2xx status {resp.status}, falling back to stdout")
+                return _notify_stdout(message)
+    except urllib.error.URLError as e:
+        print(f"[USER_NOTIFY] Work WeChat webhook error: {e}. Falling back to stdout")
+        return _notify_stdout(message)
 
 
 def get_available_channels() -> list[str]:
     """Get list of available notification channels."""
-    return ['stdout', 'slack', 'wechat']
+    return ['stdout', 'slack', 'work_wechat']
 
 
 def get_default_channel() -> str:
