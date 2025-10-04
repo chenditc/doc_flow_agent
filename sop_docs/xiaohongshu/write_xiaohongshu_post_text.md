@@ -13,7 +13,8 @@ input_description:
 input_json_path:
   current_task: $.current_task
 output_description: 小红书图文的内容
-result_validation_rule: 只要能提供大致符合该方向的小红书帖子即可，不需要所有要求都满足。
+result_validation_rule: 只要能提供大致符合任务要求的方向的小红书帖子即可，不需要所有要求都满足。例如任务要求5个具体建议，只提供2个也行，只要建议的方向是正确的即可。例如任务要求写社会英雄，如果写出来的是社会上的普通人也可以。
+
 ---
 ## parameters.prompt
 

@@ -18,7 +18,7 @@ export class TraceService {
    * @returns Promise<string[]> List of trace IDs
    */
   async getTraces(): Promise<string[]> {
-    return this.apiClient.get<string[]>('/traces');
+    return this.apiClient.get<string[]>('/api/traces');
   }
 
   /**
@@ -31,7 +31,7 @@ export class TraceService {
       throw new Error('Trace ID is required');
     }
     
-    return this.apiClient.get<TraceSession>(`/traces/${encodeURIComponent(traceId)}`);
+    return this.apiClient.get<TraceSession>(`/api/traces/${encodeURIComponent(traceId)}`);
   }
 
   /**
@@ -39,7 +39,7 @@ export class TraceService {
    * @returns Promise<string> The latest trace ID
    */
   async getLatestTrace(): Promise<string> {
-    const result = await this.apiClient.get<{ trace_id: string }>('/traces/latest');
+    const result = await this.apiClient.get<{ trace_id: string }>('/api/traces/latest');
     return result.trace_id;
   }
 
@@ -67,7 +67,7 @@ export class TraceService {
       throw new Error('Trace ID is required');
     }
     
-    return this.apiClient.get<any>(`/traces/${encodeURIComponent(traceId)}/statistics`);
+    return this.apiClient.get<any>(`/api/traces/${encodeURIComponent(traceId)}/statistics`);
   }
 }
 

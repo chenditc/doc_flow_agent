@@ -4,12 +4,12 @@
 
 // API endpoints
 export const API_ENDPOINTS = {
-  TRACES: '/traces',
-  TRACE_BY_ID: (id: string) => `/traces/${encodeURIComponent(id)}`,
-  LATEST_TRACE: '/traces/latest',
-  TRACE_STREAM: (id: string) => `/traces/${encodeURIComponent(id)}/stream`,
+  TRACES: '/api/traces',
+  TRACE_BY_ID: (id: string) => `/api/traces/${encodeURIComponent(id)}`,
+  LATEST_TRACE: '/api/traces/latest',
+  TRACE_STREAM: (id: string) => `/api/traces/${encodeURIComponent(id)}/stream`,
   HEALTH: '/health',
-  TRACE_STATISTICS: (id: string) => `/traces/${encodeURIComponent(id)}/statistics`,
+  TRACE_STATISTICS: (id: string) => `/api/traces/${encodeURIComponent(id)}/statistics`,
 } as const;
 
 // Local storage keys

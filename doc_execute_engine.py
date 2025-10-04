@@ -1194,7 +1194,7 @@ You are a helpful agent which can perform task like run comamnd / code / search 
 
 Right now, you need to evaluate whether your work has satisfied the root task requirements. 
 
-1. First, you need to think about what user wants to achieve, what is expected process and output, what we have performed. Only consider requirement not met if some requirement totally missed. Eg. We need to run a command and command not exists. Or if we need to write a paragraph and no text outputed.
+1. First, you need to think about what to check based on the requirement evaluation rule. If no requirement evaluation rule present then consider the task description. Only consider requirement not met if some requirement totally missed. Eg. We need to run a command and command not exists. Or if we need to write a paragraph and no text outputed.
 2. If requirements are NOT met, list specific failing aspects and create new tasks to address them, so that user's end goal can be achieved. If there are multiple failing aspect and only some of them are root cause, you should only generate new task to address root cause. You should NOT generate new task to address non-root-cause issue or issue you are not confirmed.
 3. If requirements ARE met, provide a summary and which path in the aggregated_outputs should be used to consider as the output, put them in the useful_output_path.
 

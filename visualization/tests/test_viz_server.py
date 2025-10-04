@@ -68,16 +68,16 @@ class TestVizServer:
         assert data['status'] == 'ok'
 
     def test_get_traces(self, client):
-        """Test getting list of available traces"""
-        response = client.get('/traces')
+        """Test getting list of available traces via new API path"""
+        response = client.get('/api/traces')
         assert response.status_code == 200
         data = response.json()
         assert isinstance(data, list)
         assert 'session_test_123' in data
 
     def test_get_trace_by_id(self, client):
-        """Test getting specific trace by ID"""
-        response = client.get('/traces/session_test_123')
+        """Test getting specific trace by ID via new API path"""
+        response = client.get('/api/traces/session_test_123')
         assert response.status_code == 200
         data = response.json()
         assert data['session_id'] == 'test-session'
@@ -85,8 +85,8 @@ class TestVizServer:
         assert len(data['task_executions']) == 1
 
     def test_get_nonexistent_trace(self, client):
-        """Test getting trace that doesn't exist"""
-        response = client.get('/traces/nonexistent')
+        """Test getting trace that doesn't exist (new API path)"""
+        response = client.get('/api/traces/nonexistent')
         assert response.status_code == 404
 
     def test_get_trace_invalid_filename(self, client):
@@ -94,12 +94,12 @@ class TestVizServer:
         import urllib.parse
         # Use backslash which should trigger validation
         invalid_trace_id = urllib.parse.quote('invalid\\path', safe='')
-        response = client.get(f'/traces/{invalid_trace_id}')
+        response = client.get(f'/api/traces/{invalid_trace_id}')
         assert response.status_code == 400
 
     def test_get_latest_trace(self, client):
-        """Test getting the latest trace"""
-        response = client.get('/traces/latest')
+        """Test getting the latest trace via new API path"""
+        response = client.get('/api/traces/latest')
         assert response.status_code == 200
         data = response.json()
         assert 'trace_id' in data
@@ -125,7 +125,7 @@ class TestVizServer:
                 from visualization.server.viz_server import app
                 from fastapi.testclient import TestClient
                 with TestClient(app) as client:
-                    response = client.get('/traces/latest')
+                    response = client.get('/api/traces/latest')
                     assert response.status_code == 200
                     data = response.json()
                     # Should return the lexicographically last filename (latest timestamp)
@@ -139,7 +139,7 @@ class TestVizServer:
                 from visualization.server.viz_server import app
                 from fastapi.testclient import TestClient
                 with TestClient(app) as client:
-                    response = client.get('/traces/latest')
+                    response = client.get('/api/traces/latest')
                     assert response.status_code == 404
                     assert 'No trace files found' in response.json()['detail']
 
@@ -184,7 +184,7 @@ class TestVizServerIntegration:
 
     def test_real_traces_endpoint(self, real_trace_client):
         """Test with real traces directory (if it exists)"""
-        response = real_trace_client.get('/traces')
+        response = real_trace_client.get('/api/traces')
         assert response.status_code == 200
         data = response.json()
         assert isinstance(data, list)
@@ -193,12 +193,12 @@ class TestVizServerIntegration:
     def test_get_real_latest_trace(self, real_trace_client):
         """Test getting the latest trace with real data"""
         # First get list of available traces
-        response = real_trace_client.get('/traces')
+        response = real_trace_client.get('/api/traces')
         traces = response.json()
         
         if traces:
             # Test latest trace endpoint
-            response = real_trace_client.get('/traces/latest')
+            response = real_trace_client.get('/api/traces/latest')
             assert response.status_code == 200
             data = response.json()
             assert 'trace_id' in data
@@ -214,16 +214,14 @@ class TestVizServerIntegration:
     def test_get_real_trace_if_exists(self, real_trace_client):
         """Test getting a real trace file if any exist"""
         # First get list of available traces
-        response = real_trace_client.get('/traces')
+        response = real_trace_client.get('/api/traces')
         traces = response.json()
-        
         if traces:
-            # Try to get the first trace
             trace_id = traces[0]
-            response = real_trace_client.get(f'/traces/{trace_id}')
+            response = real_trace_client.get(f'/api/traces/{trace_id}')
             assert response.status_code == 200
             data = response.json()
-            # Should have basic trace structure
+            assert isinstance(data, dict)
 
     # Note: SSE tests are commented out due to TestClient compatibility issues
     # The SSE endpoint can be tested manually by opening the browser and checking

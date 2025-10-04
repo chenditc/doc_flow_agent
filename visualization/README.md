@@ -28,6 +28,19 @@ cd visualization/frontend-react && npm test
 # Frontend watch mode (optional for active development)
 cd visualization/frontend-react && npm run test:watch
 - **TraceSelector/**: Trace selection dropdown with real-time toggle
+
+### API Route Namespace Change
+
+Trace API endpoints are now under `/api/traces/*` to prevent conflicts with the frontend SPA route `/traces` (the Trace Viewer UI). Legacy `/traces/*` endpoints remain temporarily (shim) but will be deprecated. Use the new paths:
+
+```
+GET /api/traces
+GET /api/traces/latest
+GET /api/traces/{trace_id}
+GET /api/traces/{trace_id}/stream
+```
+
+The UI page lives at `/traces?trace=<trace_id>` and is handled entirely client-side; a full refresh on that URL will now correctly load the SPA instead of returning raw JSON.
 # Frontend coverage report
 cd visualization/frontend-react && npm run coverage
 - **SOPResolution/**: SOP document resolution visualization

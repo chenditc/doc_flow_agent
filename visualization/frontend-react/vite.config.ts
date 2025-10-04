@@ -6,15 +6,16 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
+      '/api/traces': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        // Do not rewrite; keep /api/traces path for backend
+      },
       '/api': {
         target: 'http://localhost:8001',
         changeOrigin: true,
         rewrite: (path: string) => path.replace(/^\/api/, '')
       },
-      '/traces': {
-        target: 'http://localhost:8000',
-        changeOrigin: true
-      }
     }
   },
   build: {

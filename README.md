@@ -68,6 +68,15 @@ cd visualization/frontend-react && npm install && npm run build && cd .. && sour
 
 Visit http://localhost:8000 to view execution traces, task timelines, and debug information. See [`visualization/README.md`](visualization/README.md) for detailed setup and development instructions.
 
+NOTE (Routing Change): The trace API endpoints have been namespaced under `/api/traces/*` to avoid collision with the SPA route `/traces` used by the frontend trace viewer UI. The legacy endpoints at `/traces/*` are still temporarily available (served by a shim) but will be removed in a future release. Update any external integrations to use:
+
+```
+GET /api/traces                # list trace IDs
+GET /api/traces/latest         # latest trace ID
+GET /api/traces/{trace_id}     # trace JSON
+GET /api/traces/{trace_id}/stream  # SSE stream
+```
+
 ### Deploy with Docker Compose (All Services)
 
 Run orchestrator API, visualization API, and production React frontend behind nginx with one command.
@@ -92,7 +101,7 @@ docker compose logs -f frontend
 Services:
 - Frontend (React + nginx): http://localhost:8080
   - Proxies `/api` → orchestrator
-  - Proxies `/traces`, `/api/llm-tuning`, `/debug`, `/health` → visualization
+  - Proxies `/api/traces`, `/api/llm-tuning`, `/debug`, `/health` → visualization (UI route `/traces` now handled client-side)
 - Orchestrator API (internal): `orchestrator:8001` (reachable via compose network)
 - Visualization API (internal): `visualization:8000`
 

@@ -1,15 +1,15 @@
 ---
-description: 生成小红书的干货贴执行计划
+description: 生成小红书的帖子的执行计划
 tool:
   tool_id: TEMPLATE
 input_description:
   human_setup: 小红书的账号人设
-  post_target_audience: 干货贴的对象
+  post_target_audience: 贴子的对象
   topic: 小红书帖子的主题
   emotion_target: 情感共鸣点
 input_json_path:
   current_task: $.current_task
-output_description: 干货贴的生成方案
+output_description: 贴子的生成方案
 result_validation_rule: 只要能提供1篇符合该人设的小红书笔记即可。
 ---
 ## Execution Plan

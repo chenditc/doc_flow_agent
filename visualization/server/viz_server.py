@@ -282,7 +282,7 @@ async def debug_threads():
     content = ''.join(parts)
     return FileResponse(path=None) if False else StreamingResponse(iter([content]), media_type="text/plain")
 
-@app.get("/traces", response_model=List[str])
+@app.get("/api/traces", response_model=List[str])
 async def list_traces():
     """
     List all available trace files.
@@ -306,7 +306,7 @@ async def list_traces():
         logger.error(f"Error listing traces: {e}")
         raise HTTPException(status_code=500, detail=f"Error listing traces: {str(e)}")
 
-@app.get("/traces/latest")
+@app.get("/api/traces/latest")
 async def get_latest_trace():
     """
     Get the latest trace ID based on filename timestamp.
@@ -337,7 +337,7 @@ async def get_latest_trace():
         logger.error(f"Error finding latest trace: {e}")
         raise HTTPException(status_code=500, detail=f"Error finding latest trace: {str(e)}")
 
-@app.get("/traces/{trace_id}")
+@app.get("/api/traces/{trace_id}")
 async def get_trace(trace_id: str) -> Dict[str, Any]:
     """
     Get a specific trace by ID.
@@ -375,7 +375,7 @@ async def get_trace(trace_id: str) -> Dict[str, Any]:
         logger.error(f"Error reading trace file {trace_file}: {e}")
         raise HTTPException(status_code=500, detail=f"Error reading trace file: {str(e)}")
 
-@app.get("/traces/{trace_id}/stream")
+@app.get("/api/traces/{trace_id}/stream")
 async def stream_trace_updates(trace_id: str):
     """
     Stream real-time updates for a specific trace using Server-Sent Events (SSE).
@@ -447,6 +447,23 @@ async def stream_trace_updates(trace_id: str):
             "Cache-Control": "no-cache, no-transform",
         }
     )
+
+# ---------------- Legacy shim endpoints for backward compatibility (deprecated) ----------------
+@app.get("/traces", include_in_schema=False)
+async def legacy_list_traces():
+    return await list_traces()
+
+@app.get("/traces/latest", include_in_schema=False)
+async def legacy_latest_trace():
+    return await get_latest_trace()
+
+@app.get("/traces/{trace_id}", include_in_schema=False)
+async def legacy_get_trace(trace_id: str):
+    return await get_trace(trace_id)
+
+@app.get("/traces/{trace_id}/stream", include_in_schema=False)
+async def legacy_stream_trace(trace_id: str):
+    return await stream_trace_updates(trace_id)
 
 # Add logging middleware for debugging
 @app.middleware("http")
