@@ -130,6 +130,22 @@ class SearchResponse(BaseModel):
     total: int
 
 
+class SopDocMetaSummary(BaseModel):
+    """Lightweight metadata summary for building client-side indices"""
+    path: str  # path without .md extension
+    raw_filename: str  # filename with .md extension
+    doc_id: Optional[str] = None
+    description: Optional[str] = None
+    aliases: List[str] = Field(default_factory=list)
+
+
+class RawSopDocResponse(BaseModel):
+    """Raw SOP document content (entire file)"""
+    path: str
+    raw_filename: str
+    content: str
+
+
 class CopyRequest(BaseModel):
     """Request to copy a SOP document"""
     source_path: str
@@ -758,6 +774,67 @@ async def validate_document(request: SopDocUpdateRequest):
     except Exception as e:
         logger.error(f"Unexpected error validating document: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="An unexpected error occurred during validation.")
+
+
+@router.get("/meta/all", response_model=List[SopDocMetaSummary])
+async def list_all_metadata():
+    """Return lightweight metadata (doc_id, aliases, description, path, filename) for all SOP docs.
+
+    This is optimized for frontend features like reference highlighting without loading full bodies.
+    """
+    summaries: List[SopDocMetaSummary] = []
+    if not SOP_DOCS_DIR.exists():
+        return summaries
+
+    loader = SOPDocumentLoader(str(SOP_DOCS_DIR))
+
+    # Recursively gather doc_ids (paths without .md) similar to loader usage elsewhere
+    doc_ids: List[str] = []
+    for root, dirs, files in os.walk(SOP_DOCS_DIR):
+        dirs[:] = [d for d in dirs if not d.startswith('.') and d != '__pycache__']
+        for file in files:
+            if file.startswith('.') or not file.endswith('.md'):
+                continue
+            file_path = Path(root) / file
+            rel_path = file_path.relative_to(SOP_DOCS_DIR)
+            rel_path_no_ext = str(rel_path)[:-3]
+            doc_ids.append(rel_path_no_ext)
+
+    for doc_id in doc_ids:
+        try:
+            sop_doc = loader.load_sop_document(doc_id)
+            # raw filename derived from last component
+            raw_filename = f"{Path(doc_id).name}.md"
+            summaries.append(SopDocMetaSummary(
+                path=doc_id,
+                raw_filename=raw_filename,
+                doc_id=sop_doc.doc_id,
+                description=sop_doc.description,
+                aliases=sop_doc.aliases or []
+            ))
+        except Exception as e:
+            logger.warning(f"Failed to load SOP doc {doc_id}: {e}")
+            continue
+
+    return summaries
+
+
+@router.get("/raw/{doc_path:path}", response_model=RawSopDocResponse)
+async def get_raw_document(doc_path: str):
+    """Return full raw content of a SOP document, including YAML front matter and body."""
+    try:
+        file_path = get_doc_file_path(doc_path)
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="Document not found")
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        rel = doc_path[:-3] if doc_path.endswith('.md') else doc_path
+        return RawSopDocResponse(path=rel, raw_filename=file_path.name, content=content)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except (IOError, OSError) as e:
+        logger.error(f"Error reading raw document {doc_path}: {e}")
+        raise HTTPException(status_code=500, detail="Error reading document")
 
 
 @router.post("/create", response_model=SopDocResponse)

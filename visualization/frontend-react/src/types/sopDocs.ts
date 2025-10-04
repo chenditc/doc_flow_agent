@@ -74,3 +74,19 @@ export interface CopyRequest {
   target_path: string;
   override_doc_id: boolean;
 }
+
+export interface SopDocMetaSummary {
+  path: string; // path without .md extension
+  raw_filename: string; // filename with .md extension
+  doc_id?: string;
+  description?: string;
+  aliases: string[];
+}
+
+export interface SopDocMetaSummary {
+  path: string; // path without .md extension
+  raw_filename: string; // filename with extension
+  doc_id?: string;
+  description?: string;
+  aliases: string[];
+}

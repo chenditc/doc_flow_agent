@@ -38,6 +38,14 @@ export class SopDocsService {
   }
 
   /**
+   * Get metadata summaries for all SOP docs (doc_id, aliases, description, path, filename)
+   * Used for client-side reference highlighting.
+   */
+  async getAllMetadata(): Promise<import('../types').SopDocMetaSummary[]> {
+    return apiClient.get<import('../types').SopDocMetaSummary[]>(`/api/sop-docs/meta/all`);
+  }
+
+  /**
    * Validate a SOP document without saving
    */
   async validate(request: SopDocUpdateRequest): Promise<ValidationResponse> {
@@ -73,6 +81,14 @@ export class SopDocsService {
    */
   async copy(request: CopyRequest): Promise<SopDoc> {
     return apiClient.post<SopDoc>('/api/sop-docs/copy', request);
+  }
+
+  /**
+   * Get full raw content (YAML + body) of a document
+   */
+  async getRaw(docPath: string): Promise<{ path: string; raw_filename: string; content: string }> {
+    const cleanPath = docPath.startsWith('/') ? docPath.slice(1) : docPath;
+    return apiClient.get<{ path: string; raw_filename: string; content: string }>(`/api/sop-docs/raw/${cleanPath}`);
   }
 
   /**

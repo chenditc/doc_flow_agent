@@ -6,7 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { sopDocsService } from '../../services';
-import type { TreeNode, SopDoc, SearchResponse } from '../../types';
+import type { TreeNode, SopDoc, SearchResponse, SopDocMetaSummary } from '../../types';
 import { SopDocTree } from './SopDocTree';
 import { SopDocEditor } from './SopDocEditor';
 import { SearchBar } from './SearchBar';
@@ -24,10 +24,20 @@ export const SopDocsPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [treeLoading, setTreeLoading] = useState(false);
   const [docLoading, setDocLoading] = useState(false);
+  const [allMeta, setAllMeta] = useState<SopDocMetaSummary[] | null>(null);
 
-  // Load tree on mount
+  // Load tree and metadata on mount
   useEffect(() => {
-    loadTree();
+    (async () => {
+      await loadTree();
+      try {
+        const meta = await sopDocsService.getAllMetadata();
+        setAllMeta(meta);
+      } catch (e) {
+        console.warn('Failed to load metadata summaries', e);
+        setAllMeta([]);
+      }
+    })();
   }, []);
 
   // Load document when path changes
@@ -257,6 +267,7 @@ export const SopDocsPage: React.FC = () => {
             onDelete={handleDelete}
             onCopy={handleCopy}
             onCreate={handleCreate}
+            allMetaSummaries={allMeta || []}
           />
         ) : docPath ? (
           <div className="sop-docs-empty">

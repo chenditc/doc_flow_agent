@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import type { SopDoc, SopDocMeta } from '../../types';
+import type { SopDoc, SopDocMeta, SopDocMetaSummary } from '../../types';
 import { MetadataForm } from './MetadataForm';
 import { MarkdownEditor } from './MarkdownEditor';
 import './SopDocEditor.css';
@@ -15,6 +15,7 @@ interface SopDocEditorProps {
   onDelete: (path: string) => Promise<boolean>;
   onCopy: (sourcePath: string, targetPath: string, overrideDocId: boolean) => Promise<boolean>;
   onCreate: (path: string, meta: SopDocMeta, body: string) => Promise<boolean>;
+  allMetaSummaries: SopDocMetaSummary[]; // for highlighting references
 }
 
 export const SopDocEditor: React.FC<SopDocEditorProps> = ({
@@ -22,6 +23,7 @@ export const SopDocEditor: React.FC<SopDocEditorProps> = ({
   onSave,
   onDelete,
   onCopy,
+  allMetaSummaries,
 }) => {
   const [editedMeta, setEditedMeta] = useState<SopDocMeta>(doc.meta);
   const [editedBody, setEditedBody] = useState<string>(doc.body_markdown);
@@ -122,6 +124,7 @@ export const SopDocEditor: React.FC<SopDocEditorProps> = ({
             value={editedBody}
             onChange={setEditedBody}
             sections={doc.sections}
+            allMetaSummaries={allMetaSummaries}
           />
         </div>
       </div>
