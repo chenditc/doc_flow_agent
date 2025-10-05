@@ -30,7 +30,18 @@ class TracingToolWrapper:
         self.tracer = tracer
         # Delegate all attributes to the wrapped tool
         self.tool_id = tool.tool_id
-    
+
+    def __getattr__(self, name: str):  # pragma: no cover - simple delegation
+        """Delegate attribute access to the wrapped tool when not found here.
+
+        This allows transparent usage of the wrapper anywhere the original
+        tool instance was expected. Only called if normal attribute lookup
+        fails, so it won't interfere with our own attributes/methods.
+        """
+        return getattr(self.tool, name)
+
+
+
     async def execute(self, parameters: Dict[str, Any], sop_doc_body: Optional[str] = None) -> Any:
         """Execute tool with tracing"""
         try:

@@ -38,6 +38,7 @@ class SOPDocument:
     input_description: Dict[str, str]  # New field for input descriptions
     output_description: str  # New field for output description
     result_validation_rule: str  # New field for result validation rule
+    skip_new_task_generation: bool = False  # If true, engine should skip generating follow-up tasks
 
 
 class SOPDocumentLoader:
@@ -96,7 +97,8 @@ class SOPDocumentLoader:
             parameters=parameters,
             input_description=doc_data.get('input_description', {}),  # New field for input descriptions
             output_description=doc_data.get('output_description', ''),  # New field for output description
-            result_validation_rule=doc_data.get('result_validation_rule', '')  # New field for result validation rule
+            result_validation_rule=doc_data.get('result_validation_rule', ''),  # New field for result validation rule
+            skip_new_task_generation=str(doc_data.get('skip_new_task_generation', 'false')).lower() == 'true'
         )
     
     def _parse_markdown_sections(self, body: str) -> Dict[str, str]:
@@ -464,7 +466,8 @@ Please select the most appropriate SOP document from the following candidates:
         
         # Get LLM response
         response = await llm_tool.execute({
-            "prompt": prompt
+            "prompt": prompt,
+            "model": llm_tool.small_model  # Use smaller model for efficiency
         })
         
         # Note: LLM call is automatically logged by the tracer context

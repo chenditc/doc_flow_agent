@@ -7,4 +7,5 @@ tool:
 input_description:
   related_context_content: 在之前生成出来的小红书帖子，一个列表，每个元素是一个帖子的内容，包含首图设计、正文等。
 output_description: 交付给用户的小红书帖子
+skip_new_task_generation: true
 ---

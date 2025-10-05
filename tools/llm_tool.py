@@ -44,7 +44,9 @@ class LLMTool(BaseTool):
             api_key=api_key
         )
         self.model = os.getenv("OPENAI_MODEL", "openai/gpt-4o-2024-11-20")  
-    
+
+        self.small_model = os.environ.get("OPENAI_SMALL_MODEL", self.model)
+
     def create_azure_token_provider(self):
         from azure.identity.aio import DefaultAzureCredential, get_bearer_token_provider
 

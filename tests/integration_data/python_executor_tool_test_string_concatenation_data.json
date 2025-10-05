@@ -1,12 +1,12 @@
 {
   "test_name": "python_executor_tool_test_string_concatenation",
-  "mode": "mock_then_real",
-  "timestamp": "2025-10-03T21:06:24.018969",
+  "mode": "real",
+  "timestamp": "2025-10-04T22:07:00.740294",
   "tool_calls": [
     {
       "tool_id": "LLM",
       "parameters": {
-        "prompt": "\nYou are a Python code generation assistant.\nYour task is to write a single Python function named `process_step` that takes one argument: `context: dict`.\nThis function will be executed to perform following specific task. Import necessary library if you used any.\nThe context object will contain all the necessary data. The json serialized context object has been attached here for you to understand the input data structure.\nThe function should return a JSON-serializable value.\n\n<available library>\naiohappyeyeballs\naiohttp\naiosignal\nannotated-types\nanyio\nattrs\nazure-core\nazure-identity\nazure-identity-broker\nazure-kusto-data\ncertifi\ncffi\ncharset-normalizer\nclick\ncryptography\ndistro\nexecnet\nfastapi\nfrozenlist\ngenson\ngit-filter-repo\nh11\nhttpcore\nhttptools\nhttpx\nidna\nijson\niniconfig\njiter\njson_repair\njsonpath-ng\nmsal\nmsal-extensions\nmultidict\nopenai\npackaging\npip\npluggy\nply\npropcache\npycparser\npydantic\npydantic_core\nPygments\nPyJWT\npymsalruntime\npytest\npytest-asyncio\npytest-xdist\npytz\nPyYAML\nrequests\nsix\nsniffio\nstarlette\ntqdm\ntyping-inspection\ntyping_extensions\nurllib3\nuvicorn\nuvloop\nwatchdog\nwatchfiles\nwebsockets\nxmltodict\nyarl\n</available library>\n\n<Task Description>\nCombine first_name and last_name from context with a space between them, return as dict with key 'full_name'\n</Task Description>\n\n<context object type><class 'dict'></context object type>\n<Json serialized context object>\n{\n  \"first_name\": \"John\",\n  \"last_name\": \"Doe\"\n}\n</Json serialized context object>\n",
+        "prompt": "\nYou are a Python code generation assistant.\nYour task is to write a single Python function named `process_step` that takes one argument: `context: dict`.\nThis function will be executed to perform following specific task. Import necessary library if you used any.\nThe context object will contain all the necessary data. The json serialized context object has been attached here for you to understand the input data structure.\nThe function should return a JSON-serializable value.\n\n<available library>\naiohappyeyeballs\naiohttp\naiosignal\nannotated-types\nanyio\nasync-timeout\nattrs\nazure-core\nazure-identity\ncertifi\ncffi\ncharset-normalizer\nclick\ncryptography\ndistro\nexceptiongroup\nfastapi\nfrozenlist\ngenson\nh11\nhttpcore\nhttptools\nhttpx\nidna\niniconfig\njiter\njson_repair\njsonpath-ng\nmsal\nmsal-extensions\nmultidict\nopenai\npackaging\npip\npluggy\nply\npropcache\npycparser\npydantic\npydantic_core\nPyJWT\npytest\npytest-asyncio\nPyYAML\nrequests\nsetuptools\nsix\nsniffio\nstarlette\ntomli\ntqdm\ntyping-inspection\ntyping_extensions\nurllib3\nuvicorn\nuvloop\nwatchdog\nwatchfiles\nwebsockets\nyarl\n</available library>\n\n<Task Description>\nCombine first_name and last_name from context with a space between them, return as dict with key 'full_name'\n</Task Description>\n\n<context object type><class 'dict'></context object type>\n<Json serialized context object>\n{\n  \"first_name\": \"John\",\n  \"last_name\": \"Doe\"\n}\n</Json serialized context object>\n",
         "temperature": 0.0,
         "tools": [
           {
@@ -35,17 +35,17 @@
         "content": "",
         "tool_calls": [
           {
-            "id": "call_2ijtNs9DslIWkeW4UBSiwuOz",
+            "id": "call_mgefuRRE8v1h4MJLrz4BBtVu",
             "name": "generate_python_code",
             "arguments": {
-              "python_code": "def process_step(context: dict):\n    \"\"\"Combine first_name and last_name from context with a space between them.\n\n    Args:\n        context (dict): Input context expected to contain 'first_name' and 'last_name'.\n\n    Returns:\n        dict: { 'full_name': '<first_name> <last_name>' }\n              Missing parts are omitted gracefully and extra whitespace is trimmed.\n    \"\"\"\n    if not isinstance(context, dict):  # Defensive: ensure context is a dict\n        raise TypeError(\"context must be a dict\")\n\n    first = context.get('first_name')\n    last = context.get('last_name')\n\n    # Convert None to empty string, ensure strings\n    first_str = str(first).strip() if first is not None else ''\n    last_str = str(last).strip() if last is not None else ''\n\n    # Build full name while avoiding leading/trailing double spaces\n    if first_str and last_str:\n        full_name = f\"{first_str} {last_str}\"\n    else:\n        full_name = first_str or last_str  # whichever is non-empty (or empty string)\n\n    return {\"full_name\": full_name}\n"
+              "python_code": "def process_step(context: dict):\n    \"\"\"\n    Combine first_name and last_name from context with a space between them,\n    return as dict with key 'full_name'.\n    \"\"\"\n    if not isinstance(context, dict):\n        raise TypeError(\"context must be a dict\")\n\n    first = context.get(\"first_name\", \"\")\n    last = context.get(\"last_name\", \"\")\n\n    # Convert to strings and trim whitespace\n    first_str = \"\" if first is None else str(first).strip()\n    last_str = \"\" if last is None else str(last).strip()\n\n    full_name = f\"{first_str} {last_str}\".strip()\n    return {\"full_name\": full_name}\n"
             }
           }
         ]
       },
-      "timestamp": "2025-10-03T21:06:23.981998",
-      "execution_time_ms": 8377.961221005535,
-      "parameters_hash": "5ca9aed713b72676"
+      "timestamp": "2025-10-04T22:07:00.717474",
+      "execution_time_ms": 15191.34849589318,
+      "parameters_hash": "a0ec6d16b84a48fb"
     }
   ],
   "metadata": {
@@ -54,5 +54,5 @@
       "LLM"
     ]
   },
-  "saved_at": "2025-10-03T21:06:24.019051"
+  "saved_at": "2025-10-04T22:07:00.740417"
 }

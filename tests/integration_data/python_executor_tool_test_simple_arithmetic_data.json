@@ -1,12 +1,12 @@
 {
   "test_name": "python_executor_tool_test_simple_arithmetic",
-  "mode": "mock_then_real",
-  "timestamp": "2025-10-03T21:06:15.554700",
+  "mode": "real",
+  "timestamp": "2025-10-04T22:06:45.507451",
   "tool_calls": [
     {
       "tool_id": "LLM",
       "parameters": {
-        "prompt": "\nYou are a Python code generation assistant.\nYour task is to write a single Python function named `process_step` that takes one argument: `context: dict`.\nThis function will be executed to perform following specific task. Import necessary library if you used any.\nThe context object will contain all the necessary data. The json serialized context object has been attached here for you to understand the input data structure.\nThe function should return a JSON-serializable value.\n\n<available library>\naiohappyeyeballs\naiohttp\naiosignal\nannotated-types\nanyio\nattrs\nazure-core\nazure-identity\nazure-identity-broker\nazure-kusto-data\ncertifi\ncffi\ncharset-normalizer\nclick\ncryptography\ndistro\nexecnet\nfastapi\nfrozenlist\ngenson\ngit-filter-repo\nh11\nhttpcore\nhttptools\nhttpx\nidna\nijson\niniconfig\njiter\njson_repair\njsonpath-ng\nmsal\nmsal-extensions\nmultidict\nopenai\npackaging\npip\npluggy\nply\npropcache\npycparser\npydantic\npydantic_core\nPygments\nPyJWT\npymsalruntime\npytest\npytest-asyncio\npytest-xdist\npytz\nPyYAML\nrequests\nsix\nsniffio\nstarlette\ntqdm\ntyping-inspection\ntyping_extensions\nurllib3\nuvicorn\nuvloop\nwatchdog\nwatchfiles\nwebsockets\nxmltodict\nyarl\n</available library>\n\n<Task Description>\nCalculate the sum of numbers a and b from context, and return the result as a dictionary with key 'sum'\n</Task Description>\n\n<context object type><class 'dict'></context object type>\n<Json serialized context object>\n{\n  \"a\": 15,\n  \"b\": 25\n}\n</Json serialized context object>\n",
+        "prompt": "\nYou are a Python code generation assistant.\nYour task is to write a single Python function named `process_step` that takes one argument: `context: dict`.\nThis function will be executed to perform following specific task. Import necessary library if you used any.\nThe context object will contain all the necessary data. The json serialized context object has been attached here for you to understand the input data structure.\nThe function should return a JSON-serializable value.\n\n<available library>\naiohappyeyeballs\naiohttp\naiosignal\nannotated-types\nanyio\nasync-timeout\nattrs\nazure-core\nazure-identity\ncertifi\ncffi\ncharset-normalizer\nclick\ncryptography\ndistro\nexceptiongroup\nfastapi\nfrozenlist\ngenson\nh11\nhttpcore\nhttptools\nhttpx\nidna\niniconfig\njiter\njson_repair\njsonpath-ng\nmsal\nmsal-extensions\nmultidict\nopenai\npackaging\npip\npluggy\nply\npropcache\npycparser\npydantic\npydantic_core\nPyJWT\npytest\npytest-asyncio\nPyYAML\nrequests\nsetuptools\nsix\nsniffio\nstarlette\ntomli\ntqdm\ntyping-inspection\ntyping_extensions\nurllib3\nuvicorn\nuvloop\nwatchdog\nwatchfiles\nwebsockets\nyarl\n</available library>\n\n<Task Description>\nCalculate the sum of numbers a and b from context, and return the result as a dictionary with key 'sum'\n</Task Description>\n\n<context object type><class 'dict'></context object type>\n<Json serialized context object>\n{\n  \"a\": 15,\n  \"b\": 25\n}\n</Json serialized context object>\n",
         "temperature": 0.0,
         "tools": [
           {
@@ -35,17 +35,17 @@
         "content": "",
         "tool_calls": [
           {
-            "id": "call_zUay8AgrgVIinpAUvhvIx6gV",
+            "id": "call_vgWSdxOZWhcI3zgfXXQraQPo",
             "name": "generate_python_code",
             "arguments": {
-              "python_code": "def process_step(context: dict):\n    \"\"\"Calculate the sum of numbers a and b from context and return it.\n\n    Args:\n        context (dict): A dictionary expected to contain numeric values under keys 'a' and 'b'.\n\n    Returns:\n        dict: A dictionary with a single key 'sum' whose value is the sum of a and b.\n    \"\"\"\n    # Extract values with basic validation\n    try:\n        a = context.get('a')\n        b = context.get('b')\n        if a is None or b is None:\n            raise ValueError(\"Missing 'a' or 'b' in context\")\n        # Attempt numeric conversion (in case values are strings)\n        a_num = float(a)\n        b_num = float(b)\n        result = a_num + b_num\n        # If both original inputs were ints and sum is integral, cast back to int\n        if all(isinstance(x, int) or (isinstance(x, str) and x.isdigit()) for x in (a, b)) and result.is_integer():\n            result = int(result)\n        return {'sum': result}\n    except Exception as e:\n        # Return error in a structured way\n        return {'error': str(e)}\n"
+              "python_code": "def process_step(context: dict):\n    \"\"\"Calculate the sum of numbers 'a' and 'b' from context and return it as {'sum': value}.\"\"\"\n    a = context.get('a')\n    b = context.get('b')\n    return {'sum': a + b}"
             }
           }
         ]
       },
-      "timestamp": "2025-10-03T21:06:15.503447",
-      "execution_time_ms": 0.0015269906725734472,
-      "parameters_hash": "240fc51eaa19b83c"
+      "timestamp": "2025-10-04T22:06:45.485335",
+      "execution_time_ms": 15008.922759443521,
+      "parameters_hash": "b6c273a21eeb0bef"
     }
   ],
   "metadata": {
@@ -54,5 +54,5 @@
       "LLM"
     ]
   },
-  "saved_at": "2025-10-03T21:06:15.554823"
+  "saved_at": "2025-10-04T22:06:45.507649"
 }

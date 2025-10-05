@@ -6,6 +6,7 @@ tool:
 input_json_path:
   task_description: $.current_task
 output_description: a object with stdout and stderr which store the output of stdout and stderr during execution.
+skip_new_task_generation: true
 ---
 
 

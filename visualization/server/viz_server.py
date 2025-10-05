@@ -480,56 +480,53 @@ async def log_requests(request: Request, call_next):
     return response
 
 # Serve static files (React frontend) - this should be last
+def _register_core_pages():
+    """Register user communication and result delivery routes (always available for tests)."""
+    # Serve user communication forms
+    @app.get("/user-comm/{session_id}/{task_id}/")
+    async def serve_user_comm(session_id: str, task_id: str):  # type: ignore
+        return await serve_user_comm_form(session_id, task_id)
+
+    # Serve result delivery pages
+    @app.get("/result-delivery/{session_id}/{task_id}/")
+    async def serve_result_page(session_id: str, task_id: str):  # type: ignore
+        return await serve_result_delivery_page(session_id, task_id)
+
+    # Serve result delivery files
+    @app.get("/result-delivery/{session_id}/{task_id}/files/{filename}")
+    async def serve_result_file(session_id: str, task_id: str, filename: str):  # type: ignore
+        return await serve_result_delivery_file(session_id, task_id, filename)
+
+_register_core_pages()
+
 if REACT_BUILD_DIR.exists() and (REACT_BUILD_DIR / "index.html").exists():
     # Mount static assets (CSS, JS, etc.)
     app.mount("/assets", StaticFiles(directory=REACT_BUILD_DIR / "assets"), name="assets")
-    
-    # Serve user communication forms
-    @app.get("/user-comm/{session_id}/{task_id}/")
-    async def serve_user_comm(session_id: str, task_id: str):
-        """Serve user communication form or confirmation page."""
-        return await serve_user_comm_form(session_id, task_id)
-    
-    # Serve result delivery pages
-    @app.get("/result-delivery/{session_id}/{task_id}/")
-    async def serve_result_page(session_id: str, task_id: str):
-        """Serve result delivery page."""
-        return await serve_result_delivery_page(session_id, task_id)
-    
-    # Serve result delivery files
-    @app.get("/result-delivery/{session_id}/{task_id}/files/{filename}")
-    async def serve_result_file(session_id: str, task_id: str, filename: str):
-        """Serve files from result delivery directory."""
-        return await serve_result_delivery_file(session_id, task_id, filename)
-    
-    # Serve the LLM tuning HTML page
+
+    # Serve the LLM tuning HTML page (only if build exists to avoid 404 noise)
     @app.get("/llm-tuning")
-    async def serve_llm_tuning():
-        """Serve the LLM tool tuning page."""
+    async def serve_llm_tuning():  # type: ignore
         llm_tuning_path = PROJECT_ROOT / "visualization" / "llm_tuning.html"
         if llm_tuning_path.exists():
             return FileResponse(llm_tuning_path)
-        else:
-            raise HTTPException(status_code=404, detail="LLM tuning page not found")
-    
+        raise HTTPException(status_code=404, detail="LLM tuning page not found")
+
     # Serve index.html at root and handle SPA routing
     @app.get("/")
     @app.get("/{path:path}")
-    async def serve_react_app(path: str = None):
-        """Serve the React SPA. All paths serve index.html for client-side routing."""
-        # Serve API endpoints first (they won't reach here due to route precedence)
-        # For all other paths, serve the React app
+    async def serve_react_app(path: str = None):  # type: ignore
         index_path = REACT_BUILD_DIR / "index.html"
         return FileResponse(index_path)
-    
+
     logger.info(f"React build directory found at {REACT_BUILD_DIR}")
 else:
-    logger.warning(f"No React build found at {REACT_BUILD_DIR}. Please run 'npm run build' in frontend-react/ to build the frontend.")
-    
-    # If no React build, serve a basic index page
+    logger.warning(
+        f"No React build found at {REACT_BUILD_DIR}. Frontend assets disabled; core API & HTML endpoints still available."  # noqa: E501
+    )
+
+    # Basic index when no React build present
     @app.get("/")
-    async def serve_basic_index():
-        """Serve basic index page when no React build is available."""
+    async def serve_basic_index():  # type: ignore
         return {"message": "Doc Flow Visualization API", "llm_tuning": "/llm-tuning"}
 
 if __name__ == "__main__":

@@ -95,7 +95,8 @@ class BaseJsonPathGenerator:
         # Call LLM with tool schema
         response = await self.llm_tool.execute({
             "prompt": prompt,
-            "tools": [tool_schema]
+            "tools": [tool_schema],
+            "model": self.llm_tool.small_model  # Use smaller model for efficiency
         })
         
         # Extract tool calls from response

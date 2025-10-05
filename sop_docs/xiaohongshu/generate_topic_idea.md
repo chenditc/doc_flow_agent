@@ -11,6 +11,7 @@ input_description:
   post_num: 需要几个图文主题，一个数字
   current_date: 当前时间
 output_description: 小红书图文的主题列表
+skip_new_task_generation: true
 ---
 ## parameters.prompt
 

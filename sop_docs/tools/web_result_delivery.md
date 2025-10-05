@@ -5,4 +5,5 @@ tool:
 input_description:
   result_data: The result to display to the user. A dictionary object, key is the meaning of the data. If there are local file or image needs to be delivered, use the file path as the value.
 output_description: JSON object containing the result URL where user can view the results, status ("ok"), and whether the page already existed (existing boolean).
+skip_new_task_generation: true
 ---

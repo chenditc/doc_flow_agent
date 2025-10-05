@@ -97,6 +97,7 @@ class Task:
     parent_task_id: Optional[str] = None  # Parent task relationship  
     output_description: str = None  # Store output description for dynamic path generation
     result_validation_rule: str = None  # Rule for validating task result in subtree compaction
+    skip_new_task_generation: bool = False  # New flag to skip new task generation phase
     
     def __post_init__(self):
         # Auto-generate short_name if not provided
@@ -237,6 +238,8 @@ You're assigning compact, unique short names to newly generated tasks. Requireme
 - Use the same language as each task's description
 - Keep names under 15 words
 - You can change existing names if needed to ensure uniqueness
+- Represent parent-child task relationship if possible.
+- Represent the order of task if possible.
 
 Use the XML blocks below. Do not include any markdown. Return only via the function call with assignments for ALL new tasks.
 
@@ -244,9 +247,9 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
 {existing_names_xml}
 </existing_short_names>
 
-<current_task>
+<current_task (also parent for new task)>
 {current_task_xml}
-</current_task>
+</current_task (also parent for new task)>
 
 <new_tasks>
 {new_tasks_xml}
@@ -280,7 +283,8 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
 
         llm_response = await llm_tool.execute({
             "prompt": prompt,
-            "tools": [assign_names_tool]
+            "tools": [assign_names_tool],
+            "model": llm_tool.small_model  # Use smaller model for efficiency
         })
 
         # Parse tool call assignments
@@ -432,18 +436,17 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
         # Generate input JSON paths if not provided but input_description exists, iterate through input_description and see if the fields has path defined.
         input_json_path = sop_doc.input_json_path
         input_description_to_generate_path = {}
+        existing_paths_missing_value = {}
         for field, field_description in sop_doc.input_description.items():
-            if not input_json_path.get(field):
-                # Special case: if we have a doc_selection_message and this is the message_to_user field, use it directly
-                if field == "message_to_user" and doc_selection_message and sop_doc.doc_id == "tools/web_user_communicate":
-                    # Store the message directly in context and create a path to it
-                    temp_message_key = f"_temp_input_{field}"
-                    self.context[temp_message_key] = doc_selection_message
-                    input_json_path[field] = f"$.{temp_message_key}"
-                    print(f"[TASK_CREATION] Used doc_selection_message for {field}: {doc_selection_message}")
-                    continue
-                    
+            configured_path = input_json_path.get(field)
+            if not configured_path:
                 input_description_to_generate_path[field] = field_description
+                continue
+
+            current_value = get_json_path_value(self.context, configured_path)
+            if current_value is None:
+                input_description_to_generate_path[field] = field_description
+                existing_paths_missing_value[field] = configured_path
 
         if input_description_to_generate_path:
             print(f"[TASK_CREATION] Generating input JSON paths for {sop_doc.doc_id}, {input_description_to_generate_path}")
@@ -452,12 +455,22 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
                 self.context,
                 pending_task.description
             )
-            input_json_path.update(update_input_json_path)
+            for field, generated_path in update_input_json_path.items():
+                if field in existing_paths_missing_value:
+                    generated_value = get_json_path_value(self.context, generated_path)
+                    if generated_value is not None:
+                        set_json_path_value(self.context, existing_paths_missing_value[field], generated_value)
+                    temp_key = extract_key_from_json_path(generated_path)
+                    if temp_key and temp_key.startswith("_temp_input_") and temp_key in self.context:
+                        del self.context[temp_key]
+                else:
+                    input_json_path[field] = generated_path
 
         # For output, we now defer generation until after tool execution if we have output_description
         output_json_path = sop_doc.output_json_path
         output_description = sop_doc.output_description
         result_validation_rule = sop_doc.result_validation_rule
+        skip_new_task_generation = getattr(sop_doc, 'skip_new_task_generation', False)
         
         return Task(
             task_id=pending_task.task_id,
@@ -469,7 +482,8 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
             input_json_path=input_json_path,
             output_json_path=output_json_path,
             output_description=output_description,
-            result_validation_rule=result_validation_rule
+            result_validation_rule=result_validation_rule,
+            skip_new_task_generation=skip_new_task_generation
         )
     
     async def create_task_from_description(self, pending_task: PendingTask) -> Task:
@@ -629,14 +643,26 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
             updated_paths = []
             removed_temp_keys = []
 
-            # Generate output JSON path dynamically if needed (after getting tool output)
-            if not task.output_json_path and task.output_description:
-                print(f"[TASK_EXECUTION] Generating output JSON path for {task.sop_doc_id} based on tool output")
+            # Determine if we need to generate a new output path.
+            # A new path is generated if:
+            # 1. No output path is specified in the SOP, but an output description is available.
+            # 2. An output path is specified, but it already contains a value in the context.
+            should_generate_path = (not task.output_json_path and task.output_description) or \
+                                   (task.output_json_path and get_json_path_value(self.context, task.output_json_path) is not None)
+
+            if should_generate_path:
+                print(f"[TASK_EXECUTION] Generating new output JSON path for {task.sop_doc_id}.")
                 
+                # Use a more descriptive reason if the path already existed
+                description_for_generation = task.output_description
+                if task.output_json_path:
+                    print(f"[TASK_EXECUTION] Reason: Path '{task.output_json_path}' already contains a value.")
+                    description_for_generation = f"A new location for: {task.output_description}"
+
                 # Use output path generation tracing context manager
                 with self.tracer.trace_output_path_generation_step() as output_ctx:
                     task.output_json_path = await self.json_path_generator.generate_output_json_path(
-                        task.output_description,
+                        description_for_generation,
                         task.short_name,
                         self.context,
                         task.description,
@@ -645,13 +671,10 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
                     print(f"[TASK_EXECUTION] Generated output JSON path: {task.output_json_path}")
                     output_ctx.set_result(generated_path=task.output_json_path)
             
-                    # Add execution prefix to output JSON path
-                    prefixed_output_path = self.add_execution_prefix_to_path(task.output_json_path)
-                    print(f"[TASK_EXECUTION] Using prefixed output path: {prefixed_output_path}")
-
-                    output_ctx.set_result(prefixed_path=prefixed_output_path)
-            else:
-                prefixed_output_path = self.add_execution_prefix_to_path(task.output_json_path)
+            # Add execution prefix to output JSON path
+            prefixed_output_path = self.add_execution_prefix_to_path(task.output_json_path)
+            if task.output_json_path and prefixed_output_path != task.output_json_path:
+                print(f"[TASK_EXECUTION] Using prefixed output path: {prefixed_output_path}")
 
             # Set the tool output value to the context using the prefixed JSON path
             set_json_path_value(self.context, prefixed_output_path, tool_output)
@@ -684,19 +707,29 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
         with self.tracer.trace_phase_with_data("new_task_generation") as phase_ctx:
             # Use new task generation context manager
             with self.tracer.trace_new_task_generation_step() as step_ctx:
-                # Use LLM to check the output, see if there is new task needed.
-                new_pending_tasks = await self.parse_new_tasks_from_output(tool_output, task, self.task_stack)
+                if getattr(task, 'skip_new_task_generation', False):
+                    print(f"[NEW_TASK_GEN] Skipping new task generation for task {task.task_id} due to skip_new_task_generation flag.")
+                    new_pending_tasks = []
+                    step_ctx.set_result(
+                        generated_tasks=[],
+                        tool_output=tool_output,
+                        task_description=task.description
+                    )
+                else:
+                    # Use LLM to check the output, see if there is new task needed.
+                    new_pending_tasks = await self.parse_new_tasks_from_output(tool_output, task, self.task_stack)
 
-                # Always batch-generate short names for the new tasks
-                if new_pending_tasks:
-                    await self.generate_short_names_for_pending_tasks(new_pending_tasks, current_task=task)
+                    # Always batch-generate short names for the new tasks
+                    if new_pending_tasks:
+                        await self.generate_short_names_for_pending_tasks(new_pending_tasks, current_task=task)
                 
                 # Set results in context manager
-                step_ctx.set_result(
-                    generated_tasks=[asdict(pending_task) for pending_task in new_pending_tasks],
-                    tool_output=tool_output,
-                    task_description=task.description
-                )
+                if not getattr(task, 'skip_new_task_generation', False):
+                    step_ctx.set_result(
+                        generated_tasks=[asdict(pending_task) for pending_task in new_pending_tasks],
+                        tool_output=tool_output,
+                        task_description=task.description
+                    )
             
             # Set phase data with task generation results
             phase_ctx.set_data({
