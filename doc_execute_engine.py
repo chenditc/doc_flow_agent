@@ -854,6 +854,7 @@ Analyze the output of the following text and extract any new task descriptions t
 4. There can be overlap between task descriptions. Make sure each description is comprehensive and non-duplicative.
 5. Please use the original task description's language as your response language.
 6. If there is duplicate task with "Task list waiting for execute", skip the duplicated task and do not add it in tasks array.
+7. Do not add additional task requirement detailed if not explicitly specified.
 
 Here is the text that needs analysis:
 

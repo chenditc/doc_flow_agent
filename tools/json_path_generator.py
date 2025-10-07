@@ -149,7 +149,7 @@ class BaseJsonPathGenerator:
 
         # Remove all "required" field recursively
         def remove_required_fields(obj):
-            if isinstance(obj, dict) and "required" in obj:
+            if isinstance(obj, dict):
                 obj.pop("required", None)
                 for value in obj.values():
                     remove_required_fields(value)

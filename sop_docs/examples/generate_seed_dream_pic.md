@@ -7,6 +7,7 @@ tool:
 input_description:
   related_context_content: 跟当前图片生成有关的描述。A python dict type.
 output_description: 本地图片路径。
+result_validation_rule: a dict with local_path should be returned, local_path is the path to the image.
 ---
 ## 该 API 的 curl 调用示例
 
