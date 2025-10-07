@@ -21,6 +21,7 @@ limitations under the License.
 import json
 import asyncio
 import hashlib
+from collections import OrderedDict
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, asdict
@@ -98,6 +99,7 @@ class Task:
     output_description: str = None  # Store output description for dynamic path generation
     result_validation_rule: str = None  # Rule for validating task result in subtree compaction
     skip_new_task_generation: bool = False  # New flag to skip new task generation phase
+    execution_order: Optional[int] = None  # Order in which the task was executed
     
     def __post_init__(self):
         # Auto-generate short_name if not provided
@@ -114,16 +116,19 @@ class Task:
 
     def __str__(self):
         # Return all fields as a formatted string for easy logging
-        return (f"Task ID: {self.task_id}\n"
-                f"Description: {self.description}\n"
-                f"Short Name: {self.short_name}\n"
-                f"Parent Task ID: {self.parent_task_id}\n"
-                f"SOP Document ID: {self.sop_doc_id}\n"
-                f"Tool: {self.tool.get('tool_id', 'N/A')}\n"
-                f"Input JSON Paths: {json.dumps(self.input_json_path, ensure_ascii=False)}\n"
-                f"Output JSON Path: {self.output_json_path}\n"
-                f"Output Description: {self.output_description}\n"
-                f"Result Validation Rule: {self.result_validation_rule}")
+        return (
+            f"Task ID: {self.task_id}\n"
+            f"Description: {self.description}\n"
+            f"Short Name: {self.short_name}\n"
+            f"Parent Task ID: {self.parent_task_id}\n"
+            f"SOP Document ID: {self.sop_doc_id}\n"
+            f"Tool: {self.tool.get('tool_id', 'N/A')}\n"
+            f"Input JSON Paths: {json.dumps(self.input_json_path, ensure_ascii=False)}\n"
+            f"Output JSON Path: {self.output_json_path}\n"
+            f"Output Description: {self.output_description}\n"
+            f"Result Validation Rule: {self.result_validation_rule}\n"
+            f"Execution Order: {self.execution_order}"
+        )
     
     def __repr__(self):
         # Return a concise representation for debugging
@@ -132,7 +137,8 @@ class Task:
                 f"sop_doc_id={self.sop_doc_id}, tool={self.tool.get('tool_id', 'N/A')}, "
                 f"input_json_path={self.input_json_path}, output_json_path={self.output_json_path}, "
                 f"output_description={self.output_description}, "
-                f"result_validation_rule={self.result_validation_rule})")
+                f"result_validation_rule={self.result_validation_rule}, "
+                f"execution_order={self.execution_order})")
 
 class DocExecuteEngine:
     """Main execution engine for document-driven tasks"""
@@ -158,7 +164,7 @@ class DocExecuteEngine:
         self.task_short_name_map: Dict[str, str] = {}
         
         # Task completion tracking for subtree compaction
-        self.completed_tasks: Dict[str, Task] = {}  # task_id -> completed Task with final output path
+        self.completed_tasks = OrderedDict()  # type: OrderedDict[str, Task]
         
         # Initialize tracing (optionally with a predefined session file so orchestrator can expose it early)
         self.tracer = ExecutionTracer(output_dir=trace_output_dir, enabled=enable_tracing, predefined_session_file=trace_session_file)
@@ -584,6 +590,8 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
         """Execute a single task"""
         # Increment task execution counter
         self.task_execution_counter += 1
+        # Record execution order on the task for downstream analysis
+        task.execution_order = self.task_execution_counter
         
         print(f"\n=== Executing Task #{self.task_execution_counter}: {task.description} ===")
         print(f"SOP Doc: {task.sop_doc_id}")
@@ -1147,6 +1155,17 @@ Please return only the task description as a single paragraph, without additiona
                 value = self.resolve_json_path(task.output_json_path, self.context)
                 if value is not None:
                     aggregated_outputs[task.output_json_path] = value
+
+        # Build task event list in execution order directly from completed tasks
+        task_event_list: List[Dict[str, Any]] = [
+            {
+                "task_short_name": task.short_name,
+                "full_task_description": task.description,
+                "output_json_path": task.output_json_path
+            }
+            for task in self.completed_tasks.values()
+            if task.task_id in all_subtree_ids
+        ]
     
         # Skip if no outputs to compact
         if not aggregated_outputs:
@@ -1157,11 +1176,11 @@ Please return only the task description as a single paragraph, without additiona
         with self.tracer.trace_phase_with_data("subtree_compaction") as phase_ctx:
             with self.tracer.trace_subtree_compaction_step() as compaction_ctx:
                 root_task = self.completed_tasks[root_task_id]
-                compaction_ctx.set_input(root_task_id, list(all_subtree_ids), aggregated_outputs)
+                compaction_ctx.set_input(root_task_id, list(all_subtree_ids), aggregated_outputs, task_events=task_event_list)
                 
                 # Evaluate with LLM
                 requirements_met, missing_reqs, new_tasks, llm_result = await self._evaluate_subtree_completion(
-                    root_task, aggregated_outputs)
+                    root_task, aggregated_outputs, task_event_list)
                 
                 # Guard clause: requirements NOT met
                 if not requirements_met:
@@ -1178,6 +1197,7 @@ Please return only the task description as a single paragraph, without additiona
                         "root_task_id": root_task_id,
                         "subtree_task_ids": list(all_subtree_ids),
                         "aggregated_outputs": aggregated_outputs,
+                        "task_events": task_event_list,
                         "requirements_met": requirements_met
                     })
                     return False
@@ -1195,6 +1215,7 @@ Please return only the task description as a single paragraph, without additiona
                         "root_task_id": root_task_id,
                         "subtree_task_ids": list(all_subtree_ids),
                         "aggregated_outputs": aggregated_outputs,
+                        "task_events": task_event_list,
                         "requirements_met": requirements_met
                     })
                     return True
@@ -1216,13 +1237,21 @@ Please return only the task description as a single paragraph, without additiona
                     "root_task_id": root_task_id,
                     "subtree_task_ids": list(all_subtree_ids),
                     "aggregated_outputs": aggregated_outputs,
+                    "task_events": task_event_list,
                     "requirements_met": requirements_met
                 })
                 return True
 
     async def _evaluate_subtree_completion(self, root_task: Task, 
-                                         aggregated_outputs: Dict[str, Any]) -> tuple[bool, List[str], List[PendingTask], Dict[str, Any]]:
-        """Use LLM to evaluate if subtree requirements are met"""
+                                         aggregated_outputs: Dict[str, Any],
+                                         task_event_list: List[Dict[str, Any]]) -> tuple[bool, List[str], List[PendingTask], Dict[str, Any]]:
+        """Use LLM to evaluate if subtree requirements are met.
+
+        Args:
+            root_task: The root task for the subtree being evaluated.
+            aggregated_outputs: Mapping of output JSON paths to their resolved values.
+            task_event_list: Ordered history of tasks executed within the subtree.
+        """
         # Create evaluation prompt
         root_description = root_task.description
         root_short_name = root_task.short_name
@@ -1232,6 +1261,15 @@ Please return only the task description as a single paragraph, without additiona
             f"<{path}>\n{value}\n</{path}>\n"
             for path, value in aggregated_outputs.items()
         ])
+
+        task_events_xml = "\n".join([
+            "<task_event>\n"
+            f"<short_name>{event.get('task_short_name', '')}</short_name>\n"
+            f"<description>\n{event.get('full_task_description', '')}\n</description>\n"
+            f"<output_json_path>{event.get('output_json_path', '')}</output_json_path>\n"
+            "</task_event>"
+            for event in task_event_list
+        ]) if task_event_list else "<task_event>None</task_event>"
 
         root_task_evaluation_hint = ""
         if root_task.result_validation_rule and root_task.result_validation_rule.strip() != "":
@@ -1253,9 +1291,13 @@ Use the evaluate_and_summarize_subtree function to provide your evaluation.
 <root_task_short_name>{root_short_name}</root_task_short_name>
 {root_task_evaluation_hint}
 
-<work you have performed>
+<task_execution_history>
+{task_events_xml}
+</task_execution_history>
+
+<output json path content>
 {outputs_xml}
-</work you have performed>
+</output json path content>
 """
 
         # Define tool schema

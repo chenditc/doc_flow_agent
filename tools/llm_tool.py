@@ -92,7 +92,7 @@ class LLMTool(BaseTool):
                     "content": prompt
                 }
             ],
-            "max_completion_tokens": max_tokens,
+            "max_tokens": max_tokens,
             "stream": True,
         }
         
@@ -222,7 +222,7 @@ class LLMTool(BaseTool):
             stream = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": "test"}],
-                max_completion_tokens=2,
+                max_tokens=2,
                 stream=True,
             )
             # Just collect the chunks to verify streaming works

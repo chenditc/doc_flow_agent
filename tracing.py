@@ -257,6 +257,7 @@ class SubtreeCompactionPhase:
     root_task_id: Optional[str] = None
     subtree_task_ids: List[str] = field(default_factory=list)
     aggregated_outputs: Dict[str, Any] = field(default_factory=dict)
+    task_events: List[Dict[str, Any]] = field(default_factory=list)
     
     # LLM evaluation
     llm_calls: List[LLMCall] = field(default_factory=list)
@@ -1146,6 +1147,7 @@ class ExecutionTracer:
                 phase.root_task_id = step_ctx.root_task_id
                 phase.subtree_task_ids = step_ctx.subtree_task_ids or []
                 phase.aggregated_outputs = step_ctx.aggregated_outputs or {}
+                phase.task_events = step_ctx.task_events or []
                 phase.requirements_met = step_ctx.requirements_met
                 phase.missing_requirements = step_ctx.missing_requirements or []
                 phase.compacted_artifact_path = step_ctx.compacted_artifact_path
@@ -1318,6 +1320,7 @@ class SubtreeCompactionContext:
         self.root_task_id: Optional[str] = None
         self.subtree_task_ids: Optional[List[str]] = None
         self.aggregated_outputs: Optional[Dict[str, Any]] = None
+        self.task_events: Optional[List[Dict[str, Any]]] = None
         
         # Results
         self.requirements_met: Optional[bool] = None
@@ -1326,11 +1329,13 @@ class SubtreeCompactionContext:
         self.pruned_paths: Optional[List[str]] = None
         self.generated_tasks: Optional[List[Dict[str, Any]]] = None
     
-    def set_input(self, root_task_id: str, subtree_task_ids: List[str], aggregated_outputs: Dict[str, Any]):
+    def set_input(self, root_task_id: str, subtree_task_ids: List[str], aggregated_outputs: Dict[str, Any], task_events: Optional[List[Dict[str, Any]]] = None):
         """Set input data for compaction"""
         self.root_task_id = root_task_id
         self.subtree_task_ids = subtree_task_ids
         self.aggregated_outputs = aggregated_outputs
+        if task_events is not None:
+            self.task_events = task_events
     
     def set_result(self, requirements_met: bool, missing_requirements: List[str] = None, 
                    compacted_artifact_path: str = None, pruned_paths: List[str] = None,

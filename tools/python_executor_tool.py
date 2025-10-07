@@ -88,19 +88,18 @@ The function should return a JSON-serializable value.
 
             for attempt in range(1, self.max_generation_attempts + 1):
                 response = await self.llm_tool.execute(llm_params)
-
-                # Extract generated code from tool call response
-                candidate_code = self._extract_python_code_from_response(response)
-
-                # Ensure the generated code is a string
-                if not isinstance(candidate_code, str):
-                    candidate_code = str(candidate_code)
-
                 try:
+                    # Extract generated code from tool call response
+                    candidate_code = self._extract_python_code_from_response(response)
+
+                    # Ensure the generated code is a string
+                    if not isinstance(candidate_code, str):
+                        candidate_code = str(candidate_code)
+
                     compile(candidate_code, "<generated_code>", "exec")
                     python_code = candidate_code
                     break
-                except SyntaxError as error:
+                except (SyntaxError, ValueError) as error:
                     if attempt >= self.max_generation_attempts:
                         raise SyntaxError(
                             f"LLM failed to produce syntactically valid Python code after {self.max_generation_attempts} attempts"
@@ -245,8 +244,7 @@ The function should return a JSON-serializable value.
         # Extract tool calls from response
         tool_calls = response.get("tool_calls", [])
         if not tool_calls:
-            # Fallback to direct response if no tool calls
-            return str(response)
+            raise ValueError("No tool calls found in LLM response")
         
         # Get the first (and should be only) tool call
         tool_call = tool_calls[0]
