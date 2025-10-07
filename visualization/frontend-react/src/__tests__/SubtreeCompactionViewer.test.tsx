@@ -31,7 +31,7 @@ const mockCompactionPhase: SubtreeCompactionPhase = {
           name: 'evaluate_and_summarize_subtree',
           arguments: {
             requirements_met: false,
-            useful_output_path: ['$.message_collected_for_use_az_cli_to_create_a_ubuntu_22_04_vm']
+            deliverable_output_path: ['$.message_collected_for_use_az_cli_to_create_a_ubuntu_22_04_vm']
           }
         }
       ]

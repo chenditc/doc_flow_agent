@@ -30,9 +30,13 @@ from .llm_tool import LLMTool
 class WebResultDeliveryTool(BaseTool):
     """Web-based result delivery tool for presenting results to users"""
     
-    def __init__(self, llm_tool):
+    def __init__(self, llm_tool, max_generation_attempts: int = 3):
         super().__init__("WEB_RESULT_DELIVERY")
+        if max_generation_attempts < 1:
+            raise ValueError("max_generation_attempts must be at least 1")
+
         self.llm_tool = llm_tool
+        self.max_generation_attempts = max_generation_attempts
     
     async def execute(self, parameters: Dict[str, Any], sop_doc_body: Optional[str] = None) -> Dict[str, Any]:
         """Execute web result delivery tool with given parameters
@@ -75,14 +79,26 @@ class WebResultDeliveryTool(BaseTool):
         # Create directory structure
         session_dir.mkdir(parents=True, exist_ok=True)
         files_dir.mkdir(exist_ok=True)
+        data_file_name = "result_data.json"
+        data_file_path = files_dir / data_file_name
+        self._write_result_data_file(result_data, data_file_path)
         
-        # Generate HTML page using LLM and get file mappings
-        html_content, file_mappings = await self._generate_result_html_with_llm(
-            result_data, session_id, task_id
-        )
-        
-        # Copy files based on LLM-identified mappings
-        self._copy_files_from_mappings(file_mappings, files_dir)
+        for i in range(3):
+            # Generate HTML page using LLM and get file mappings
+            html_content, file_mappings = await self._generate_result_html_with_llm(
+                result_data, session_id, task_id, data_file_name
+            )
+            
+            # Copy files based on LLM-identified mappings
+            try:
+                self._copy_files_from_mappings(file_mappings, files_dir)
+                break  # Success
+            except ValueError as e:
+                print(f"[WEB_RESULT_DELIVERY] Error copying files: {e}")
+                if i == 2:
+                    raise  # Reraise after final attempt
+                # Retry generation to get correct file paths
+                continue
         
         # Write index.html atomically
         temp_index = index_file.with_suffix('.tmp')
@@ -113,25 +129,22 @@ class WebResultDeliveryTool(BaseTool):
             target_filename = mapping.get('target', '')
             
             if not source_path or not target_filename:
-                print(f"[WEB_RESULT_DELIVERY] Warning: Invalid mapping: {mapping}")
-                continue
+                raise ValueError(f"[WEB_RESULT_DELIVERY] Warning: Invalid mapping: {mapping}")
             
             source = Path(source_path)
             if not source.exists():
-                print(f"[WEB_RESULT_DELIVERY] Warning: File not found: {source_path}")
-                continue
-            
+                raise ValueError(f"[WEB_RESULT_DELIVERY] Warning: File not found: {source_path}")
+
             if not source.is_file():
-                print(f"[WEB_RESULT_DELIVERY] Warning: Not a file: {source_path}")
-                continue
-            
+                raise ValueError(f"[WEB_RESULT_DELIVERY] Warning: Not a file: {source_path}")
+
             # Copy file to destination with target filename
             dest_file = dest_dir / target_filename
             try:
                 shutil.copy2(source, dest_file)
                 print(f"[WEB_RESULT_DELIVERY] Copied file: {source_path} -> {target_filename}")
             except Exception as e:
-                print(f"[WEB_RESULT_DELIVERY] Error copying {source_path}: {e}")
+                raise ValueError(f"[WEB_RESULT_DELIVERY] Error copying {source_path}: {e}")
     
     def _get_result_url(self, session_id: str, task_id: str) -> str:
         """Construct the result URL for the user."""
@@ -155,11 +168,27 @@ class WebResultDeliveryTool(BaseTool):
         message = f"Task result available:\nSession: {session_id}\nTask: {task_id}\nView at: {result_url}"
         notify_user(message)
 
+    def _write_result_data_file(self, result_data: Any, file_path: Path) -> None:
+        """Persist result data so the HTML page can load it dynamically."""
+        if isinstance(result_data, (dict, list)):
+            payload = result_data
+        else:
+            payload = {
+                "type": "text",
+                "content": str(result_data)
+            }
+
+        with open(file_path, 'w', encoding='utf-8') as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+
+        print(f"[WEB_RESULT_DELIVERY] Saved result data to {file_path}")
+
     async def _generate_result_html_with_llm(
         self, 
         result_data: Any, 
         session_id: str, 
-        task_id: str
+        task_id: str,
+        data_file_name: str
     ) -> tuple[str, List[Dict[str, str]]]:
         """Generate HTML page using LLM and identify files/images to serve
         
@@ -173,9 +202,20 @@ class WebResultDeliveryTool(BaseTool):
             result_text = json.dumps(result_data, indent=2, ensure_ascii=False)
         else:
             result_text = str(result_data)
+
+        data_file_relative_path = f"files/{data_file_name}"
+        data_file_url = f"/result-delivery/{session_id}/{task_id}/{data_file_relative_path}"
         
         # Prepare prompt for LLM to generate the HTML page and identify files
         llm_prompt = f"""You are a web page generator for a result delivery system. Generate a complete HTML page with Material Design styling that displays task results to the user.
+
+The complete result data is saved as JSON and served to the browser at:
+- Local path: {data_file_relative_path}
+- URL: {data_file_url}
+
+Use client-side JavaScript to fetch this JSON file and render it. Do NOT embed the raw result data directly in the HTML markup. Provide a loading state while the data is being fetched, display the parsed content once loaded, and show a clear error message if loading fails. The JSON may either be structured data (object/array) or an object with keys "type" and "content" when the original result was a long text string.
+
+Do not add {data_file_relative_path} to file_mappings—the file already exists in the serving directory.
 
 Result Data:
 ```
@@ -185,17 +225,18 @@ Result Data:
 Your tasks:
 1. Identify any file paths or image paths in the result data that need to be served to the user
 2. For each identified file/image, determine:
-   - source: The local file path (as it appears in result_data)
+   - source: The local file path (must be identitcal as it appears in result_data)
    - target: The filename to use when serving (just the filename, not full path)
-3. Generate a complete HTML page that displays the result data
+3. Generate a complete HTML page that displays the result data after it is fetched from the JSON file
 
 Requirements for HTML generation:
 1. Create a complete, valid HTML page with proper DOCTYPE, head, and body
 2. Use Material Design styling (include Google Fonts Roboto and Material Icons from CDN)
-3. Display the result data in a clear, readable format:
-   - Use appropriate formatting for text, JSON, or structured data
-   - Use syntax highlighting for code/JSON if applicable
-   - Make long text content scrollable and have a copy button
+3. Display the result data in a clear, readable format after the fetch completes:
+    - Use appropriate formatting for text, JSON, or structured data
+    - Use syntax highlighting for code/JSON if applicable
+    - Make long text content scrollable and have a copy button
+    - Include a "Download JSON" button that links to the saved file
 4. For any files you identified, create download buttons/links:
    - Use the URL pattern: /result-delivery/{session_id}/{task_id}/files/{{target_filename}}
    - Style as Material Design buttons with download icons
@@ -205,6 +246,7 @@ Requirements for HTML generation:
 6. Use modern CSS with good UX (responsive, accessible, clean layout)
 7. Add a header with a success icon and title "Task Result"
 8. Make the page visually appealing and easy to read
+9. Include accessible labels for dynamic content regions (e.g., aria-live for status messages)
 
 Return both the HTML content and the file mappings using the provided tool."""
 
@@ -217,12 +259,24 @@ Return both the HTML content and the file mappings using the provided tool."""
             "temperature": 0.0,
             "tools": [tool_schema]
         }
-        llm_result = await self.llm_tool.execute(llm_params)
-        
-        # Extract HTML and file mappings from tool call response
-        html_content, file_mappings = self._extract_html_from_response(llm_result)
-        
-        return html_content, file_mappings
+        last_error: Optional[ValueError] = None
+        for attempt in range(1, self.max_generation_attempts + 1):
+            llm_result = await self.llm_tool.execute(llm_params)
+
+            try:
+                # Extract HTML and file mappings from tool call response
+                return self._extract_html_from_response(llm_result)
+            except ValueError as error:
+                last_error = error
+                if attempt >= self.max_generation_attempts:
+                    raise ValueError(
+                        f"LLM failed to produce valid HTML content after {self.max_generation_attempts} attempts"
+                    ) from error
+                # Retry generation with the same prompt
+                continue
+
+        # This point should never be reached because loop either returns or raises
+        raise ValueError("Failed to generate HTML content")
     
     def _create_html_generation_tool_schema(self) -> Dict[str, Any]:
         """Create tool schema for HTML result page generation with file mapping
@@ -281,16 +335,14 @@ Return both the HTML content and the file mappings using the provided tool."""
             
         Returns:
             Tuple of (html_content, file_mappings)
-        """
-        # Handle both string response (legacy) and tool call response
-        if isinstance(response, str):
-            return response, []
-            
+        """            
         # Extract tool calls from response
+        if not isinstance(response, dict):
+            raise ValueError("No tool calls found in LLM response")
+
         tool_calls = response.get("tool_calls", [])
         if not tool_calls:
-            # Fallback to direct response if no tool calls
-            return str(response), []
+            raise ValueError("No tool calls found in LLM response")
         
         # Get the first (and should be only) tool call
         tool_call = tool_calls[0]

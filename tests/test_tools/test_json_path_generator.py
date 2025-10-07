@@ -84,6 +84,28 @@ class TestJsonPathGenerator(unittest.TestCase):
         schema = json.loads(result)
         self.assertIn("user", schema)
         self.assertIn("settings", schema)
+
+    @patch('builtins.print')
+    def test_analyze_context_candidates_includes_task_short_name(self, mock_print):
+        """Ensure task short name is threaded into the prompt for candidate analysis"""
+        async def run_test():
+            # Use at least 10 items to avoid the quick return path
+            context = {f"field_{idx}": idx for idx in range(10)}
+            self.generator.llm_tool.execute = AsyncMock(return_value={"content": "[]"})
+
+            await self.generator._analyze_context_candidates(
+                "Test description",
+                context,
+                "Original ask",
+                task_short_name="Summarize Chapter 1"
+            )
+
+            call_args = self.generator.llm_tool.execute.call_args[0][0]
+            prompt = call_args["prompt"]
+            self.assertIn("Summarize Chapter 1", prompt)
+            self.assertIn("## Request Short Name", prompt)
+
+        asyncio.run(run_test())
     
     def test_cleanup_temp_inputs(self):
         """Test cleanup of temporary input fields"""

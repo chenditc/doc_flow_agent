@@ -35,9 +35,13 @@ load_dotenv()
 
 
 class PythonExecutorTool(BaseTool):
-    def __init__(self, llm_tool: LLMTool):
+    def __init__(self, llm_tool: LLMTool, max_generation_attempts: int = 3):
         super().__init__("PYTHON_EXECUTOR")
+        if max_generation_attempts < 1:
+            raise ValueError("max_generation_attempts must be at least 1")
+
         self.llm_tool = llm_tool
+        self.max_generation_attempts = max_generation_attempts
 
     async def execute(self, parameters: Dict[str, Any], sop_doc_body: str = "") -> Dict[str, Any]:
         task_description = parameters.get("task_description")
@@ -57,7 +61,7 @@ class PythonExecutorTool(BaseTool):
 
             prompt = f"""
 You are a Python code generation assistant.
-Your task is to write a single Python function named `process_step` that takes one argument: `context: dict`.
+Your task is to write a single Python function named `process_step` that takes one argument: `context: {type(related_context_content).__name__}`.
 This function will be executed to perform following specific task. Import necessary library if you used any.
 The context object will contain all the necessary data. The json serialized context object has been attached here for you to understand the input data structure.
 The function should return a JSON-serializable value.
@@ -70,7 +74,7 @@ The function should return a JSON-serializable value.
 {task_description}
 </Task Description>
 {sop_guidance}
-<context object type>{type(related_context_content)}</context object type>
+<context object type>{type(related_context_content).__name__}</context object type>
 <Json serialized context object>
 {json.dumps(related_context_content, indent=2, ensure_ascii=False)}
 </Json serialized context object>
@@ -81,12 +85,33 @@ The function should return a JSON-serializable value.
                 "temperature": 0.0,
                 "tools": [tool_schema]
             }
-            response = await self.llm_tool.execute(llm_params)
-            
-            # Extract generated code from tool call response
-            python_code = self._extract_python_code_from_response(response)
 
-            # Ensure the generated code is a string
+            for attempt in range(1, self.max_generation_attempts + 1):
+                response = await self.llm_tool.execute(llm_params)
+
+                # Extract generated code from tool call response
+                candidate_code = self._extract_python_code_from_response(response)
+
+                # Ensure the generated code is a string
+                if not isinstance(candidate_code, str):
+                    candidate_code = str(candidate_code)
+
+                try:
+                    compile(candidate_code, "<generated_code>", "exec")
+                    python_code = candidate_code
+                    break
+                except SyntaxError as error:
+                    if attempt >= self.max_generation_attempts:
+                        raise SyntaxError(
+                            f"LLM failed to produce syntactically valid Python code after {self.max_generation_attempts} attempts"
+                        ) from error
+                    # Retry with a fresh generation
+                    continue
+
+            if not python_code:
+                # This should not happen, but guard against it
+                raise RuntimeError("Failed to obtain Python code from LLM")
+        else:
             if not isinstance(python_code, str):
                 python_code = str(python_code)
 

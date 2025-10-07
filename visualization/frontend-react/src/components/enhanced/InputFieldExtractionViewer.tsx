@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import type { InputFieldExtraction } from '../../types/trace';
 import { ContextualLLMCall } from './ContextualLLMCall';
+import { JsonViewer as NiceJsonViewer } from '../common/JsonViewer';
 
 interface InputFieldExtractionViewerProps {
   fieldName: string;
@@ -176,13 +177,13 @@ export const InputFieldExtractionViewer: React.FC<InputFieldExtractionViewerProp
         {/* Candidate Fields */}
         {fieldExtraction.candidate_fields && Object.keys(fieldExtraction.candidate_fields).length > 0 && (
           <CollapsibleSection title={`Candidate Fields (${Object.keys(fieldExtraction.candidate_fields).length})`} variant="info">
-            <div className="space-y-2">
+            <div className="space-y-3">
               {Object.entries(fieldExtraction.candidate_fields).map(([key, value]) => (
-                <div key={key} className="flex items-start gap-3 p-2 bg-gray-50 rounded">
-                  <span className="font-mono text-sm font-medium text-blue-600">{key}:</span>
-                  <span className="font-mono text-sm text-gray-700 flex-1 min-w-0 break-all">
-                    {typeof value === 'string' ? value : JSON.stringify(value)}
-                  </span>
+                <div key={key} className="space-y-2 p-3 bg-white border border-gray-200 rounded-md shadow-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-mono text-sm font-semibold text-blue-700 break-all">{key}</span>
+                  </div>
+                  <NiceJsonViewer value={value} collapsed={false} maxHeight={260} />
                 </div>
               ))}
             </div>

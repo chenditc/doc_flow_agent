@@ -236,10 +236,11 @@ You're assigning compact, unique short names to newly generated tasks. Requireme
 - Ensure uniqueness across all existing short names
 - Keep names discriminative and concise
 - Use the same language as each task's description
-- Keep names under 15 words
+- Try to keep names under 15 words
 - You can change existing names if needed to ensure uniqueness
 - Represent parent-child task relationship if possible.
-- Represent the order of task if possible.
+- Represent the order of task if possible. Like step 3.4.2
+- Task on same level tend to have similar prefix for better grouping.
 
 Use the XML blocks below. Do not include any markdown. Return only via the function call with assignments for ALL new tasks.
 
@@ -450,10 +451,22 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
 
         if input_description_to_generate_path:
             print(f"[TASK_CREATION] Generating input JSON paths for {sop_doc.doc_id}, {input_description_to_generate_path}")
+            # Build context_key_meaning_map: map stored context keys to task short names if available
+            context_key_meaning_map: Dict[str, str] = {}
+            # Use completed tasks' output_json_path to reverse map
+            for task_id, completed_task in self.completed_tasks.items():
+                if completed_task.output_json_path:
+                    key = extract_key_from_json_path(completed_task.output_json_path)
+                    if key:
+                        context_key_meaning_map[key] = completed_task.short_name or completed_task.description
+
             update_input_json_path = await self.json_path_generator.generate_input_json_paths(
                 input_description_to_generate_path,
                 self.context,
-                pending_task.description
+                pending_task.description,
+                
+                context_key_meaning_map=context_key_meaning_map,
+                task_short_name=pending_task.short_name
             )
             for field, generated_path in update_input_json_path.items():
                 if field in existing_paths_missing_value:
@@ -470,7 +483,7 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
         output_json_path = sop_doc.output_json_path
         output_description = sop_doc.output_description
         result_validation_rule = sop_doc.result_validation_rule
-        skip_new_task_generation = getattr(sop_doc, 'skip_new_task_generation', False)
+        skip_new_task_generation = sop_doc.skip_new_task_generation
         
         return Task(
             task_id=pending_task.task_id,
@@ -707,7 +720,7 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
         with self.tracer.trace_phase_with_data("new_task_generation") as phase_ctx:
             # Use new task generation context manager
             with self.tracer.trace_new_task_generation_step() as step_ctx:
-                if getattr(task, 'skip_new_task_generation', False):
+                if task.skip_new_task_generation:
                     print(f"[NEW_TASK_GEN] Skipping new task generation for task {task.task_id} due to skip_new_task_generation flag.")
                     new_pending_tasks = []
                     step_ctx.set_result(
@@ -724,7 +737,7 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
                         await self.generate_short_names_for_pending_tasks(new_pending_tasks, current_task=task)
                 
                 # Set results in context manager
-                if not getattr(task, 'skip_new_task_generation', False):
+                if not task.skip_new_task_generation:
                     step_ctx.set_result(
                         generated_tasks=[asdict(pending_task) for pending_task in new_pending_tasks],
                         tool_output=tool_output,
@@ -886,7 +899,8 @@ Here is the text that needs analysis:
 
         llm_response = await llm_tool.execute({
             "prompt": prompt,
-            "tools": [extract_tasks_tool]
+            "tools": [extract_tasks_tool],
+            "model": llm_tool.small_model  # Use smaller model for efficiency
         })
         print(f"[TASK_PARSER] LLM response: {llm_response}")
         
@@ -1109,7 +1123,7 @@ Please return only the task description as a single paragraph, without additiona
             all_tasks = list(self.completed_tasks.values()) + list(self.pending_tasks.values())
             
             for task in all_tasks:
-                if getattr(task, 'parent_task_id', None) == current_id:
+                if task.parent_task_id == current_id:
                     task_id = task.task_id
                     if task_id not in descendants:  # Avoid cycles
                         descendants.add(task_id)
@@ -1186,8 +1200,8 @@ Please return only the task description as a single paragraph, without additiona
 
                 # Multi-task subtree: generate artifact & prune
                 artifact_path = await self._generate_compacted_artifact(
-                    root_task, aggregated_outputs, llm_result.get("summary", ""), llm_result.get("useful_output_path", []))
-                pruned_paths = await self._prune_subtree_outputs(all_subtree_ids)
+                    root_task, aggregated_outputs, llm_result.get("summary", ""), llm_result.get("deliverable_output_path", []))
+                pruned_paths = await self._prune_subtree_outputs(all_subtree_ids, compacted_artifact_json_path=artifact_path)
                 root_task.output_json_path = artifact_path
                 self.last_task_output = get_json_path_value(self.context, artifact_path)
                 self.save_context()
@@ -1210,11 +1224,11 @@ Please return only the task description as a single paragraph, without additiona
         """Use LLM to evaluate if subtree requirements are met"""
         # Create evaluation prompt
         root_description = root_task.description
-        root_short_name = root_task.short_name or "subtree"
+        root_short_name = root_task.short_name
         
         # Format outputs for LLM using XML
         outputs_xml = "\n".join([
-            f"<output_path>{path}</output_path>\n<content>{value}</content>\n"
+            f"<{path}>\n{value}\n</{path}>\n"
             for path, value in aggregated_outputs.items()
         ])
 
@@ -1227,9 +1241,9 @@ You are a helpful agent which can perform task like run comamnd / code / search 
 
 Right now, you need to evaluate whether your work has satisfied the root task requirements. 
 
-1. First, you need to think about what to check based on the requirement evaluation rule. If no requirement evaluation rule present then consider the task description. Only consider requirement not met if some requirement totally missed. Eg. We need to run a command and command not exists. Or if we need to write a paragraph and no text outputed.
+1. First, you need to think about what to check based on the requirement evaluation rule. If no requirement evaluation rule present then consider the task description. If requirement evaluation rule is present, do not use any other evaluation rule. Only consider requirement not met if some requirement totally missed. Eg. We need to run a command and command not exists. Or if we need to write a paragraph and no text outputed. Start your think process by "The requirement evaluation rule is ...."
 2. If requirements are NOT met, list specific failing aspects and create new tasks to address them, so that user's end goal can be achieved. If there are multiple failing aspect and only some of them are root cause, you should only generate new task to address root cause. You should NOT generate new task to address non-root-cause issue or issue you are not confirmed.
-3. If requirements ARE met, provide a summary and which path in the aggregated_outputs should be used to consider as the output, put them in the useful_output_path.
+3. If requirements ARE met, provide a summary and which path in the aggregated_outputs should be used to consider as the output, put them in the deliverable_output_path. The deliverable_output_pathshould contains only the deliverable information, eg. if root task is asking a summary of an article, the deliverable_output_path should only contain summary, not including other thinking or execution process like download article or parse article. If the deliverable content is nested, you can access it like $.some_output_path.some_json_field_in_that_output. If there are multiple deliverable, include all paths. If all sub path are important, use the root path.
 
 Use the evaluate_and_summarize_subtree function to provide your evaluation.
 </instructions>
@@ -1278,7 +1292,7 @@ Use the evaluate_and_summarize_subtree function to provide your evaluation.
                             "type": "string", 
                             "description": "Concise summary of the subtree results if requirements are met"
                         },
-                        "useful_output_path": {
+                        "deliverable_output_path": {
                             "type": "array",
                             "items": {"type": "string"},
                             "description": "Array of output paths that contain useful results to be preserved in the compacted artifact"
@@ -1321,7 +1335,7 @@ Use the evaluate_and_summarize_subtree function to provide your evaluation.
         return requirements_met, missing_reqs, new_tasks, result
 
     async def _generate_compacted_artifact(self, root_task: Task, aggregated_outputs: Dict[str, Any], 
-                                          summary: str, useful_output_paths: List[str]) -> str:
+                                          summary: str, deliverable_output_paths: List[str]) -> str:
         """Generate compacted artifact and store in context"""
         # Use existing path generator to create output path
         output_description = f"Compacted result for subtree rooted at: {root_task.short_name or root_task.description}"
@@ -1335,35 +1349,35 @@ Use the evaluate_and_summarize_subtree function to provide your evaluation.
         )
         
         # Copy content from useful output paths into a new dict
-        useful_outputs = {}
-        for path in useful_output_paths:
+        compacted_output = {}
+        for path in deliverable_output_paths:
             value = self.resolve_json_path(path, self.context)
-            if value is not None:
-                # Use the path without the $. prefix as the key
-                key = path.replace("$.", "") if path.startswith("$.") else path
-                useful_outputs[key] = value
-        
-        # Create compacted artifact with simplified structure
+            if value is None:
+                raise Exception(f"[COMPACTION] Error: deliverable output path {path} not found in context")
+            key = path.replace("$.", "") if path.startswith("$.") else path
+            key = key.replace(".", "_")  # Replace dots with underscores for valid keys
+            compacted_output[key] = value
+
+        # Create compacted artifact with simplified structure (renamed key)
         artifact = {
             "summary": summary or f"Compacted results for: {root_task.short_name or root_task.description}",
-            "useful_outputs": useful_outputs,
-            "root_task_id": root_task.task_id,
-            "root_task_description": root_task.description,
-            "compacted_at": self.task_execution_counter
+            "compacted_output": compacted_output,
         }
         
         # Store in context
         set_json_path_value(self.context, artifact_path, artifact)
         return artifact_path
 
-    async def _prune_subtree_outputs(self, subtree_task_ids: set[str]) -> List[str]:
-        """Prune subtree output paths from context"""
+    async def _prune_subtree_outputs(self, subtree_task_ids: set[str], compacted_artifact_json_path: Optional[str] = None) -> List[str]:
+        """Prune subtree output paths from context, optionally preserving the compacted artifact output."""
         pruned_paths = []
         
         # Get all output paths used by subtree tasks
         for task_id in subtree_task_ids:
             task = self.completed_tasks.get(task_id)
             if task and task.output_json_path:
+                if compacted_artifact_json_path and task.output_json_path == compacted_artifact_json_path:
+                    continue
                 # Extract the key from JSON path using utility function
                 key = extract_key_from_json_path(task.output_json_path)
                 

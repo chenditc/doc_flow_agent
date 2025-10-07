@@ -484,7 +484,7 @@ class TestDocExecuteEngineUnits(unittest.TestCase):
                         "requirements_met": True,
                         "summary": "All objectives are satisfied.",
                         "check_requirement_one_by_one": "All requirements checked and satisfied",
-                        "useful_output_path": ["$.root_output", "$.child_output"]
+                        "deliverable_output_path": ["$.root_output", "$.child_output"]
                     }
                 }
             ]
@@ -498,7 +498,7 @@ class TestDocExecuteEngineUnits(unittest.TestCase):
         artifact = engine.context["compacted_result"]
         self.assertEqual(artifact["summary"], "All objectives are satisfied.")
         expected_useful = {"root_output": {"summary": "draft"}, "child_output": "details"}
-        self.assertEqual(artifact["useful_outputs"], expected_useful)
+        self.assertEqual(artifact["compacted_output"], expected_useful)
         self.assertNotIn("root_output", engine.context)
         self.assertNotIn("child_output", engine.context)
         self.assertEqual(root_task.output_json_path, "$.compacted_result")

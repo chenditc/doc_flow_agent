@@ -67,7 +67,7 @@ async def test_execute_task_skips_generation_when_flag_true():
                             "arguments": {
                                 "requirements_met": True,
                                 "summary": "Completed",
-                                "useful_output_path": ["$.skip_test_output"]
+                                "deliverable_output_path": ["$.skip_test_output"]
                             }
                         }
                     ],

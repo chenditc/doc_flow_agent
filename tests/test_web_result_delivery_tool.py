@@ -304,11 +304,10 @@ class TestWebResultDeliveryTool:
         assert len(file_mappings) == 1
         assert file_mappings[0]["source"] == "/path/to/file.txt"
         
-        # Test legacy string response
+        # Legacy string responses are no longer supported
         string_response = "<html><body>Legacy</body></html>"
-        html_content, file_mappings = tool._extract_html_from_response(string_response)
-        assert html_content == string_response
-        assert file_mappings == []
+        with pytest.raises(ValueError, match="No tool calls found"):
+            tool._extract_html_from_response(string_response)
     
     @pytest.mark.asyncio
     async def test_missing_file_handling(self, tool):
@@ -350,6 +349,77 @@ class TestWebResultDeliveryTool:
                         result = await tool.execute(parameters)
                     
                     assert result["status"] == "ok"
+
+    @pytest.mark.asyncio
+    async def test_retry_on_value_error(self, tool):
+        """Test that ValueError during HTML parsing triggers retries"""
+
+        responses = [
+            {"tool_calls": []},  # Will cause ValueError: No tool calls
+            {
+                "tool_calls": [{
+                    "name": "generate_html_result_page",
+                    "arguments": {
+                        "html_content": "<!DOCTYPE html><html><body>Valid</body></html>",
+                        "file_mappings": []
+                    }
+                }]
+            }
+        ]
+
+        async def mock_execute(params):
+            return responses.pop(0)
+
+        tool.llm_tool.execute.side_effect = mock_execute
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            temp_project = Path(tmpdir)
+
+            with patch('tools.web_result_delivery_tool.__file__', str(temp_project / 'tools' / 'web_result_delivery_tool.py')):
+                with patch('utils.user_notify.notify_user'):
+                    parameters = {
+                        "result_data": "Retry test",
+                        "session_id": "retry_session",
+                        "task_id": "retry_task"
+                    }
+
+                    with patch.dict(os.environ, {'VISUALIZATION_SERVER_URL': 'http://localhost:8000'}):
+                        result = await tool.execute(parameters)
+
+                    assert result["status"] == "ok"
+                    # First attempt failed, second succeeded
+                    assert tool.llm_tool.execute.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_retry_exhaustion_raises_value_error(self):
+        """Test that ValueError is raised after exhausting retries"""
+
+        mock_llm = AsyncMock()
+        tool = WebResultDeliveryTool(llm_tool=mock_llm, max_generation_attempts=2)
+
+        responses = [{"tool_calls": []}, {"tool_calls": []}]
+
+        async def mock_execute(params):
+            return responses.pop(0)
+
+        tool.llm_tool.execute.side_effect = mock_execute
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            temp_project = Path(tmpdir)
+
+            with patch('tools.web_result_delivery_tool.__file__', str(temp_project / 'tools' / 'web_result_delivery_tool.py')):
+                with patch('utils.user_notify.notify_user'):
+                    parameters = {
+                        "result_data": "Failure test",
+                        "session_id": "retry_fail_session",
+                        "task_id": "retry_fail_task"
+                    }
+
+                    with patch.dict(os.environ, {'VISUALIZATION_SERVER_URL': 'http://localhost:8000'}):
+                        with pytest.raises(ValueError, match="LLM failed to produce valid HTML content after 2 attempts"):
+                            await tool.execute(parameters)
+
+        assert tool.llm_tool.execute.call_count == 2
 
 
 if __name__ == "__main__":

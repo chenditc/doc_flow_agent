@@ -56,10 +56,10 @@ export const SubtreeCompactionViewer: React.FC<SubtreeCompactionViewerProps> = (
     const paths: string[] = [];
     phaseData.llm_calls.forEach(call => {
       call.tool_calls?.forEach(toolCall => {
-        if (toolCall.arguments?.useful_output_path) {
-          const usefulPaths = Array.isArray(toolCall.arguments.useful_output_path) 
-            ? toolCall.arguments.useful_output_path 
-            : [toolCall.arguments.useful_output_path];
+        if (toolCall.arguments?.deliverable_output_path) {
+          const usefulPaths = Array.isArray(toolCall.arguments.deliverable_output_path) 
+            ? toolCall.arguments.deliverable_output_path 
+            : [toolCall.arguments.deliverable_output_path];
           paths.push(...usefulPaths);
         }
       });

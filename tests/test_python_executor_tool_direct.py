@@ -166,6 +166,119 @@ class TestPythonExecutorToolDirect(unittest.TestCase):
     @patch("uuid.uuid4")
     @patch("os.remove")
     @patch("builtins.open", new_callable=mock_open)
+    @patch("os.path.exists", return_value=True)
+    def test_execute_retries_on_syntax_error_then_succeeds(self, mock_exists, mock_open_func, mock_remove, mock_uuid, mock_subprocess_run):
+        """Test that syntax errors trigger retries until valid code is generated"""
+
+        async def run_test():
+            # Recreate tool with limited attempts for clarity
+            self.tool = PythonExecutorTool(llm_tool=self.mock_llm_tool, max_generation_attempts=3)
+
+            mock_uuid.return_value = uuid.UUID("12345678-1234-5678-1234-567812345678")
+            run_id = "12345678-1234-5678-1234-567812345678"
+
+            responses = [
+                {
+                    "tool_calls": [{
+                        "name": "generate_python_code",
+                        "arguments": {
+                            "python_code": "def process_step(context)\n    return context['a']"  # Missing colon
+                        }
+                    }]
+                },
+                {
+                    "tool_calls": [{
+                        "name": "generate_python_code",
+                        "arguments": {
+                            "python_code": "def process_step(context):\n    return {'result': context['a'] + context['b']}"
+                        }
+                    }]
+                }
+            ]
+
+            async def mock_llm_execute(params):
+                return responses.pop(0)
+
+            self.mock_llm_tool.execute = mock_llm_execute
+
+            mock_process = MagicMock()
+            mock_process.stdout = "stdout message"
+            mock_process.stderr = "stderr message"
+            mock_subprocess_run.return_value = mock_process
+
+            result_data = {"return_value": {"result": 3}, "exception": None}
+            mock_open_func.side_effect = [
+                mock_open().return_value,  # context file write
+                mock_open().return_value,  # code file write
+                mock_open(read_data=json.dumps(result_data)).return_value,  # result file read
+            ]
+
+            params = {
+                "task_description": "Add two numbers from context",
+                "related_context_content": {"a": 1, "b": 2},
+            }
+
+            result = await self.tool.execute(params)
+
+            self.assertEqual(result["return_value"], {"result": 3})
+            self.assertIsNone(result["exception"])
+            self.assertIn("def process_step(context):", result["python_code"])
+
+            # Ensure subprocess executed only once despite retry
+            self.assertEqual(mock_subprocess_run.call_count, 1)
+
+            expected_context_file = f"/tmp/context_{run_id}.json"
+            expected_code_file = f"/tmp/code_{run_id}.py"
+            expected_output_file = f"/tmp/result_{run_id}.json"
+
+            called_args, called_kwargs = mock_subprocess_run.call_args
+            assert called_kwargs == {"capture_output": True, "text": True, "check": False}
+            assert called_args[0][1:] == [
+                "tools/executor_runner.py",
+                "--code-file", expected_code_file,
+                "--context-file", expected_context_file,
+                "--output-file", expected_output_file,
+            ]
+
+        asyncio.run(run_test())
+
+    def test_execute_raises_after_retry_exhaustion(self):
+        """Test that a SyntaxError is raised when all retries fail"""
+
+        async def run_test():
+            self.tool = PythonExecutorTool(llm_tool=self.mock_llm_tool, max_generation_attempts=2)
+
+            call_counter = {"count": 0}
+
+            async def mock_llm_execute(params):
+                call_counter["count"] += 1
+                return {
+                    "tool_calls": [{
+                        "name": "generate_python_code",
+                        "arguments": {
+                            "python_code": "def process_step(context)\n    return context['a']"  # Missing colon keeps failing
+                        }
+                    }]
+                }
+
+            self.mock_llm_tool.execute = mock_llm_execute
+
+            params = {
+                "task_description": "Add numbers",
+                "related_context_content": {"a": 1, "b": 2},
+            }
+
+            with self.assertRaises(SyntaxError):
+                await self.tool.execute(params)
+
+            self.assertEqual(call_counter["count"], 2)
+
+        asyncio.run(run_test())
+
+    @patch("subprocess.run")
+    @patch("uuid.uuid4")
+    @patch("os.remove")
+    @patch("builtins.open", new_callable=mock_open)
     @patch("os.path.exists")
     def test_execute_output_file_missing(self, mock_exists, mock_open_func, mock_remove, mock_uuid, mock_subprocess_run):
         """Test execution when output file is missing"""

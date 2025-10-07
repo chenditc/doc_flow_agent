@@ -5,8 +5,8 @@ tool:
   parameters:
     task_description: "请按当前任务的要求生成图片，并下载保存到本地。返回图片 url 以及本地图片路径。"
 input_description:
-  related_context_content: 跟当前图片生成有关的描述。
-output_description: 图片 url 以及本地图片路径。
+  related_context_content: 跟当前图片生成有关的描述。A python dict type.
+output_description: 本地图片路径。
 ---
 ## 该 API 的 curl 调用示例
 
@@ -82,7 +82,6 @@ def process_step(context: dict):
         return {
             "success": False,
             "error": "Missing ARK_API_KEY in environment",
-            "remote_url": None,
             "local_path": None,
             "used_size": None,
             "prompt": final_prompt,
@@ -137,7 +136,6 @@ def process_step(context: dict):
         return {
             "success": False,
             "error": "No URL returned in API response",
-            "remote_url": None,
             "local_path": None,
             "used_size": used_size,
             "prompt": final_prompt,
@@ -157,7 +155,6 @@ def process_step(context: dict):
             return {
                 "success": False,
                 "error": f"Failed to download image: HTTP {img_resp.status_code}",
-                "remote_url": remote_url,
                 "local_path": None,
                 "used_size": used_size,
                 "prompt": final_prompt,
@@ -167,7 +164,6 @@ def process_step(context: dict):
         return {
             "success": False,
             "error": f"Exception downloading image: {e}",
-            "remote_url": remote_url,
             "local_path": None,
             "used_size": used_size,
             "prompt": final_prompt,
@@ -182,9 +178,7 @@ def process_step(context: dict):
 
     return {
         "success": True,
-        "remote_url": remote_url,
         "local_path": local_path,
-        "used_size": used_size,
         "prompt": final_prompt,
         "model": MODEL_NAME,
         "api_response_meta": meta,

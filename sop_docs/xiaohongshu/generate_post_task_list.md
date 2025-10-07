@@ -7,7 +7,7 @@ tool:
 input_description:
   topic_list: 一个列表包含了建议生成的小红书图文的主题，一个主题一行
   human_setup: 小红书的账号人设
-  post_target_audience: 干货贴的对象
+  post_target_audience: 小红书贴的对象
 input_json_path:
   human_setup: $.blog_human_setup
   post_target_audience: $.blog_post_target_audience

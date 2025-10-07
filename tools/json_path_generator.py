@@ -30,6 +30,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from exceptions import TaskInputMissingError
 from tools import LLMTool
+from utils.json_utils import get_json_path_value
 
 
 class BaseJsonPathGenerator:
@@ -116,11 +117,12 @@ class BaseJsonPathGenerator:
         print(f"[JSON_PATH_GEN] Generated output path: {path}")
         return path
     
-    def _generate_context_schema(self, context: Dict[str, Any]) -> str:
+    def _generate_context_schema(self, context: Dict[str, Any], context_key_meaning_map: Optional[Dict[str, str]] = None) -> str:
         """Generate a readable schema representation of the context
         
         Args:
             context: Current context dictionary
+            context_key_meaning_map: Optional mapping from context key -> human meaning (e.g., task short name)
             
         Returns:
             String representation of the context schema
@@ -138,7 +140,24 @@ class BaseJsonPathGenerator:
         builder.add_object(context_to_builder)
         properties_str = builder.to_schema()["properties"]
 
-        # Remove all "required" field from 
+        # Annotate each top-level property with its meaning if provided
+        if context_key_meaning_map:
+            for key, prop in properties_str.items():
+                if isinstance(prop, dict) and key in context_key_meaning_map:
+                    # Keep minimal invasive: just add a 'meaning' field
+                    prop["meaning"] = context_key_meaning_map[key]
+
+        # Remove all "required" field recursively
+        def remove_required_fields(obj):
+            if isinstance(obj, dict) and "required" in obj:
+                obj.pop("required", None)
+                for value in obj.values():
+                    remove_required_fields(value)
+            elif isinstance(obj, list):
+                for item in obj:
+                    remove_required_fields(item)
+
+        remove_required_fields(properties_str)
 
         return json.dumps(properties_str, ensure_ascii=False, indent=2)
     
@@ -146,7 +165,9 @@ class BaseJsonPathGenerator:
         self, 
         input_description: str, 
         context: Dict[str, Any], 
-        user_original_ask: str
+        user_original_ask: str,
+        context_key_meaning_map: Optional[Dict[str, str]] = None,
+        task_short_name: Optional[str] = None
     ) -> Dict[str, Any]:
         """Step 1: Analyze context to find candidate fields for input description
         
@@ -154,21 +175,27 @@ class BaseJsonPathGenerator:
             input_description: Description of the required input
             context: Current context dictionary
             user_original_ask: Original user request
+            context_key_meaning_map: Optional mapping from context key -> human meaning (e.g., task short name)
+            task_short_name: Optional short name of the task requesting these inputs
             
         Returns:
             Dictionary of candidate field_name -> field_value pairs
         """
         # If the context length is not too large, just return all fields.
-        if len(str(context)) < 10000 and len(context) < 10:
+        if len(str(context)) < 1000 and len(context) < 10:
             return {f"$.['{key}']": value for key, value in context.items()}
 
-        context_schema = self._generate_context_schema(context)
-        
+        context_schema = self._generate_context_schema(context, context_key_meaning_map)
+        # Fill short name placeholder; keep backwards compatible if not provided
+        short_name_section = task_short_name or "(not provided)"
         prompt = f"""## Task: Find Context Candidates
 Analyze the current context to find fields that might contain information for the required input.
 
 ## User Original Request
 {user_original_ask}
+
+## Request Short Name
+{short_name_section}
 
 ## Required Input Description
 {input_description}
@@ -181,7 +208,9 @@ Analyze the current context to find fields that might contain information for th
 2. Return a JSON array with candidate field names
 3. Include fields that might be transformed, extracted, or used as-is
 4. If no candidates exist, return an empty object
-5. Represent the field using json_path syntax (e.g., "$.['field_name']", "$['field with spaces']")
+5. Represent the field using json_path syntax, starting with "$." (e.g., "$.['field_name']", "$.['field with spaces']")
+6. If there are multiple fields containing the same information, only select one with the shortest field name
+7. When the request short name is provided, prefer candidate fields whose meaning or content semantically aligns with it (especially words or entities appearing in the short name). Ignore unrelated fields.
 
 ## Return Format (JSON only, no other text)
 [
@@ -190,7 +219,7 @@ Analyze the current context to find fields that might contain information for th
 ]"""
 
         response = await self.llm_tool.execute({
-            "prompt": prompt
+            "prompt": prompt,
         })
 
         # Extract content from new response format
@@ -207,13 +236,18 @@ Analyze the current context to find fields that might contain information for th
         # Parse the JSON response
         candidates = json.loads(response_content)
         # Convert to dictionary with current values, use json_ng json path get
+        candidate_content_set = set()
         candidates_objects = {}
         for candidate in candidates:
             try:
                 jsonpath_expr = parse(candidate)
                 matches = jsonpath_expr.find(context)
                 if matches:
+                    if str(matches[0].value) in candidate_content_set:
+                        # Skip duplicate content
+                        continue
                     candidates_objects[candidate] = matches[0].value
+                    candidate_content_set.add(str(matches[0].value))
                 else:
                     candidates_objects[candidate] = None
             except Exception as e:
@@ -237,8 +271,9 @@ Analyze the current context to find fields that might contain information for th
             # TODO: use sandbox environment for safety
             # Execute the code
             namespace = {}
+            namespace["get_json_path_value"] = get_json_path_value
             exec(code, namespace)
-            functions = {name: obj for name, obj in namespace.items() if callable(obj) and not name.startswith('__')}
+            functions = {name: obj for name, obj in namespace.items() if callable(obj) and not name.startswith('__') and name != 'get_json_path_value'}
             if len(functions) != 1:
                 raise ValueError("Generated code did not produce a single extraction function")
             extraction_func = functions.popitem()[1]
@@ -307,7 +342,7 @@ Analyze the current context to find fields that might contain information for th
             tool_output_str = str(tool_output)
         
         return f"""## Task Description
-Given the following workspace context schema and output description, you MUST use the generate_output_path tool to return the appropriate output JSON path where the result should be stored. If there is obvious error in the output, you should name it with error suffix (e.g., failed_with_xxx_error, etc). Usually you can just use the short name of the User original request's english version, and append suffix to name it.
+Given the following workspace context schema and output description, you MUST use the generate_output_path tool to return the appropriate output JSON path where the result should be stored. If there is obvious error in the output, you should name it with error suffix (e.g., failed_with_xxx_error, etc). Usually you can just use the short name of the User original request's english version, and append suffix to name it. Eg. If short name is "Write a blog about xxx", you can name it as "blog_about_xxx".
 
 ## User Original Request
 {user_original_ask}
@@ -325,10 +360,11 @@ Given the following workspace context schema and output description, you MUST us
 {tool_output_str}
 
 ## Instructions
-1. Analyze the output description, user original request and tool output to determine the best field name in english snakecase style.
-2. Consider the existing context schema to avoid conflicts
-3. Return a JSON path using JSONPath syntax (e.g., "$.generated_outline_for_xxx_topic_blog", "$.['action_plan_to_create_blog_for_xxx']")
-4. The path should be semantically meaningful and discriminate within the context. If a similar path already exists, add more word to discriminate it.
+1. Analyze the output description, user original request and tool output to determine the best field name in english snakecase style. Usually you can just use the short name of the User original request's english version, and append suffix to name it. Eg. If short name is "Write a blog about xxx", you can name it as "blog_about_xxx".
+2. Consider the existing context schema to avoid conflicts.
+3. Return a JSON path using JSONPath syntax (e.g., "$.generated_outline_for_xxx_topic_blog", "$.['action_plan_to_create_blog_for_xxx']"). You should only use root path. Avoid using nested path like "$.some_output_path.some_json_field_in_that_output".
+4. The path should be semantically meaningful and discriminate within the context. If a similar path already exists, add more word to discriminate it. 
+5. If task short name contains step number like step 3.4.2, please keep it and use camel case for the number, e.g., xx_step_3_4_2_xxx_xxx
 
 ## Example 1
 
@@ -363,12 +399,17 @@ class OnebyOneJsonPathGenerator(BaseJsonPathGenerator):
             Python code string for extracting/generating the required content
         """
         candidates_text = "\n".join([
-            f"<json path: {field} type: {type(value)}>\n{value}\n</json path: {field} type: {type(value)}>" 
+            f"\n<{field}>\n{value}\n</{field}>\n" 
+            for field, value in candidate_fields.items() if str(value).strip() != ""
+        ])
+
+        candidate_schema = '\n'.join([
+            f"    {field}: {type(value).__name__}" 
             for field, value in candidate_fields.items() if str(value).strip() != ""
         ])
         
         prompt = f"""## Task: Generate Parameter Extraction Code
-Generate Python code to extract and reformat parameter for the request parameter from candidate fields. User has raise a request and we need to extract and reformat the parameter from the candidate fields in the context. 
+Generate Python code to extract and reformat parameter for the request parameter from candidate fields. User has raise a request and we need to extract and reformat the parameter from the candidate fields in the context. Avoid using f-string when need to fill in variables, use string replacement or concatenation instead.
 
 ## User Original Request
 {user_original_ask}
@@ -377,8 +418,16 @@ Generate Python code to extract and reformat parameter for the request parameter
 {input_description}
 
 ## Candidate Fields from Context
-Context object is a dictionary, here we represent them using json_path syntax:
+Context object is a dictionary, here we represent them using json_path syntax.
+
+The schema:
+
+{candidate_schema}
+---
+The value:
+
 {candidates_text}
+---
 
 ## Instructions
 1. Generate a Python function that takes 'context' as input variable and returns the code for extracting the request parameter
@@ -388,10 +437,10 @@ Context object is a dictionary, here we represent them using json_path syntax:
    - Complex extraction with transformations, regex, string operations, etc, when the parameter needs some transformation.
 3. Think if there is info available in context before generating the code. If info is not enough or still have ambiguitiy, use `return "<NOT_FOUND_IN_CANDIDATES>"`. The generated code should just be a getter / parser.
 4. The parameter should only be "extracted" or "rephrased", not inferred. This means different people should get the same parameter value if they have the same context, if there is uncertainty, do not rephrase it.
-5. If there is no perfect match, return a piece of code which return "<NOT_FOUND_IN_CANDIDATES>".
-6. If you rephrase the information, make sure you use the same language as the input_description.
-7. Just generate the minimum required code, Eg. If there is no requirement to be structured, use plain text. Make sure the code has minimum possibility to fail.
-8. The returned parameter should satisfy the requirement from the ## Required Request Parameter Description
+5. If you rephrase the information, make sure you use the same language as the input_description.
+6. Just generate the minimum required code, Eg. If there is no requirement to be structured, use plain text. Make sure the code has minimum possibility to fail.
+7. The returned parameter should satisfy the requirement from the ## Required Request Parameter Description
+8. Use `get_json_path_value(context, 'json_path')` to extract value from context using json_path syntax, instead of directly accessing context dictionary. This will avoid key errors and make the code more robust.
 
 ## Examples
 ```python
@@ -405,7 +454,7 @@ def extract_func(context):
 def extract_func(context): 
     import re
     # Extract content between <title> tags
-    return re.match(r'<title>(.*?)</title>', context.get('html', '')).group(1)
+    return re.match(r'<title>(.*?)</title>', get_json_path_value(context, '$.html_field_json_path.code')).group(1)
 ```
 
 ```python
@@ -425,6 +474,24 @@ def extract_func(context):
 def extract_func(context):
     # The information is not available in context, return a placeholder also explain why
     return "<NOT_FOUND_IN_CANDIDATES>Cannot find xxx in xxx / Cannot parse xxx"
+```
+
+```python
+def extract_func(context):
+    # Need to combine multiple field, prefer directly assign value to avoid code bug
+    images = []
+    text = []
+    
+    # Based on the Candidate Fields from Context schema, image_url_field_1 exists and contains url
+    images.append(get_json_path_value(context, '$.image_url_field_1.url'))
+
+    # Based on the Candidate Fields from Context schema, text_field_1 exists and contains required text
+    text.append(get_json_path_value(context, '$.text_field_1'))
+
+    result = dict()
+    result["images"] = images
+    result["text"] = text
+    return result
 ```
 
 ## Return Format
@@ -454,7 +521,7 @@ def extract_func(context):
             code = code_match.group(1).strip()
         else:
             raise ValueError("Response does not contain valid Python code block")
-        
+
         print(f"[JSON_PATH_GEN] Generated extraction code for '{input_description}': {code}")
         return code
 
@@ -462,7 +529,9 @@ def extract_func(context):
         self,
         input_descriptions: Dict[str, str],
         context: Dict[str, Any],
-        user_original_ask: str = ""
+        user_original_ask: str = "",
+        context_key_meaning_map: Optional[Dict[str, str]] = None,
+        task_short_name: Optional[str] = None
     ) -> Dict[str, str]:
         """Generate input JSON paths using multi-step process with content extraction
 
@@ -470,6 +539,7 @@ def extract_func(context):
             input_descriptions: Dictionary of field_name -> description
             context: Current context dictionary for analysis and extraction
             user_original_ask: Original user request for context
+            context_key_meaning_map: Optional mapping from context key -> human meaning (e.g., task short name)
 
         Returns:
             Dictionary mapping field_name -> json_path, where content is extracted/generated
@@ -486,7 +556,7 @@ def extract_func(context):
             with self.tracer.trace_input_field_extraction_step(field_name, description) as input_ctx:
                 # Step 1: Analyze context for candidate fields
                 candidate_fields = await self._analyze_context_candidates(
-                    description, context, user_original_ask
+                    description, context, user_original_ask, context_key_meaning_map, task_short_name=task_short_name
                 )
 
                 # Make sure "current_task" is always included
@@ -538,7 +608,9 @@ class BatchJsonPathGenerator(BaseJsonPathGenerator):
         self, 
         input_descriptions: Dict[str, str], 
         context: Dict[str, Any],
-        user_original_ask: str = ""
+        user_original_ask: str = "",
+        context_key_meaning_map: Optional[Dict[str, str]] = None,
+        task_short_name: Optional[str] = None
     ) -> Dict[str, str]:
         """Generate input JSON paths using simplified single-step extraction with LLM tool schema
         
@@ -546,6 +618,7 @@ class BatchJsonPathGenerator(BaseJsonPathGenerator):
             input_descriptions: Dictionary of field_name -> description
             context: Current context dictionary for analysis and extraction
             user_original_ask: Original user request for context
+            context_key_meaning_map: Optional mapping from context key -> human meaning (e.g., task short name)
             
         Returns:
             Dictionary mapping field_name -> json_path, where content is extracted
@@ -564,7 +637,7 @@ class BatchJsonPathGenerator(BaseJsonPathGenerator):
                                         for field_name, description in input_descriptions.items()])
             
             candidate_fields = await self._analyze_context_candidates(
-                all_descriptions, context, user_original_ask
+                all_descriptions, context, user_original_ask, context_key_meaning_map, task_short_name=task_short_name
             )
             
             # Make sure "current_task" is always included
@@ -841,7 +914,9 @@ class SmartJsonPathGenerator(BaseJsonPathGenerator):
         self,
         input_descriptions: Dict[str, str],
         context: Dict[str, Any],
-        user_original_ask: str = ""
+        user_original_ask: str = "",
+        context_key_meaning_map: Optional[Dict[str, str]] = None,
+        task_short_name: Optional[str] = None
     ) -> Dict[str, str]:
         """Generate input JSON paths by routing to appropriate generator
         
@@ -849,6 +924,7 @@ class SmartJsonPathGenerator(BaseJsonPathGenerator):
             input_descriptions: Dictionary of field_name -> description
             context: Current context dictionary for analysis and extraction
             user_original_ask: Original user request for context
+            context_key_meaning_map: Optional mapping from context key -> human meaning (e.g., task short name)
             
         Returns:
             Dictionary mapping field_name -> json_path
@@ -862,12 +938,12 @@ class SmartJsonPathGenerator(BaseJsonPathGenerator):
         if len(input_descriptions) == 1:
             print(f"[SMART_JSON_PATH_GEN] Using OneByOneJsonPathGenerator for single input")
             return await self.one_by_one_generator.generate_input_json_paths(
-                input_descriptions, context, user_original_ask
+                input_descriptions, context, user_original_ask, context_key_meaning_map, task_short_name=task_short_name
             )
         else:
             print(f"[SMART_JSON_PATH_GEN] Using BatchJsonPathGenerator for {len(input_descriptions)} inputs")
             return await self.batch_generator.generate_input_json_paths(
-                input_descriptions, context, user_original_ask
+                input_descriptions, context, user_original_ask, context_key_meaning_map, task_short_name=task_short_name
             )
 
 
