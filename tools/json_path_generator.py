@@ -30,13 +30,14 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from exceptions import TaskInputMissingError
 from tools import LLMTool
+from tools.retry_strategies import SimpleRetryStrategy, AppendValidationHintStrategy
 from utils.json_utils import get_json_path_value
 
 
 class BaseJsonPathGenerator:
     """Base class providing shared logic for JSON path generation using LLM"""
     
-    def __init__(self, llm_tool=None, tracer=None):
+    def __init__(self, llm_tool: LLMTool = None, tracer = None):
         """Initialize JsonPathGenerator with an LLM tool instance and tracer
         
         Args:
@@ -54,6 +55,98 @@ class BaseJsonPathGenerator:
     
 
     
+    async def shorten_path_key(self, key_value_pairs: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Shortens long keys in a dictionary using an LLM, ensuring no duplicates.
+
+        Args:
+            key_value_pairs: A dictionary with keys to be potentially shortened.
+
+        Returns:
+            A new dictionary with shortened keys.
+        """
+        if not key_value_pairs:
+            return {}
+
+        keys_to_process = list(key_value_pairs.keys())
+
+        # Define the tool schema for the LLM
+        properties = {
+            key: {"type": "string", "description": f"A shortened, meaningful name for the key '{key}' (max 40 chars, snake_case)."}
+            for key in keys_to_process
+        }
+        
+        shorten_keys_tool = {
+            "type": "function",
+            "function": {
+                "name": "shorten_keys",
+                "description": "Provides shorter, meaningful, and unique alternatives for dictionary keys.",
+                "parameters": {
+                    "type": "object",
+                    "properties": properties,
+                    "required": keys_to_process
+                }
+            }
+        }
+
+        peak_value_in_each_key = "\n".join([f"<{key}>\n{str(value)[:200]}...\n</{key}>" for key, value in key_value_pairs.items()])
+
+        prompt = f"""
+The following dictionary keys need to be processed. If a key is longer than 40 characters, provide a shorter, meaningful alternative. All resulting keys must be unique.
+
+- All keys must be valid Python identifiers (snake_case).
+- Shortened keys must not exceed 40 characters.
+- All final keys in the output must be unique.
+- Shorten the key by removing duplicated words, keep words which is useful like "content"/"image_path" and etc. make sure the key is still meaningful.
+
+Use the `shorten_keys` tool to provide the new key mappings.
+
+Keys to process:
+{json.dumps(keys_to_process, indent=2)}
+
+Peak value in each key:
+{peak_value_in_each_key}
+"""
+
+        def duplicate_key_validator(response: Dict[str, Any]) -> None:
+            tool_calls = response.get("tool_calls", [])
+            if not tool_calls or tool_calls[0].get("name") != "shorten_keys":
+                return # Let other validators handle this
+
+            key_map = tool_calls[0].get("arguments", {})
+            new_keys = list(key_map.values())
+            if len(new_keys) != len(set(new_keys)):
+                raise ValueError("Duplicate keys were generated. Please ensure all new keys are unique.")
+
+        if not self.llm_tool:
+            print("[JSON_PATH_GEN] Warning: LLM tool not available for shortening keys. Returning original keys.")
+            return key_value_pairs
+
+
+        response = await self.llm_tool.execute(
+            {
+                "prompt": prompt,
+                "tools": [shorten_keys_tool],
+                "model": self.llm_tool.small_model,
+            },
+            validators=[duplicate_key_validator],
+            retry_strategies=[AppendValidationHintStrategy()]
+        )
+
+        tool_calls = response.get("tool_calls", [])
+        if not tool_calls or tool_calls[0].get("name") != "shorten_keys":
+            print("[JSON_PATH_GEN] Warning: Failed to get shortened keys from LLM. Returning original keys.")
+            return key_value_pairs
+
+        key_map = tool_calls[0].get("arguments", {})
+        
+        new_key_value_pairs = {key_map.get(old_key, old_key): value for old_key, value in key_value_pairs.items()}
+        
+        print(f"[JSON_PATH_GEN] Shortened/processed keys: {key_map}")
+        return new_key_value_pairs
+
+
+
     # Intentionally left without generate_input_json_paths; implemented by subclasses
     
     async def generate_output_json_path(
@@ -218,41 +311,53 @@ Analyze the current context to find fields that might contain information for th
     "candidate_field_2"
 ]"""
 
-        response = await self.llm_tool.execute({
-            "prompt": prompt,
-        })
-
-        # Extract content from new response format
-        response_content = response["content"]
-
-        if "```json" in response_content:
-            # Extract JSON array from response
-            json_match = re.search(r'```json\n(.*?)\n```', response_content, re.DOTALL)
-            if json_match:
-                response_content = json_match.group(1).strip()
-            else:
-                raise ValueError("Response does not contain valid JSON array")
         
-        # Parse the JSON response
-        candidates = json.loads(response_content)
-        # Convert to dictionary with current values, use json_ng json path get
-        candidate_content_set = set()
-        candidates_objects = {}
-        for candidate in candidates:
-            try:
-                jsonpath_expr = parse(candidate)
-                matches = jsonpath_expr.find(context)
-                if matches:
-                    if str(matches[0].value) in candidate_content_set:
-                        # Skip duplicate content
-                        continue
-                    candidates_objects[candidate] = matches[0].value
-                    candidate_content_set.add(str(matches[0].value))
-                else:
-                    candidates_objects[candidate] = None
-            except Exception as e:
-                print(f"[JSON_PATH_GEN] Error parsing path {candidate}: {e}")
-                candidates_objects[candidate] = None
+        # Validator closure for candidate list
+        def parse_candidate_object(resp: Dict[str, Any]):
+            response_content = resp.get("content", "")
+            json_block_text = response_content
+            if "```json" in response_content:
+                json_block_match = re.search(r"```json\s*(.*?)\s*```", response_content, re.DOTALL)
+                if not json_block_match:
+                    raise ValueError("Response does not contain valid JSON array block when using regex to search: re.search(r\"```json\s*(.*?)\s*```\", content, re.DOTALL) ")
+                json_block_text = json_block_match.group(1).strip()
+            
+            candidate_array = json.loads(json_block_text)
+            if not isinstance(candidate_array, list):
+                raise ValueError("Expected a JSON array of json paths")
+            if len(candidate_array) == 0:
+                raise ValueError("Empty candidate list")
+            # Validate each path exists
+            seen_candidate_values = set()
+            candidates_objects = {}
+            for candidate_path in candidate_array:
+                try:
+                    jsonpath_expr = parse(candidate_path)
+                except Exception as parse_error:
+                    raise ValueError(f"Invalid JSON path syntax {candidate_path}: {parse_error}") from parse_error
+                path_matches = jsonpath_expr.find(context)
+                if not path_matches:
+                    raise ValueError(f"JSON path {candidate_path} did not match any value in context")
+                first_value_str = str(path_matches[0].value)
+                if first_value_str in seen_candidate_values:
+                    # Allow duplicate semantic content but skip multiple identicals silently
+                    continue
+                seen_candidate_values.add(first_value_str)
+                candidates_objects[candidate_path] = path_matches[0].value
+            return candidates_objects
+
+        response = await self.llm_tool.execute(
+            {"prompt": prompt},
+            max_retries=2,
+            validators=[parse_candidate_object],
+            retry_strategies=[
+                AppendValidationHintStrategy(),
+            ],
+            retry_llm_tool=self.llm_tool,
+        )
+
+        candidates_objects = parse_candidate_object(response)
+
         print(f"[JSON_PATH_GEN] Found candidates for '{input_description}': {candidates_objects}")
         return candidates_objects            
 
@@ -362,7 +467,7 @@ Given the following workspace context schema and output description, you MUST us
 ## Instructions
 1. Analyze the output description, user original request and tool output to determine the best field name in english snakecase style. Usually you can just use the short name of the User original request's english version, and append suffix to name it. Eg. If short name is "Write a blog about xxx", you can name it as "blog_about_xxx".
 2. Consider the existing context schema to avoid conflicts.
-3. Return a JSON path using JSONPath syntax (e.g., "$.generated_outline_for_xxx_topic_blog", "$.['action_plan_to_create_blog_for_xxx']"). You should only use root path. Avoid using nested path like "$.some_output_path.some_json_field_in_that_output".
+3. Return a JSON path using JSONPath syntax (e.g., "$.xx_blog_outline", "$.['action_plan_for_xxx']"). You should only use root path. Avoid using nested path like "$.some_output_path.some_json_field_in_that_output".
 4. The path should be semantically meaningful and discriminate within the context. If a similar path already exists, add more word to discriminate it. 
 5. If task short name contains step number like step 3.4.2, please keep it and use camel case for the number, e.g., xx_step_3_4_2_xxx_xxx
 
@@ -506,22 +611,32 @@ def extract_func(context):
 </GENERATED_CODE>
 """
 
-        response = await self.llm_tool.execute({
-            "prompt": prompt
-        })
-        
-        # Extract content from new response format
-        response_content = response["content"]
-        
-        # Print think process for debugging
-        print(f"[JSON_PATH_GEN] Think process for '{input_description}': \n{response_content}")
-        # Parse using regex to extract the code block
-        code_match = re.search(r'```python\n(.*?)\n```', response_content, re.DOTALL)
-        if code_match:
-            code = code_match.group(1).strip()
-        else:
-            raise ValueError("Response does not contain valid Python code block")
+        # Validator for generated python code block
+        def _code_validator(resp: Dict[str, Any]):
+            content = resp.get("content", "")
+            print(f"[JSON_PATH_GEN] Think process for '{input_description}': \n{content}")
+            m = re.search(r'```python\n(.*?)\n```', content, re.DOTALL)
+            if not m:
+                raise ValueError("Response does not contain valid Python code block")
+            code_candidate = m.group(1).strip()
+            try:
+                compile(code_candidate, '<generated_extraction_code>', 'exec')
+            except SyntaxError as se:
+                raise ValueError(f"Generated code not compilable: {se}") from se
+            # Stash compiled code text for later retrieval
+            resp['__validated_extraction_code'] = code_candidate
 
+        response = await self.llm_tool.execute(
+            {"prompt": prompt},
+            max_retries=2,
+            validators=[_code_validator],
+            retry_strategies=[
+                SimpleRetryStrategy(),
+                AppendValidationHintStrategy(),
+            ],
+            retry_llm_tool=self.llm_tool,
+        )
+        code = response.get('__validated_extraction_code')
         print(f"[JSON_PATH_GEN] Generated extraction code for '{input_description}': {code}")
         return code
 
@@ -945,6 +1060,8 @@ class SmartJsonPathGenerator(BaseJsonPathGenerator):
             return await self.batch_generator.generate_input_json_paths(
                 input_descriptions, context, user_original_ask, context_key_meaning_map, task_short_name=task_short_name
             )
+    
+
 
 
 if __name__ == "__main__":

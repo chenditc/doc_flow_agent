@@ -607,6 +607,20 @@ tool:
             self.assertEqual(sop_doc_id, "tools/bash")
             self.assertEqual(doc_selection_message, "")
     
+    def test_parse_sop_doc_id_mixed_language_boundary(self):
+        """Doc ID detection should work when surrounded by Chinese characters"""
+        mock_llm_tool = AsyncMock()
+
+        with patch('tools.llm_tool.LLMTool', return_value=mock_llm_tool):
+            async def run_test():
+                return await self.parser.parse_sop_doc_id_from_description("根据tools/bash完成任务")
+
+            sop_doc_id, message = asyncio.run(run_test())
+
+        self.assertEqual(sop_doc_id, "tools/bash")
+        self.assertEqual(message, "")
+        mock_llm_tool.execute.assert_not_called()
+
     def test_parse_sop_doc_id_with_tracer(self):
         """Test parsing with tracer enabled"""
         # Create a mock LLMTool instance

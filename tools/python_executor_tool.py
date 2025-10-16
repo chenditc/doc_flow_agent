@@ -29,6 +29,7 @@ from importlib import metadata as importlib_metadata
 from dotenv import load_dotenv
 from tools.base_tool import BaseTool
 from tools.llm_tool import LLMTool
+from tools.retry_strategies import SimpleRetryStrategy, AppendValidationHintStrategy
 
 # Load environment variables from .env file
 load_dotenv()
@@ -49,16 +50,13 @@ class PythonExecutorTool(BaseTool):
 
         python_code = parameters.get("python_code")
         if not python_code:
-            # Create tool schema for Python code generation
             tool_schema = self._create_python_code_tool_schema()
 
             sop_guidance = ""
             if sop_doc_body.strip():
                 sop_guidance = f"<Document Guidance>\n{sop_doc_body.strip()}\n</Document Guidance>\n"
 
-            # Collect available top-level python libraries to guide generation (limits hallucination)
             available_libs = self._get_available_python_libraries()
-
             prompt = f"""
 You are a Python code generation assistant.
 Your task is to write a single Python function named `process_step` that takes one argument: `context: {type(related_context_content).__name__}`.
@@ -80,36 +78,28 @@ The function should return a JSON-serializable value.
 </Json serialized context object>
 """
 
-            llm_params = {
-                "prompt": prompt,
-                "temperature": 0.0,
-                "tools": [tool_schema]
-            }
+            # Validator for code extraction & compilation
+            def parse_and_validate_code(resp: Dict[str, Any]):
+                candidate_code = self._extract_python_code_from_response(resp)
+                if not isinstance(candidate_code, str):
+                    candidate_code = str(candidate_code)
+                compile(candidate_code, "<generated_code>", "exec")
+                return candidate_code
 
-            for attempt in range(1, self.max_generation_attempts + 1):
-                response = await self.llm_tool.execute(llm_params)
-                try:
-                    # Extract generated code from tool call response
-                    candidate_code = self._extract_python_code_from_response(response)
-
-                    # Ensure the generated code is a string
-                    if not isinstance(candidate_code, str):
-                        candidate_code = str(candidate_code)
-
-                    compile(candidate_code, "<generated_code>", "exec")
-                    python_code = candidate_code
-                    break
-                except (SyntaxError, ValueError) as error:
-                    if attempt >= self.max_generation_attempts:
-                        raise SyntaxError(
-                            f"LLM failed to produce syntactically valid Python code after {self.max_generation_attempts} attempts"
-                        ) from error
-                    # Retry with a fresh generation
-                    continue
-
-            if not python_code:
-                # This should not happen, but guard against it
-                raise RuntimeError("Failed to obtain Python code from LLM")
+            response = await self.llm_tool.execute(
+                {
+                    "prompt": prompt,
+                    "temperature": 0.0,
+                    "tools": [tool_schema],
+                },
+                max_retries=self.max_generation_attempts - 1,
+                validators=[parse_and_validate_code],
+                retry_strategies=[
+                    AppendValidationHintStrategy(),
+                ],
+                retry_llm_tool=self.llm_tool,
+            )
+            python_code = parse_and_validate_code(response)
         else:
             if not isinstance(python_code, str):
                 python_code = str(python_code)
@@ -216,12 +206,12 @@ The function should return a JSON-serializable value.
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "python_code": {
+                        "code": {
                             "type": "string",
-                            "description": "Complete Python function definition for process_step(context: dict) that performs the requested task"
+                            "description": "Complete Python function definition for function `process_step` that performs the requested task"
                         }
                     },
-                    "required": ["python_code"]
+                    "required": ["code"]
                 }
             }
         }
@@ -237,14 +227,11 @@ The function should return a JSON-serializable value.
         Returns:
             Generated Python code as string
         """
-        # Handle both string response (legacy) and tool call response
-        if isinstance(response, str):
-            return response
-            
+
         # Extract tool calls from response
         tool_calls = response.get("tool_calls", [])
         if not tool_calls:
-            raise ValueError("No tool calls found in LLM response")
+            raise ValueError("No tool call in LLM response")
         
         # Get the first (and should be only) tool call
         tool_call = tool_calls[0]
@@ -253,7 +240,7 @@ The function should return a JSON-serializable value.
         
         # Extract arguments
         arguments = tool_call.get("arguments", {})
-        python_code = arguments.get("python_code", "")
+        python_code = arguments.get("code")
         
         if not python_code:
             raise ValueError("No Python code generated by LLM")

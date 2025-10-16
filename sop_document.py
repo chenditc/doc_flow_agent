@@ -176,23 +176,25 @@ class SOPDocumentParser:
         candidates = []
         
         # 1. Try match full path with word boundaries.
+        description_lower = description.lower()
+
         for doc_id in all_doc_ids:
             # Skip doc IDs that contain only alphanumeric characters (too generic)
             if re.match(r'^[a-zA-Z0-9]+$', doc_id):
                 continue
             
-            # Use word boundary matching instead of substring matching
-            pattern = r'\b' + re.escape(doc_id.lower()) + r'\b'
-            if re.search(pattern, description.lower()):
+            # Use boundary matching that works for mixed-language text (ASCII and CJK)
+            pattern = self._build_identifier_pattern(doc_id.lower())
+            if re.search(pattern, description_lower):
                 candidates.append((doc_id, "full_path"))
         
         # 2. Try match file name without extension with word boundaries.
         for doc_id in all_doc_ids:
             filename = Path(doc_id).name
             
-            # Use word boundary matching instead of substring matching
-            pattern = r'\b' + re.escape(filename.lower()) + r'\b'
-            if re.search(pattern, description.lower()):
+            # Use boundary matching that works for mixed-language text (ASCII and CJK)
+            pattern = self._build_identifier_pattern(filename.lower())
+            if re.search(pattern, description_lower):
                 candidates.append((doc_id, "filename"))
 
         # Log candidate documents to tracing system
@@ -525,6 +527,15 @@ Please select the most appropriate SOP document from the following candidates:
             if pattern.search(description):
                 return True
         return False
+
+    @staticmethod
+    def _build_identifier_pattern(identifier: str) -> str:
+        """Build a regex pattern that treats CJK characters as valid boundaries alongside word boundaries."""
+        escaped_identifier = re.escape(identifier)
+        # Allow matches when surrounded by standard word boundaries or directly adjacent to CJK characters.
+        leading_boundary = r'(?:(?<=\b)|(?<=[\u4e00-\u9fff]))'
+        trailing_boundary = r'(?:(?=\b)|(?=[\u4e00-\u9fff]))'
+        return f"{leading_boundary}{escaped_identifier}{trailing_boundary}"
             
 
 if __name__ == "__main__":

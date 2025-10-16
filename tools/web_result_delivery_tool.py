@@ -23,6 +23,8 @@ import shutil
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 
+from tools.retry_strategies import AppendValidationHintStrategy
+
 from .base_tool import BaseTool
 from .llm_tool import LLMTool
 
@@ -224,8 +226,8 @@ Result Data:
 
 Your tasks:
 1. Identify any file paths or image paths in the result data that need to be served to the user
-2. For each identified file/image, determine:
-   - source: The local file path (must be identitcal as it appears in result_data)
+2. For each identified local file/image, determine:
+   - source: The local file path (must be identical as it appears in result_data)
    - target: The filename to use when serving (just the filename, not full path)
 3. Generate a complete HTML page that displays the result data after it is fetched from the JSON file
 
@@ -240,13 +242,14 @@ Requirements for HTML generation:
 4. For any files you identified, create download buttons/links:
    - Use the URL pattern: /result-delivery/{session_id}/{task_id}/files/{{target_filename}}
    - Style as Material Design buttons with download icons
-5. For any images you identified, display them inline in the page:
+5. For any local images you identified, display them inline in the page:
    - Use the URL pattern: /result-delivery/{session_id}/{task_id}/files/{{target_filename}}
    - Make images responsive and have a download button below
 6. Use modern CSS with good UX (responsive, accessible, clean layout)
 7. Add a header with a success icon and title "Task Result"
 8. Make the page visually appealing and easy to read
 9. Include accessible labels for dynamic content regions (e.g., aria-live for status messages)
+9. For non local image or file, use href link with download button.
 
 Return both the HTML content and the file mappings using the provided tool."""
 
@@ -259,24 +262,17 @@ Return both the HTML content and the file mappings using the provided tool."""
             "temperature": 0.0,
             "tools": [tool_schema]
         }
-        last_error: Optional[ValueError] = None
-        for attempt in range(1, self.max_generation_attempts + 1):
-            llm_result = await self.llm_tool.execute(llm_params)
+        llm_result = await self.llm_tool.execute(llm_params,
+                                                    validators=[lambda x: self._extract_html_from_response(x)],
+                                                    max_retries=self.max_generation_attempts - 1,
+                                                    retry_strategies=[
+                                                    AppendValidationHintStrategy(),
+                                                ],
+                                                retry_llm_tool=self.llm_tool)
 
-            try:
-                # Extract HTML and file mappings from tool call response
-                return self._extract_html_from_response(llm_result)
-            except ValueError as error:
-                last_error = error
-                if attempt >= self.max_generation_attempts:
-                    raise ValueError(
-                        f"LLM failed to produce valid HTML content after {self.max_generation_attempts} attempts"
-                    ) from error
-                # Retry generation with the same prompt
-                continue
 
-        # This point should never be reached because loop either returns or raises
-        raise ValueError("Failed to generate HTML content")
+        # Extract HTML and file mappings from tool call response
+        return self._extract_html_from_response(llm_result)
     
     def _create_html_generation_tool_schema(self) -> Dict[str, Any]:
         """Create tool schema for HTML result page generation with file mapping
@@ -360,6 +356,10 @@ Return both the HTML content and the file mappings using the provided tool."""
         print(f"[WEB_RESULT_DELIVERY] LLM identified {len(file_mappings)} files to serve")
         for mapping in file_mappings:
             print(f"[WEB_RESULT_DELIVERY]   {mapping.get('type', 'file')}: {mapping.get('source')} -> {mapping.get('target')}")
+            # Check if source file exists
+            source_path = mapping.get('source', '')
+            if not source_path or not Path(source_path).exists():
+                raise ValueError(f"File not found: {source_path}")
             
         return html_content, file_mappings
 

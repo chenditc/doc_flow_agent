@@ -20,7 +20,9 @@ limitations under the License.
 import json
 import asyncio
 import os
-from typing import Dict, Any, Optional
+import copy
+import inspect
+from typing import Dict, Any, Optional, List, Callable
 from openai import AsyncOpenAI
 
 from .base_tool import BaseTool
@@ -55,59 +57,110 @@ class LLMTool(BaseTool):
         )
         return token_provider
 
-    async def execute(self, parameters: Dict[str, Any], sop_doc_body: Optional[str] = None) -> str:
-        """Execute LLM tool with given parameters
-        
-        Args:
-            parameters: Dictionary containing 'prompt', optional 'tools' schema, and other parameters
-            
-        Returns:
-            JSON string with LLM response
-            
-        Raises:
-            ValueError: If prompt parameter is missing
-        """
-        self.validate_parameters(parameters, ['prompt'])
+    async def execute(
+        self,
+        parameters: Dict[str, Any],
+        sop_doc_body: Optional[str] = None,
+        *,
+        max_retries: int = 0,
+        retry_strategies: Optional[List[Any]] = None,
+        validators: Optional[List[Callable[[Dict[str, Any]], Any]]] = None,
+        retry_llm_tool: Optional['LLMTool'] = None,
+    ) -> str:
+        """Execute LLM tool with optional retry strategies & validators.
 
-        if not await self._test_connection():
-            raise RuntimeError("Failed to connect to LLM API")
-        
+        Backward compatible: if no retry-related args provided, single attempt.
+        """
+
+        if not retry_strategies and max_retries == 0:
+            return await self._raw_llm_call(parameters)
+
+        base_parameters = copy.deepcopy(parameters)
+        retry_tool = retry_llm_tool if retry_llm_tool is not None else self
+        last_error: Optional[Exception] = None
+        last_response: Optional[Dict[str, Any]] = None
+
+        for strategy in retry_strategies:
+            strategy.start(base_parameters)
+            total_attempts = max_retries + 1
+            for attempt in range(1, total_attempts + 1):
+                attempt_params = await strategy.build_attempt_parameters(
+                    base_parameters=base_parameters,
+                    attempt_index=attempt,
+                    last_response=last_response,
+                    last_error=last_error,
+                )
+
+                response = await retry_tool.execute(
+                    attempt_params,
+                    sop_doc_body=sop_doc_body,
+                    max_retries=0,
+                    retry_strategies=None,
+                    validators=None,
+                    retry_llm_tool=retry_llm_tool,
+                )
+
+                try:
+                    for v in validators:
+                        res = v(response)
+                        if inspect.isawaitable(res):
+                            await res
+                    return response
+                except Exception as ve:
+                    last_error = ve
+                    last_response = response
+                    print(f"[LLM RETRY] Validation failed (strategy={strategy.name()} attempt={attempt}/{total_attempts}): {ve}")
+                    continue
+
+        if last_error:
+            raise last_error
+        return await self._raw_llm_call(parameters)
+
+    async def _raw_llm_call(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """Internal single-attempt LLM invocation (original execute core)."""
+        self.validate_parameters(parameters, ['prompt'])
         prompt = parameters.get('prompt', '')
         tools = parameters.get('tools', None)
         max_tokens = parameters.get('max_tokens', 20000)
-        
-        # Log the prompt being sent
+
         print(f"[LLM CALL] Prompt: {prompt}...")
         if tools:
             print(f"[LLM CALL] Tools provided: {[tool.get('function', {}).get('name', 'unknown') for tool in tools]}")
-        
-        # Prepare API call parameters
-        # Allow per-call model override
+
         call_model = parameters.get('model', self.model)
         api_params = {
             "model": call_model,
             "messages": [
-                {
-                    "role": "user",
-                    "content": prompt
-                }
+                {"role": "user", "content": prompt}
             ],
-            "max_tokens": max_tokens,
+            "max_completion_tokens": max_tokens,
             "stream": True,
         }
-        
-        # Add tools if provided
         if tools:
             api_params["tools"] = tools
-            api_params["tool_choice"] = "required"
-            #api_params["tool_choice"] = "auto"
-            #api_params["tool_choice"] = "auto" if len(tools) != 1 else tools[0]["function"]["name"]
-        
-        # Make streaming OpenAI API call
+
         stream = await self.client.chat.completions.create(**api_params)
-        
-        # Collect streaming response chunks and tool calls
         content, tool_calls = await self._collect_streaming_chunks_with_tools(stream)
+
+        if tools and not tool_calls:
+            print("[LLM FALLBACK] No native tool calls returned. Attempting XML JSON fallback.")
+            fallback_prompt = prompt + self._build_fallback_tool_instructions(tools)
+            api_params_fallback = dict(api_params)
+            api_params_fallback["messages"] = [
+                {"role": "user", "content": fallback_prompt}
+            ]
+            api_params_fallback["tools"] = None
+            print(f"[LLM FALLBACK] New Prompt: \n-----{fallback_prompt}...")
+            # Re-issue call
+            stream_fb = await self.client.chat.completions.create(**api_params_fallback)
+            content_fb, _ = await self._collect_streaming_chunks_with_tools(stream_fb)
+            parsed_calls = self._parse_xml_wrapped_tool_json(content_fb, tools)
+            if parsed_calls:
+                print(f"[LLM FALLBACK] Parsed {len(parsed_calls)} tool call(s) from XML fallback.")
+                content = content_fb
+                tool_calls = parsed_calls
+            else:
+                print("[LLM FALLBACK] Failed to parse XML fallback output.")
 
         print(f"[LLM RESPONSE] {content[:100]}...")
         if tool_calls:
@@ -115,12 +168,105 @@ class LLMTool(BaseTool):
             for tool_call in tool_calls:
                 print(f"  - Tool: {tool_call.get('name', 'unknown')}")
                 print(f"    Arguments: {tool_call.get('arguments', {})}")
-        
-        # Return tool calls if available, otherwise just content
-        return {
-            "content": content,
-            "tool_calls": tool_calls
-        }
+        return {"content": content, "tool_calls": tool_calls}
+
+    # ---------------- Fallback Tool Call Support (XML-wrapped JSON) -----------------
+    def _build_fallback_tool_instructions(self, tools: Any) -> str:
+        """Builds instructions appended to the original prompt to coerce models lacking
+        native tool-call support to emit a JSON arguments object wrapped in an XML tag
+        named after the function.
+
+        Format per tool (only first tool currently supported in fallback):
+        <function_name>{"param":"value", ...}</function_name>
+
+        Args:
+            tools: Original tools schema list passed to execute().
+
+        Returns:
+            Instruction string to append to user prompt.
+        """
+        if not tools:
+            return ""
+        if not isinstance(tools, (list, tuple)):
+            return ""
+        if len(tools) == 0:
+            return ""
+        first = tools[0]
+        fn = first.get("function", {}) if isinstance(first, dict) else {}
+        fn_name = fn.get("name", "tool_function")
+        params = fn.get("parameters", {})
+        # Build a concise schema description for guidance
+        schema_desc = json.dumps(params, ensure_ascii=False, indent=2)
+        return (
+            "\n\n--- RETURN FORMAT INSTRUCTIONS ---\n"
+            "Return exactly ONE XML block whose tag name is the function name. Inside the tag, put a single JSON object with keys matching the parameters schema.\n"
+            f"Function name: {fn_name}\n"
+            "JSON Schema (for guidance only):\n"
+            f"{schema_desc}\n"
+            "Output format (no extra text, no markdown, no explanation):\n"
+            f"<{fn_name}>{{}} </{fn_name}> where {{}} is the JSON arguments object.\n"
+            "Do NOT wrap output in markdown fences. Do NOT include commentary. Just the XML element."
+        )
+
+    def _parse_xml_wrapped_tool_json(self, content: str, tools: Any):
+        """Parse fallback XML-wrapped JSON tool call outputs.
+
+        Looks for pattern: <function_name>{json}</function_name>
+        Only supports the first tool definition (consistent with builder).
+
+        Args:
+            content: Raw model text output.
+            tools: Original tools schema list (to know function name).
+
+        Returns:
+            List with a single tool_call dict or empty list if not found / parse error.
+        """
+        if not tools or not isinstance(tools, (list, tuple)) or len(tools) == 0:
+            print("[FALLBACK PARSE ERROR] No tools provided for parsing.")
+            return []
+        first = tools[0]
+        fn = first.get("function", {}) if isinstance(first, dict) else {}
+        fn_name = fn.get("name", "tool_function")
+        if not content or fn_name not in content:
+            print(f"[FALLBACK PARSE ERROR] Function name '{fn_name}' not found in content: \n---{content}\n---")
+            return []
+        import re
+        pattern = rf"<\s*{re.escape(fn_name)}\s*>(.*?)<\s*/\s*{re.escape(fn_name)}\s*>"
+        match = re.search(pattern, content, flags=re.DOTALL | re.IGNORECASE)
+        if not match:
+            print(f"[FALLBACK PARSE ERROR] No matching XML tags found for function '{fn_name}' in content.")
+            return []
+        inner = match.group(1).strip()
+        # Some models may include code fences or stray tags, sanitize minimally
+        if inner.startswith('```'):
+            inner = inner.strip('`')
+        # Attempt JSON parse
+        try:
+            args = json.loads(inner)
+        except json.JSONDecodeError:
+            print(f"[FALLBACK PARSE ERROR] Failed to parse JSON from XML-wrapped content: {inner}")
+            return []
+        if not isinstance(args, dict):
+            print(f"[FALLBACK PARSE ERROR] Parsed arguments is not a JSON object: {args}")
+            return []
+        return [{
+            'id': 'fallback_xml_0',
+            'name': fn_name,
+            'arguments': args
+        }]
+
+    # Public helper for tests
+    def parse_tool_call_from_content(self, content: str, tools: Any):
+        """Public wrapper around internal XML fallback parser for unit testing.
+
+        Args:
+            content: Model output text.
+            tools: Tools schema list.
+
+        Returns:
+            Parsed tool_calls list (possibly empty).
+        """
+        return self._parse_xml_wrapped_tool_json(content, tools)
     
     def _is_valid_chunk_with_content(self, chunk) -> bool:
         """Check if chunk has valid choices and content

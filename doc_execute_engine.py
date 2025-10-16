@@ -1101,11 +1101,16 @@ Please return only the task description as a single paragraph, without additiona
         
         while current_parent_id:
             # Check if this ancestor's subtree is complete
-            if await self._is_subtree_complete(current_parent_id):
+            ancestor_all_complete, ancestor_count = await self._is_subtree_complete(current_parent_id)
+            if ancestor_all_complete:
                 highest_compactable_ancestor = current_parent_id
                 # Keep going up to find an even higher ancestor
                 parent_task = self.completed_tasks.get(current_parent_id)
                 current_parent_id = parent_task.parent_task_id if parent_task else None
+                if ancestor_count > 1:
+                    # If this ancestor has multiple descendants, we can compact once, and process to next node.
+                    await self._compact_subtree(highest_compactable_ancestor)
+                    highest_compactable_ancestor = None
             else:
                 # This ancestor is not complete, stop searching
                 break
@@ -1119,7 +1124,7 @@ Please return only the task description as a single paragraph, without additiona
         descendant_ids = self._collect_descendants(root_task_id)
         # Root must also be completed, and no descendants should be pending
         return (root_task_id in self.completed_tasks and 
-                all(desc_id in self.completed_tasks for desc_id in descendant_ids))
+                all(desc_id in self.completed_tasks for desc_id in descendant_ids)), len(descendant_ids)
 
     def _collect_descendants(self, root_task_id: str) -> set[str]:
         """Collect all descendant task IDs for a given root task"""
@@ -1281,8 +1286,8 @@ You are a helpful agent which can perform task like run comamnd / code / search 
 Right now, you need to evaluate whether your work has satisfied the root task requirements. 
 
 1. First, you need to think about what to check based on the requirement evaluation rule. If no requirement evaluation rule present then consider the task description. If requirement evaluation rule is present, do not use any other evaluation rule. Only consider requirement not met if some requirement totally missed. Eg. We need to run a command and command not exists. Or if we need to write a paragraph and no text outputed. Start your think process by "The requirement evaluation rule is ...."
-2. If requirements are NOT met, list specific failing aspects and create new tasks to address them, so that user's end goal can be achieved. If there are multiple failing aspect and only some of them are root cause, you should only generate new task to address root cause. You should NOT generate new task to address non-root-cause issue or issue you are not confirmed.
-3. If requirements ARE met, provide a summary and which path in the aggregated_outputs should be used to consider as the output, put them in the deliverable_output_path. The deliverable_output_pathshould contains only the deliverable information, eg. if root task is asking a summary of an article, the deliverable_output_path should only contain summary, not including other thinking or execution process like download article or parse article. If the deliverable content is nested, you can access it like $.some_output_path.some_json_field_in_that_output. If there are multiple deliverable, include all paths. If all sub path are important, use the root path.
+2. If requirements are NOT met, list specific failing aspects and create new tasks to address them, so that user's end goal can be achieved. If there are multiple failing aspect and only some of them are root cause, you should only generate new task to address root cause. You should NOT generate new task to address non-root-cause issue or issue you are not confirmed. When you generate a retry task, make sure you use the same reference document as the original subtask.
+3. If requirements ARE met, provide a summary and which path in the aggregated_outputs should be used to consider as the deliverable output, put the json path as it is in the deliverable_output_path parameter. The deliverable_output_path should contains only the deliverable information, eg. if root task is asking a summary of an article, the deliverable_output_path should only contain summary, not including other thinking or execution process like download article or parse article. If the deliverable content is nested, you can access it like $.some_output_path.some_json_field_in_that_output. If there are multiple deliverable, include all paths. If all sub path are important, use the root path.
 
 Use the evaluate_and_summarize_subtree function to provide your evaluation.
 </instructions>
@@ -1309,10 +1314,6 @@ Use the evaluate_and_summarize_subtree function to provide your evaluation.
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        # "check_requirement_one_by_one": {
-                        #     "type": "string",
-                        #     "description": "Detailed analysis checking each requirement against the outputs to ensure thorough evaluation"
-                        # },
                         "think_process": {
                              "type": "string",
                              "description": "analyze if requirement is met and if not met, what is missing, and how to fix the missing part."
@@ -1321,11 +1322,6 @@ Use the evaluate_and_summarize_subtree function to provide your evaluation.
                             "type": "boolean",
                             "description": "True if root task requirements are fully satisfied by aggregated outputs"
                         },
-                        # "missing_requirements": {
-                        #     "type": "array",
-                        #     "items": {"type": "string"},
-                        #     "description": "List of specific missing aspects if requirements not met"
-                        # },
                         "new_task_to_execute": {
                             "type": "array",
                             "items": {"type": "string"},
@@ -1348,13 +1344,19 @@ Use the evaluate_and_summarize_subtree function to provide your evaluation.
         
         # Call LLM
         llm_tool = self.tools.get("LLM")
-        response = await llm_tool.execute({
-            "prompt": prompt,
-            "tools": [evaluation_tool]
-        })
-        
-        # Parse response
-        tool_calls = response.get("tool_calls", [])
+
+        for model in [llm_tool.model, "gpt-5", "gemini-2.5-pro", "o3"]:
+            response = await llm_tool.execute({
+                "prompt": prompt,
+                "tools": [evaluation_tool],
+                "model": model
+            })
+            
+            # Parse response
+            tool_calls = response.get("tool_calls", [])
+            if tool_calls:
+                break  # Successfully got tool call, exit loop
+
         if not tool_calls:
             raise ValueError("LLM did not return evaluation tool call")
         
@@ -1400,6 +1402,10 @@ Use the evaluate_and_summarize_subtree function to provide your evaluation.
             key = path.replace("$.", "") if path.startswith("$.") else path
             key = key.replace(".", "_")  # Replace dots with underscores for valid keys
             compacted_output[key] = value
+
+        # Simplify long keys if necessary
+        if any(len(k) > 40 for k in compacted_output.keys()):
+            compacted_output = await self.json_path_generator.shorten_path_key(compacted_output)
 
         # Create compacted artifact with simplified structure (renamed key)
         artifact = {

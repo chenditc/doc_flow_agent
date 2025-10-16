@@ -7,6 +7,7 @@ tool:
 input_description:
   related_context_content: 跟当前图片生成有关的描述。A python dict type.
 output_description: 本地图片路径。
+skip_new_task_generation: true
 result_validation_rule: a dict with local_path should be returned, local_path is the path to the image.
 ---
 ## 该 API 的 curl 调用示例
@@ -46,6 +47,16 @@ Example response:
         "output_tokens": xxx,
         "total_tokens": xxx
     }
+}
+
+## 返回内容
+
+{
+    "success": True,
+    "local_path": local_path, # 只需要返回本地路径即可，忽略原始 url
+    "prompt": final_prompt,
+    "model": MODEL_NAME,
+    "api_response_meta": meta,
 }
 
 ## Example code
