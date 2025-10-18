@@ -58,3 +58,34 @@ async def test_cancel_running_job(manager):
     final = manager.get_job(job.job_id)
     assert final is not None
     assert final.status in ("CANCELLED", "COMPLETED", "FAILED")
+
+
+@pytest.mark.asyncio
+async def test_env_vars_propagation(manager):
+    env_vars = {"DOCFLOW_TEST": "enabled", "ANOTHER_VAR": "123"}
+    job = manager.create_job(
+        "Follow bash.md, echo env vars",
+        max_tasks=5,
+        env_vars=env_vars,
+    )
+
+    await manager.wait_for(job.job_id, timeout=5)
+
+    status_file = Path(manager.jobs_dir / job.job_id / "status.json")
+    with status_file.open("r", encoding="utf-8") as f:
+        status_data = json.load(f)
+
+    assert status_data.get("env_vars") == env_vars
+
+    request_file = Path(manager.jobs_dir / job.job_id / "request.json")
+    with request_file.open("r", encoding="utf-8") as f:
+        request_data = json.load(f)
+
+    assert request_data.get("env_vars") == env_vars
+
+    context_file = Path(manager.jobs_dir / job.job_id / "context.json")
+    assert context_file.exists()
+    with context_file.open("r", encoding="utf-8") as f:
+        context_data = json.load(f)
+
+    assert context_data.get("env_vars") == env_vars

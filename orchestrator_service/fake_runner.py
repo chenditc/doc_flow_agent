@@ -12,10 +12,21 @@ from pathlib import Path
 
 async def main_async(job_id: str, task: str, sleep: float):
     await asyncio.sleep(sleep)
-    job_dir = Path("jobs") / job_id
+    base_dir = os.getenv("ORCHESTRATOR_JOBS_DIR")
+    job_root = Path(base_dir) if base_dir else Path("jobs")
+    job_dir = job_root / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
     context_file = job_dir / "context.json"
-    context = {"fake_runner": True, "task": task, "status": "done"}
+    request_env = {}
+    request_file = job_dir / "request.json"
+    if request_file.exists():
+        try:
+            request_data = json.loads(request_file.read_text(encoding="utf-8"))
+            requested = request_data.get("env_vars") or {}
+            request_env = {key: os.environ.get(key) for key in requested.keys()}
+        except (OSError, json.JSONDecodeError):
+            request_env = {}
+    context = {"fake_runner": True, "task": task, "status": "done", "env_vars": request_env}
     context_file.write_text(json.dumps(context, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"FAKE RUNNER completed job {job_id}")
 

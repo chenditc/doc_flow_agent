@@ -64,12 +64,28 @@ class ExecutionManager:
                     job.error = {"message": "Process terminated unexpectedly"}
                     self._persist_status(job)
 
-    def create_job(self, task_description: str, max_tasks: Optional[int] = None) -> Job:
+    def create_job(
+        self,
+        task_description: str,
+        max_tasks: Optional[int] = None,
+        env_vars: Optional[Dict[str, str]] = None,
+    ) -> Job:
         job_id = uuid.uuid4().hex[:16]
-        job = Job(job_id=job_id, task_description=task_description, max_tasks=max_tasks or 50)
+        job_env = dict(env_vars or {})
+        job = Job(
+            job_id=job_id,
+            task_description=task_description,
+            max_tasks=max_tasks or 50,
+            env_vars=job_env,
+        )
         job_dir = self.jobs_dir / job_id
         job_dir.mkdir(exist_ok=True)
-        request_data = {"task_description": task_description, "max_tasks": job.max_tasks, "created_at": job.created_at.isoformat()}
+        request_data = {
+            "task_description": task_description,
+            "max_tasks": job.max_tasks,
+            "created_at": job.created_at.isoformat(),
+            "env_vars": job.env_vars,
+        }
         with open(job_dir / "request.json", 'w', encoding='utf-8') as f:
             json.dump(request_data, f, ensure_ascii=False, indent=2)
         self._jobs[job_id] = job
@@ -82,13 +98,29 @@ class ExecutionManager:
             pass  # No event loop running, caller will handle async launch
         return job
 
-    async def create_job_async(self, task_description: str, max_tasks: Optional[int] = None) -> Job:
+    async def create_job_async(
+        self,
+        task_description: str,
+        max_tasks: Optional[int] = None,
+        env_vars: Optional[Dict[str, str]] = None,
+    ) -> Job:
         """Async version for proper test usage."""
         job_id = uuid.uuid4().hex[:16]
-        job = Job(job_id=job_id, task_description=task_description, max_tasks=max_tasks or 50)
+        job_env = dict(env_vars or {})
+        job = Job(
+            job_id=job_id,
+            task_description=task_description,
+            max_tasks=max_tasks or 50,
+            env_vars=job_env,
+        )
         job_dir = self.jobs_dir / job_id
         job_dir.mkdir(exist_ok=True)
-        request_data = {"task_description": task_description, "max_tasks": job.max_tasks, "created_at": job.created_at.isoformat()}
+        request_data = {
+            "task_description": task_description,
+            "max_tasks": job.max_tasks,
+            "created_at": job.created_at.isoformat(),
+            "env_vars": job.env_vars,
+        }
         with open(job_dir / "request.json", 'w', encoding='utf-8') as f:
             json.dump(request_data, f, ensure_ascii=False, indent=2)
         self._jobs[job_id] = job
@@ -147,7 +179,16 @@ class ExecutionManager:
         log_path = job_dir / "engine_stdout.log"
         try:
             with open(log_path, 'w', encoding='utf-8') as log_file:
-                proc = subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT, cwd=Path.cwd())
+                env = os.environ.copy()
+                env.update(job.env_vars)
+                env.setdefault("ORCHESTRATOR_JOBS_DIR", str(self.jobs_dir))
+                proc = subprocess.Popen(
+                    cmd,
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT,
+                    cwd=Path.cwd(),
+                    env=env,
+                )
         except OSError as e:
             raise e
         job.pid = proc.pid

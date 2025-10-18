@@ -1,9 +1,9 @@
 """FastAPI application for orchestrator service."""
 
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 
 from .manager import ExecutionManager
 from .models import Job
@@ -13,6 +13,16 @@ from .models import Job
 class SubmitJobRequest(BaseModel):
     task_description: str = Field(..., min_length=1, max_length=10000)
     max_tasks: Optional[int] = Field(default=50, ge=1, le=1000)
+    env_vars: Optional[Dict[str, str]] = Field(default=None)
+
+    @validator("env_vars")
+    def validate_env_vars(cls, value: Optional[Dict[str, str]]):
+        if value is None:
+            return value
+        invalid_keys = [key for key in value.keys() if not isinstance(key, str) or not key]
+        if invalid_keys:
+            raise ValueError("Environment variable keys must be non-empty strings")
+        return value
 
 
 class SubmitJobResponse(BaseModel):
@@ -30,6 +40,7 @@ class JobResponse(BaseModel):
     trace_files: List[str]
     max_tasks: Optional[int]
     error: Optional[dict] = None
+    env_vars: Dict[str, str] = Field(default_factory=dict)
 
 
 class CancelJobResponse(BaseModel):
@@ -53,7 +64,8 @@ async def submit_job(request: SubmitJobRequest):
     """Submit a new job for execution."""
     job = manager.create_job(
         task_description=request.task_description,
-        max_tasks=request.max_tasks
+        max_tasks=request.max_tasks,
+        env_vars=request.env_vars
     )
     return SubmitJobResponse(job_id=job.job_id, status=job.status)
 
@@ -85,7 +97,8 @@ async def list_jobs(
             finished_at=job.finished_at.isoformat() if job.finished_at else None,
             trace_files=job.trace_files,
             max_tasks=job.max_tasks,
-            error=job.error
+            error=job.error,
+            env_vars=job.env_vars,
         )
         for job in jobs
     ]
@@ -107,7 +120,8 @@ async def get_job(job_id: str):
         finished_at=job.finished_at.isoformat() if job.finished_at else None,
         trace_files=job.trace_files,
         max_tasks=job.max_tasks,
-        error=job.error
+        error=job.error,
+        env_vars=job.env_vars,
     )
 
 
