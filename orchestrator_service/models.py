@@ -18,6 +18,7 @@ class Job:
     pid: Optional[int] = None
     max_tasks: Optional[int] = 50
     error: Optional[Dict[str, Any]] = None
+    env_vars: Dict[str, str] = field(default_factory=dict)
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert job to dictionary for JSON serialization."""
