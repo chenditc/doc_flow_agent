@@ -12,11 +12,13 @@ export interface Job {
   trace_files: string[];
   max_tasks?: number;
   error?: Record<string, any> | null;
+  env_vars?: Record<string, string> | null;
 }
 
 export interface SubmitJobRequest {
   task_description: string;
   max_tasks?: number;
+  env_vars?: Record<string, string>;
 }
 
 export interface SubmitJobResponse {

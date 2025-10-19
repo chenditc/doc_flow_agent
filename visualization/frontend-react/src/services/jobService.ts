@@ -31,7 +31,16 @@ export class JobService {
       throw new Error('Task description is required');
     }
 
-    return this.apiClient.post<SubmitJobResponse>('/jobs', data);
+    const payload: SubmitJobRequest = {
+      task_description: data.task_description.trim(),
+      max_tasks: data.max_tasks
+    };
+
+    if (data.env_vars && Object.keys(data.env_vars).length > 0) {
+      payload.env_vars = data.env_vars;
+    }
+
+    return this.apiClient.post<SubmitJobResponse>('/jobs', payload);
   }
 
   /**

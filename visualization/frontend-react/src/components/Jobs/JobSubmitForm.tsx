@@ -2,7 +2,7 @@
  * Job submission form component
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Box,
   Button,
@@ -24,20 +24,88 @@ interface JobSubmitFormProps {
   onSuccess?: (jobId: string) => void;
   initialTaskDescription?: string;
   initialMaxTasks?: number;
+  initialEnvVars?: Record<string, string | undefined> | null;
 }
 
-export const JobSubmitForm: React.FC<JobSubmitFormProps> = ({ 
-  onCancel, 
+const formatEnvVars = (envVars?: Record<string, string | undefined> | null): string => {
+  if (!envVars) {
+    return '';
+  }
+
+  const entries = Object.entries(envVars).filter(([key]) => key);
+  if (entries.length === 0) {
+    return '';
+  }
+
+  return entries.map(([key, value]) => `${key}=${value ?? ''}`).join('\n');
+};
+
+const parseEnvVarsInput = (
+  input: string
+): { envVars: Record<string, string>; error?: string } => {
+  const envVars: Record<string, string> = {};
+
+  if (!input.trim()) {
+    return { envVars };
+  }
+
+  const lines = input.split(/\r?\n/);
+  for (let index = 0; index < lines.length; index++) {
+    const rawLine = lines[index];
+    if (!rawLine?.trim()) {
+      continue;
+    }
+
+    const equalsIndex = rawLine.indexOf('=');
+    if (equalsIndex === -1) {
+      return {
+        envVars: {},
+        error: `Invalid format on line ${index + 1}. Use KEY=VALUE.`
+      };
+    }
+
+    const key = rawLine.slice(0, equalsIndex).trim();
+    const value = rawLine.slice(equalsIndex + 1);
+
+    if (!key) {
+      return {
+        envVars: {},
+        error: `Environment variable name missing on line ${index + 1}.`
+      };
+    }
+
+    envVars[key] = value;
+  }
+
+  return { envVars };
+};
+
+export const JobSubmitForm: React.FC<JobSubmitFormProps> = ({
+  onCancel,
   onSuccess,
   initialTaskDescription = '',
-  initialMaxTasks = 50
+  initialMaxTasks = 50,
+  initialEnvVars = null
 }) => {
   const [taskDescription, setTaskDescription] = useState(initialTaskDescription);
   const [maxTasks, setMaxTasks] = useState<number>(initialMaxTasks);
+  const [envVarsInput, setEnvVarsInput] = useState<string>(() => formatEnvVars(initialEnvVars));
   const [errors, setErrors] = useState<Record<string, string>>({});
-  
+
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+
+  useEffect(() => {
+    setEnvVarsInput(formatEnvVars(initialEnvVars));
+    setErrors(prev => {
+      if (!prev.envVars) {
+        return prev;
+      }
+      const updatedErrors = { ...prev };
+      delete updatedErrors.envVars;
+      return updatedErrors;
+    });
+  }, [initialEnvVars]);
 
   const submitJobMutation = useMutation({
     mutationFn: (data: SubmitJobRequest) => jobService.submitJob(data),
@@ -57,7 +125,7 @@ export const JobSubmitForm: React.FC<JobSubmitFormProps> = ({
     }
   });
 
-  const validateForm = (): boolean => {
+  const validateForm = (): { isValid: boolean; envVars?: Record<string, string> } => {
     const newErrors: Record<string, string> = {};
 
     if (!taskDescription.trim()) {
@@ -70,26 +138,43 @@ export const JobSubmitForm: React.FC<JobSubmitFormProps> = ({
       newErrors.maxTasks = 'Max tasks must be between 1 and 1000';
     }
 
+    const { envVars, error: envVarsError } = parseEnvVarsInput(envVarsInput);
+    if (envVarsError) {
+      newErrors.envVars = envVarsError;
+    }
+
     setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    const hasEnvVars = Object.keys(envVars).length > 0;
+    return {
+      isValid: Object.keys(newErrors).length === 0,
+      envVars: envVarsError || !hasEnvVars ? undefined : envVars
+    };
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!validateForm()) {
+
+    const { isValid, envVars } = validateForm();
+    if (!isValid) {
       return;
     }
 
-    submitJobMutation.mutate({
+    const submission: SubmitJobRequest = {
       task_description: taskDescription.trim(),
       max_tasks: maxTasks
-    });
+    };
+
+    if (envVars) {
+      submission.env_vars = envVars;
+    }
+
+    submitJobMutation.mutate(submission);
   };
 
   const handleReset = () => {
     setTaskDescription(initialTaskDescription);
     setMaxTasks(initialMaxTasks);
+    setEnvVarsInput(formatEnvVars(initialEnvVars));
     setErrors({});
   };
 
@@ -146,6 +231,36 @@ export const JobSubmitForm: React.FC<JobSubmitFormProps> = ({
               inputProps={{ min: 1, max: 1000 }}
               sx={{ width: 200 }}
               required
+            />
+          </Box>
+
+          <Box sx={{ mb: 3 }}>
+            <TextField
+              fullWidth
+              multiline
+              minRows={3}
+              maxRows={10}
+              label="Environment Variables"
+              placeholder={'OPTIONAL_FLAG=true\nAPI_KEY=example'}
+              value={envVarsInput}
+              onChange={(e) => {
+                setEnvVarsInput(e.target.value);
+                if (errors.envVars) {
+                  setErrors(prev => {
+                    if (!prev.envVars) {
+                      return prev;
+                    }
+                    const updatedErrors = { ...prev };
+                    delete updatedErrors.envVars;
+                    return updatedErrors;
+                  });
+                }
+              }}
+              error={!!errors.envVars}
+              helperText={
+                errors.envVars || 'Optional. Enter KEY=VALUE pairs, one per line.'
+              }
+              disabled={submitJobMutation.isPending}
             />
           </Box>
         </CardContent>
