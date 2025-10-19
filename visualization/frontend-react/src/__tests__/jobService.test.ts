@@ -37,6 +37,31 @@ describe('JobService', () => {
       expect(result).toEqual(mockResponse);
     });
 
+    it('should include environment variables when provided', async () => {
+      const mockRequest: SubmitJobRequest = {
+        task_description: 'Test task with env',
+        max_tasks: 5,
+        env_vars: {
+          API_KEY: '12345',
+          EMPTY_VALUE: ''
+        }
+      };
+      const mockResponse = { job_id: 'env-job-123', status: 'QUEUED' };
+
+      vi.mocked(mockApiClient.post).mockResolvedValue(mockResponse);
+
+      await jobService.submitJob(mockRequest);
+
+      expect(mockApiClient.post).toHaveBeenCalledWith('/jobs', {
+        task_description: 'Test task with env',
+        max_tasks: 5,
+        env_vars: {
+          API_KEY: '12345',
+          EMPTY_VALUE: ''
+        }
+      });
+    });
+
     it('should throw error for empty task description', async () => {
       const mockRequest: SubmitJobRequest = {
         task_description: '',

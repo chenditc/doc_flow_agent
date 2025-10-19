@@ -349,6 +349,32 @@ export const JobDetailPage: React.FC = () => {
                 {job.task_description}
               </Typography>
             </Paper>
+
+            <Paper sx={{ p: 2 }}>
+              <Typography variant="h6" gutterBottom>Environment Variables</Typography>
+              {job.env_vars && Object.keys(job.env_vars).length > 0 ? (
+                <List dense>
+                  {Object.entries(job.env_vars)
+                    .sort(([a], [b]) => a.localeCompare(b))
+                    .map(([key, value]) => (
+                      <ListItem key={key} disablePadding>
+                        <ListItemText
+                          primary={key}
+                          secondary={value ?? ''}
+                          primaryTypographyProps={{ sx: { fontFamily: 'monospace' } }}
+                          secondaryTypographyProps={{
+                            sx: { fontFamily: 'monospace', whiteSpace: 'pre-wrap' }
+                          }}
+                        />
+                      </ListItem>
+                    ))}
+                </List>
+              ) : (
+                <Typography variant="body2" color="text.secondary">
+                  No environment variables configured
+                </Typography>
+              )}
+            </Paper>
           </Box>
         </TabPanel>
 
@@ -596,6 +622,7 @@ export const JobDetailPage: React.FC = () => {
             }}
             initialTaskDescription={job?.task_description || ''}
             initialMaxTasks={job?.max_tasks || 50}
+            initialEnvVars={job?.env_vars || null}
           />
         </DialogContent>
       </Dialog>
