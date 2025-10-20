@@ -153,8 +153,11 @@ export const JobDetailPage: React.FC = () => {
 
   const handleTraceClick = (traceFile: string) => {
     // Normalize trace id: backend provides filenames (possibly with .json); viewer expects raw session id
-    const normalized = traceFile.endsWith('.json') ? traceFile.replace(/\.json$/,'') : traceFile;
-    navigate(`/traces?trace=${encodeURIComponent(normalized)}`);
+    const normalized = traceFile.endsWith('.json') ? traceFile.replace(/\.json$/, '') : traceFile;
+
+    navigate(`/traces?trace=${encodeURIComponent(normalized)}`, {
+      state: job.status === 'RUNNING' ? { autoEnableRealtime: true } : undefined,
+    });
   };
 
   const handleDownloadLogs = () => {
