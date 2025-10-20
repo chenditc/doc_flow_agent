@@ -551,7 +551,7 @@ The value:
 ```python
 # The information is directly available in context, just need to do simple extraction
 def extract_func(context):
-    return context['some_key'][0]['nested_key']
+    return get_json_path_value(context, '$.some_key.0.nested_key')
 ```
 
 ```python
