@@ -3,7 +3,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { useTraceContext } from '../context/TraceContext';
 import { TraceSelector } from './TraceSelector/TraceSelector';
 import { Timeline } from './Timeline/Timeline';
@@ -26,6 +26,10 @@ export const TraceViewerPage: React.FC = () => {
   const { state, setSelectedTraceId: setCtxSelectedTraceId } = useTraceContext();
   const { announce, AnnouncerComponent } = useAnnouncement();
 
+  const location = useLocation();
+  const navigationState = location.state as { autoEnableRealtime?: boolean } | null;
+  const autoEnableRealtime = Boolean(navigationState?.autoEnableRealtime);
+
   const {
     data: trace,
     isLoading: traceLoading,
@@ -33,7 +37,7 @@ export const TraceViewerPage: React.FC = () => {
   } = useTrace(selectedTraceId);
 
   // Initialize real-time monitoring
-  useRealtime({
+  const { startMonitoring } = useRealtime({
     onMessage: (message) => {
       console.log('Real-time message received:', message);
       announce('Trace data updated', 'polite');
@@ -43,6 +47,17 @@ export const TraceViewerPage: React.FC = () => {
       announce(`Connection error: ${error.message}`, 'assertive');
     }
   });
+
+  const [hasAppliedAutoRealtime, setHasAppliedAutoRealtime] = useState(false);
+
+  useEffect(() => {
+    if (!hasAppliedAutoRealtime && autoEnableRealtime && selectedTraceId) {
+      const started = startMonitoring(selectedTraceId);
+      if (started) {
+        setHasAppliedAutoRealtime(true);
+      }
+    }
+  }, [autoEnableRealtime, hasAppliedAutoRealtime, selectedTraceId, startMonitoring]);
 
   // Sync local selected trace id (initialized from URL) into context so hooks relying
   // on context (e.g. realtime subscription / invalidation) have the correct value
