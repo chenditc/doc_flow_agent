@@ -156,7 +156,7 @@ export const JobDetailPage: React.FC = () => {
     const normalized = traceFile.endsWith('.json') ? traceFile.replace(/\.json$/, '') : traceFile;
 
     navigate(`/traces?trace=${encodeURIComponent(normalized)}`, {
-      state: job.status === 'RUNNING' ? { autoEnableRealtime: true } : undefined,
+      state: job?.status === 'RUNNING' ? { autoEnableRealtime: true } : undefined,
     });
   };
 
