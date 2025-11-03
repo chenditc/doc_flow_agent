@@ -6,6 +6,8 @@ services:
     image: docflow/orchestrator:latest
     env_file:
       - .env
+    environment:
+      - DEFAULT_WORKSPACE_SANDBOX_URL=http://default_workspace_sandbox:8080
     volumes:
       - traces:/app/traces
       - jobs:/app/jobs
@@ -24,6 +26,9 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
+    depends_on:
+      default_workspace_sandbox:
+        condition: service_healthy
 
   visualization:
     build:
@@ -32,6 +37,8 @@ services:
     image: docflow/visualization:latest
     env_file:
       - .env
+    environment:
+      - DEFAULT_WORKSPACE_SANDBOX_URL=http://default_workspace_sandbox:8080
     volumes:
       - traces:/app/traces:ro
       - log:/app/log
@@ -45,6 +52,8 @@ services:
     depends_on:
       orchestrator:
         condition: service_started
+      default_workspace_sandbox:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -57,6 +66,8 @@ services:
       context: .
       dockerfile: Dockerfile.frontend
     image: docflow/frontend:latest
+    environment:
+      - DEFAULT_WORKSPACE_SANDBOX_URL=http://default_workspace_sandbox:8080
     depends_on:
       orchestrator:
         condition: service_healthy
@@ -66,6 +77,21 @@ services:
       - "28080:80"
     healthcheck:
       test: ["CMD", "wget", "-qO", "-", "http://localhost/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  default_workspace_sandbox:
+    image: ghcr.io/agent-infra/sandbox:latest
+    security_opt:
+      - seccomp=unconfined
+    ports:
+      - "8080:8080"
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
       interval: 30s
       timeout: 5s
       retries: 3

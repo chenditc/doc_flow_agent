@@ -23,6 +23,7 @@ from typing import Dict, Any, Optional, List, Set
 
 from .base_tool import BaseTool
 from .llm_tool import LLMTool
+import httpx
 
 
 class CLITool(BaseTool):
@@ -52,7 +53,7 @@ class CLITool(BaseTool):
             ValueError: If required parameters missing for both explicit or generated mode
             RuntimeError: If command execution fails / unsafe command detected
         """
-        explicit_command = parameters.get('command')
+        explicit_command = parameters.get('command', '')
         generated_command = None
 
         if not explicit_command:
@@ -78,27 +79,23 @@ class CLITool(BaseTool):
             generated_command = self._extract_command_from_response(response)
             explicit_command = generated_command
 
-        print(f"[CLI CALL] Command: {explicit_command}")
+        # Always execute in sandbox; raise if not configured
+        sandbox_base = self._get_sandbox_base_url()
+        if not sandbox_base:
+            raise ValueError("WORKSPACE_SANDBOX_URL/DEFAULT_WORKSPACE_SANDBOX_URL is not set; sandbox execution is required")
 
-        process = await asyncio.create_subprocess_shell(
+        result = await self._exec_in_sandbox(
             explicit_command,
-            executable="bash",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            exec_dir=parameters.get("exec_dir"),
+            id=parameters.get("id"),
+            async_mode=parameters.get("async_mode"),
+            timeout=parameters.get("timeout"),
         )
-        stdout, stderr = await process.communicate()
-        stdout_text = stdout.decode()
-        stderr_text = stderr.decode()
 
-        # Do NOT raise on non-zero return code; treat as data for upper layers to decide.
         # Preserve backwards-compatible keys; add 'success' boolean for convenience.
-        return {
-            "stdout": stdout_text,
-            "stderr": stderr_text,
-            "returncode": process.returncode,
-            "executed_command": explicit_command,
-            "success": process.returncode == 0,
-        }
+        result.setdefault("executed_command", explicit_command)
+        result.setdefault("success", (result.get("returncode", 1) == 0))
+        return result
 
     def _create_command_generation_tool_schema(self) -> Dict[str, Any]:
         """Tool schema for LLM command generation."""
@@ -197,6 +194,107 @@ ls -la /home/user/documents | grep '.txt'
                 continue
         execs = sorted(execs)[:limit]
         return execs
+    
+    async def _exec_in_sandbox(
+        self,
+        command: str,
+        *,
+        exec_dir: Optional[str] = None,
+        id: Optional[str] = None,
+        async_mode: Optional[bool] = None,
+        timeout: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """Execute command in the default workspace sandbox via HTTP API.
+
+    Contract aligned with Sandbox REST API:
+    - POST {WORKSPACE_SANDBOX_URL|DEFAULT_WORKSPACE_SANDBOX_URL}/v1/shell/exec
+    - Request JSON (ShellExecRequest): { id?: string, exec_dir?: string, command: string, async_mode?: boolean, timeout?: number }
+    - Response JSON (200): { success: bool, message: string, data: { session_id, command, status, output, console[], exit_code } }
+        """
+        base = self._get_sandbox_base_url().rstrip("/")
+        if not base:
+            raise ValueError("WORKSPACE_SANDBOX_URL/DEFAULT_WORKSPACE_SANDBOX_URL is not set; sandbox execution is required")
+
+        url = f"{base}/v1/shell/exec"
+        headers: Dict[str, str] = {"Content-Type": "application/json"}
+
+        payload: Dict[str, Any] = {"command": command}
+        # ShellExecRequest schema fields
+        # - id: optional
+        # - exec_dir: optional (working directory, absolute path)
+        # - command: required
+        # - async_mode: optional (default False)
+        # - timeout: optional seconds
+        if id is not None:
+            payload["id"] = id
+        if exec_dir:
+            payload["exec_dir"] = exec_dir
+        if async_mode is not None:
+            payload["async_mode"] = async_mode.lower() == "true"
+        if timeout is not None:
+            payload["timeout"] = int(float(timeout))
+
+        print(f"[CLI CALL][sandbox] POST {url} command={command!r} exec_dir={exec_dir!r} id={id!r} async_mode={async_mode!r} timeout={timeout!r}")
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(url, json=payload, headers=headers)
+        except Exception as e:
+            # Network or client error: surface as stderr content, non-zero return code
+            return {
+                "stdout": "",
+                "stderr": f"Sandbox exec request failed: {type(e).__name__}: {e}",
+                "returncode": 127,
+            }
+
+        # Normalize response strictly as JSON
+        status = resp.status_code
+        raw_bytes = await resp.aread()
+        try:
+            body = resp.json()
+        except Exception:
+            # Requirement: response must be JSON; print and raise
+            content_str = raw_bytes.decode(errors="replace")
+            print(f"[CLI CALL][sandbox] Non-JSON response (status={status}):\n{content_str}")
+            raise RuntimeError("Sandbox exec response is not JSON")
+
+        if 200 <= status < 300:
+            data = body.get("data") or {}
+            # stdout from 'output' or join console outputs
+            stdout = data.get("output")
+            if stdout is None and isinstance(data.get("console"), list):
+                try:
+                    stdout = "\n".join([str(item.get("output", "")) for item in data.get("console", [])])
+                except Exception:
+                    stdout = ""
+            if stdout is None:
+                stdout = ""
+            # No explicit stderr field in schema; keep empty
+            stderr = ""
+            rc = data.get("exit_code")
+            if rc is None:
+                rc = 0
+            return {
+                "stdout": stdout if isinstance(stdout, str) else str(stdout),
+                "stderr": stderr,
+                "returncode": int(rc) if isinstance(rc, (int, float)) else 1,
+            }
+        else:
+            # Map common error format (e.g., 422 with 'detail') into stderr
+            stderr_msg = body.get("message")
+            if not stderr_msg and body.get("detail") is not None:
+                try:
+                    import json as _json
+                    stderr_msg = _json.dumps(body.get("detail"), ensure_ascii=False)
+                except Exception:
+                    stderr_msg = str(body.get("detail"))
+            if not stderr_msg:
+                stderr_msg = f"HTTP {status}"
+            return {"stdout": "", "stderr": stderr_msg, "returncode": 1}
+
+    def _get_sandbox_base_url(self) -> str:
+        """Return sandbox base URL with precedence: WORKSPACE_SANDBOX_URL > DEFAULT_WORKSPACE_SANDBOX_URL."""
+        base = os.getenv("WORKSPACE_SANDBOX_URL") or os.getenv("DEFAULT_WORKSPACE_SANDBOX_URL") or ""
+        return base
     
     def get_result_validation_hint(self) -> str:
         return (
