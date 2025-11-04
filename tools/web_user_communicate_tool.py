@@ -36,7 +36,7 @@ class WebUserCommunicateTool(BaseTool):
         super().__init__("WEB_USER_COMMUNICATE")
         self.llm_tool = llm_tool
     
-    async def execute(self, parameters: Dict[str, Any], sop_doc_body: Optional[str] = None) -> Dict[str, Any]:
+    async def execute(self, parameters: Dict[str, Any], sop_doc_body: Optional[str] = None, **kwargs) -> Dict[str, Any]:
         """Execute web user communicate tool with given parameters
         
         Args:

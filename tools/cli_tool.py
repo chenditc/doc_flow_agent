@@ -24,6 +24,7 @@ from typing import Dict, Any, Optional, List, Set
 from .base_tool import BaseTool
 from .llm_tool import LLMTool
 import httpx
+from utils.sandbox import get_sandbox_base_url
 
 
 class CLITool(BaseTool):
@@ -38,8 +39,15 @@ class CLITool(BaseTool):
     def __init__(self, llm_tool: Optional[LLMTool] = None):
         super().__init__("CLI")
         self.llm_tool = llm_tool  # May be None if only explicit commands are desired
+        # Timeout configuration (align broadly with PythonExecutorTool; default 1200s per bash SOP)
+        self.TIMEOUT_MIN = 1
+        self.TIMEOUT_MAX = 6000
+        self.DEFAULT_TIMEOUT = 1200
 
-    async def execute(self, parameters: Dict[str, Any], sop_doc_body: str = "") -> Dict[str, Any]:
+    def _clamp_timeout(self, value: int) -> int:
+        return min(max(int(value), self.TIMEOUT_MIN), self.TIMEOUT_MAX)
+
+    async def execute(self, parameters: Dict[str, Any], sop_doc_body: str = "", **kwargs) -> Dict[str, Any]:
         """Execute CLI tool with given parameters.
 
     Accepted parameter patterns:
@@ -55,6 +63,7 @@ class CLITool(BaseTool):
         """
         explicit_command = parameters.get('command', '')
         generated_command = None
+        suggested_timeout: Optional[int] = None
 
         if not explicit_command:
             # Need to generate a command
@@ -66,8 +75,8 @@ class CLITool(BaseTool):
                 raise ValueError("Either 'command' or 'task_description' must be supplied")
 
             tool_schema = self._create_command_generation_tool_schema()
-            # related_context_content is deprecated for CLI; ignore if provided
-            executables = self._get_available_executables()
+            # Collect executables ONLY from the REMOTE sandbox (where we'll actually run)
+            executables = await self._get_available_executables_remote()
             prompt = self._build_generation_prompt(task_description, sop_doc_body, executables)
 
             llm_params = {
@@ -76,11 +85,17 @@ class CLITool(BaseTool):
                 "tools": [tool_schema]
             }
             response = await self.llm_tool.execute(llm_params)
-            generated_command = self._extract_command_from_response(response)
+            generated_command, suggested_timeout = self._extract_command_and_timeout_from_response(response)
             explicit_command = generated_command
 
+        # Decide final timeout to use
+        preferred_timeout: Optional[int] = parameters.get("timeout", suggested_timeout)
+        preferred_timeout = preferred_timeout if preferred_timeout is not None else self.DEFAULT_TIMEOUT
+        # Final clamp (and default if still None)
+        final_timeout = self._clamp_timeout(preferred_timeout)
+
         # Always execute in sandbox; raise if not configured
-        sandbox_base = self._get_sandbox_base_url()
+        sandbox_base = get_sandbox_base_url()
         if not sandbox_base:
             raise ValueError("WORKSPACE_SANDBOX_URL/DEFAULT_WORKSPACE_SANDBOX_URL is not set; sandbox execution is required")
 
@@ -89,7 +104,7 @@ class CLITool(BaseTool):
             exec_dir=parameters.get("exec_dir"),
             id=parameters.get("id"),
             async_mode=parameters.get("async_mode"),
-            timeout=parameters.get("timeout"),
+            timeout=final_timeout,
         )
 
         # Preserve backwards-compatible keys; add 'success' boolean for convenience.
@@ -110,6 +125,12 @@ class CLITool(BaseTool):
                         "command": {
                             "type": "string",
                             "description": "A shell command. Prefer POSIX utilities (echo, ls, cat)."
+                        },
+                        "timeout": {
+                            "type": "integer",
+                            "description": f"Suggested timeout seconds for executing the command ({self.TIMEOUT_MIN}..{self.TIMEOUT_MAX})",
+                            "minimum": self.TIMEOUT_MIN,
+                            "maximum": self.TIMEOUT_MAX
                         }
                     },
                     "required": ["command"]
@@ -124,6 +145,7 @@ class CLITool(BaseTool):
         exec_block = "\n".join(executables)
         return f"""You are a command generation assistant.
 Generate shell command to perform the task.
+Also propose an integer timeout (in seconds) named `timeout` for how long this command may take to run based on task complexity ({self.TIMEOUT_MIN}..{self.TIMEOUT_MAX}).
 Rules:
 1. The command should be able to run in bash with no additional input from stdin.
 2. Output MUST be returned via generate_command tool call.
@@ -144,22 +166,32 @@ ls -la /home/user/documents | grep '.txt'
 
 """
 
-    def _extract_command_from_response(self, response) -> str:
+    def _extract_command_and_timeout_from_response(self, response) -> tuple[str, Optional[int]]:
+        """Extract command and optional timeout from LLM response.
+
+        Returns: (command: str, timeout: Optional[int])
+        """
         if isinstance(response, str):
-            return response.strip()
+            return response.strip(), None
         tool_calls = response.get("tool_calls", []) if isinstance(response, dict) else []
         if not tool_calls:
             # fallback: attempt to parse content as plain text
             content = response.get("content", "") if isinstance(response, dict) else ""
-            return content.strip()
+            return content.strip(), None
         tool_call = tool_calls[0]
         if tool_call.get("name") != "generate_command":
             raise ValueError(f"Unexpected tool call: {tool_call.get('name')}")
         arguments = tool_call.get("arguments", {})
-        command = arguments.get("command", "").strip()
+        command = str(arguments.get("command", "")).strip()
         if not command:
             raise ValueError("No command generated by LLM")
-        return command
+        suggested_timeout = arguments.get("timeout")
+        try:
+            if suggested_timeout is not None:
+                suggested_timeout = int(suggested_timeout)
+        except Exception:
+            suggested_timeout = None
+        return command, suggested_timeout
 
     def _get_available_executables(self, limit: int = 120) -> List[str]:
         """Return a sorted list of executable command names found on PATH.
@@ -194,6 +226,43 @@ ls -la /home/user/documents | grep '.txt'
                 continue
         execs = sorted(execs)[:limit]
         return execs
+
+    async def _get_available_executables_remote(self, limit: int = 120) -> List[str]:
+        """Return a sorted list of executables discovered in the REMOTE sandbox PATH.
+
+        Uses the same filtering rules as the local variant to keep prompt size/noise controlled:
+        - Skip hidden names (start with '.')
+        - Skip names containing spaces
+        - If name contains a dot and doesn't end with .exe, skip
+        Result is sorted, unique, truncated to `limit`.
+        """
+        base = get_sandbox_base_url()
+        if not base:
+            raise ValueError("Sandbox base URL not configured; cannot query remote executables")
+
+        # POSIX shell pipeline to enumerate executables from PATH with filters similar to Python logic.
+        # Notes:
+        # - Use GNU find's -executable when available; otherwise -perm -u+x/-o+x would be acceptable.
+        # - Apply filters: no hidden, no spaces, dot only allowed for .exe suffix.
+        # - Deduplicate and sort; finally truncate to `limit`.
+        cmd = (
+            "echo \"$PATH\" | tr : \"\\n\" | "
+            "while read -r d; do [ -d \"$d\" ] || continue; "
+            "find \"$d\" -maxdepth 1 -type f -executable -printf \"%f\\n\" 2>/dev/null; done | "
+            "awk '{name=$0} /^\\./ {next} index(name, \" \")>0 {next} (index(name, \".\") && name !~ /\\.exe$/) {next} {print name}' | "
+            "sort -u | head -n " + str(int(limit))
+        )
+
+        resp = await self._exec_in_sandbox(cmd)
+        if resp.get("returncode", 1) != 0:
+            err = resp.get("stderr") or "unknown error"
+            raise RuntimeError(f"Failed to list remote executables: {err}")
+
+        stdout = resp.get("stdout", "")
+        execs = [line.strip() for line in stdout.splitlines() if line.strip()]
+        # Ensure sorted and truncated in case remote sort behaves differently
+        execs = sorted(set(execs))[:limit]
+        return execs
     
     async def _exec_in_sandbox(
         self,
@@ -211,7 +280,7 @@ ls -la /home/user/documents | grep '.txt'
     - Request JSON (ShellExecRequest): { id?: string, exec_dir?: string, command: string, async_mode?: boolean, timeout?: number }
     - Response JSON (200): { success: bool, message: string, data: { session_id, command, status, output, console[], exit_code } }
         """
-        base = self._get_sandbox_base_url().rstrip("/")
+        base = get_sandbox_base_url().rstrip("/")
         if not base:
             raise ValueError("WORKSPACE_SANDBOX_URL/DEFAULT_WORKSPACE_SANDBOX_URL is not set; sandbox execution is required")
 
@@ -230,7 +299,11 @@ ls -la /home/user/documents | grep '.txt'
         if exec_dir:
             payload["exec_dir"] = exec_dir
         if async_mode is not None:
-            payload["async_mode"] = async_mode.lower() == "true"
+            # Accept both boolean and string values; normalize to boolean
+            if isinstance(async_mode, str):
+                payload["async_mode"] = async_mode.strip().lower() == "true"
+            else:
+                payload["async_mode"] = bool(async_mode)
         if timeout is not None:
             payload["timeout"] = int(float(timeout))
 
@@ -291,10 +364,6 @@ ls -la /home/user/documents | grep '.txt'
                 stderr_msg = f"HTTP {status}"
             return {"stdout": "", "stderr": stderr_msg, "returncode": 1}
 
-    def _get_sandbox_base_url(self) -> str:
-        """Return sandbox base URL with precedence: WORKSPACE_SANDBOX_URL > DEFAULT_WORKSPACE_SANDBOX_URL."""
-        base = os.getenv("WORKSPACE_SANDBOX_URL") or os.getenv("DEFAULT_WORKSPACE_SANDBOX_URL") or ""
-        return base
     
     def get_result_validation_hint(self) -> str:
         return (

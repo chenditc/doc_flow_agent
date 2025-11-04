@@ -42,16 +42,16 @@ class TracingToolWrapper:
 
 
 
-    async def execute(self, parameters: Dict[str, Any], sop_doc_body: Optional[str] = None) -> Any:
+    async def execute(self, parameters: Dict[str, Any], sop_doc_body: Optional[str] = None, **kwargs) -> Any:
         """Execute tool with tracing"""
         try:
             # Log tool execution start
-            result = await self.tool.execute(parameters, sop_doc_body=sop_doc_body)
+            result = await self.tool.execute(parameters, sop_doc_body=sop_doc_body, **kwargs)
             
             # Log successful tool execution
             self.tracer.log_tool_call(
                 tool_id=self.tool_id,
-                parameters=parameters,
+                parameters={**parameters},
                 output=result
             )
             
@@ -60,7 +60,7 @@ class TracingToolWrapper:
             # Log failed tool execution
             self.tracer.log_tool_call(
                 tool_id=self.tool_id,
-                parameters=parameters,
+                parameters={**parameters},
                 output=None,
                 error=e
             )

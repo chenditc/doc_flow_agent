@@ -643,11 +643,14 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
                 except Exception as e:
                     print(f"[TASK_EXECUTION] Warning: Failed to load SOP body for {task.sop_doc_id}: {e}")
             
-            # Call the tool with optional sop_doc_body
+            # Call the tool with optional sop_doc_body (and doc_path for Python executor)
             tool_instance = self.tools[tool_id]
             # Capture nested LLM calls during actual tool execution
             with self.tracer.trace_tool_execution_step():
-                tool_output = await tool_instance.execute(tool_params, sop_doc_body=sop_doc_body)
+                doc_path = task.sop_doc_id
+                if not doc_path.endswith('.md'):
+                    doc_path += '.md'
+                tool_output = await tool_instance.execute(tool_params, sop_doc_body=sop_doc_body, doc_path=doc_path)
             print(f"Tool output: {tool_output}")
             
             # Set phase data with results

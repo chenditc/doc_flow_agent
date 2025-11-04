@@ -30,7 +30,7 @@ class UserCommunicateTool(BaseTool):
     def __init__(self):
         super().__init__("USER_COMMUNICATE")
     
-    async def execute(self, parameters: Dict[str, Any], sop_doc_body: Optional[str] = None) -> str:
+    async def execute(self, parameters: Dict[str, Any], sop_doc_body: Optional[str] = None, **kwargs) -> str:
         """Execute user communicate tool with given parameters
         
         Args:

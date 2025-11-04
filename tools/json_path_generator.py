@@ -881,8 +881,9 @@ Context object is a dictionary, here we represent them using json_path syntax:
 ## Instructions
 1. Extract the request parameter from candidate fields from text. You can rephrase the wording to make it more suitable for this task.
 2. The parameter should only be "extracted" or "rephrased", not inferred. This means different people should get the same parameter value if they have the same context, if there is uncertainty, do not rephrase it.
-3. If there is no perfect match, put string "<NOT_FOUND_IN_CANDIDATES>" in corresponding field.
-4. If you rephrase the information, make sure you use the same language as the input_description.
+3. If there is default value instructed in the parameter description, you can use the default value from parameter description.
+4. If there is no perfect match and no default specified in parameter description, put string "<NOT_FOUND_IN_CANDIDATES>" in corresponding field.
+5. If you rephrase the information, make sure you use the same language as the input_description.
 
 ## Return the parameter using tool schema"""
         

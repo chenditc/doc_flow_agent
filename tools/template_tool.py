@@ -28,7 +28,7 @@ class TemplateTool(BaseTool):
     def __init__(self):
         super().__init__("TEMPLATE")
 
-    async def execute(self, parameters: Dict[str, Any], sop_doc_body: Optional[str] = None) -> Dict[str, Any]:
+    async def execute(self, parameters: Dict[str, Any], sop_doc_body: Optional[str] = None, **kwargs) -> Dict[str, Any]:
         """Execute template tool with given parameters.
         
         This tool uses f-string style formatting to replace placeholders in the 

@@ -40,7 +40,7 @@ class WebResultDeliveryTool(BaseTool):
         self.llm_tool = llm_tool
         self.max_generation_attempts = max_generation_attempts
     
-    async def execute(self, parameters: Dict[str, Any], sop_doc_body: Optional[str] = None) -> Dict[str, Any]:
+    async def execute(self, parameters: Dict[str, Any], sop_doc_body: Optional[str] = None, **kwargs) -> Dict[str, Any]:
         """Execute web result delivery tool with given parameters
         
         Args:
