@@ -47,6 +47,19 @@ class SOPDocumentLoader:
     def __init__(self, docs_dir: str = "sop_docs"):
         self.docs_dir = Path(docs_dir)
     
+    def list_doc_ids(self) -> List[str]:
+        """Return all SOP document IDs (relative paths without extension)."""
+        if not self.docs_dir.exists():
+            return []
+        
+        doc_ids: List[str] = []
+        for path in self.docs_dir.rglob("*.md"):
+            if path.is_file():
+                relative = path.relative_to(self.docs_dir)
+                doc_id = relative.with_suffix("").as_posix()
+                doc_ids.append(doc_id)
+        return sorted(doc_ids)
+    
     def load_sop_document(self, doc_id: str) -> SOPDocument:
         """Load and parse a SOP document by doc_id"""
         doc_path = self.docs_dir / f"{doc_id}.md"
@@ -239,28 +252,7 @@ class SOPDocumentParser:
     
     def _get_all_doc_ids(self) -> List[str]:
         """Get all available SOP document IDs from the docs directory"""
-        doc_ids = []
-        
-        def scan_directory(directory: Path, relative_path: str = ""):
-            """Recursively scan directory for .md files"""
-            if not directory.exists():
-                return
-            
-            for item in directory.iterdir():
-                if item.is_file() and item.suffix == '.md':
-                    # Build relative path from docs directory
-                    if relative_path:
-                        doc_id = f"{relative_path}/{item.stem}"
-                    else:
-                        doc_id = item.stem
-                    doc_ids.append(doc_id)
-                elif item.is_dir():
-                    # Recursively scan subdirectories
-                    next_relative = f"{relative_path}/{item.name}" if relative_path else item.name
-                    scan_directory(item, next_relative)
-        
-        scan_directory(self.loader.docs_dir)
-        return doc_ids
+        return self.loader.list_doc_ids()
     
     def _get_available_tools(self) -> List[Dict[str, str]]:
         """Get available tool SOPs by scanning the tools directory"""
