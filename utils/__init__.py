@@ -7,9 +7,11 @@ Re-export commonly used utility functions so modules can use
 
 # Explicit re-exports (import from sibling module file `utils.py`)
 from .json_utils import set_json_path_value, get_json_path_value, extract_key_from_json_path  # type: ignore
+from .embedding_utils import get_text_embedding  # type: ignore
 
 __all__ = [
 	"set_json_path_value",
 	"get_json_path_value",
 	"extract_key_from_json_path",
+	"get_text_embedding",
 ]
