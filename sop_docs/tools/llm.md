@@ -1,5 +1,5 @@
 ---
-description: General Large Language Model Text Generation
+description: General Large Language Model Text Generation for text analysis, content generation, writing, planning, and other reasoning tasks.
 tool:
   tool_id: LLM
   parameters:

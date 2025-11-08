@@ -276,17 +276,8 @@ class SOPDocumentParser:
                 # Load the SOP document to get description
                 sop_doc = self.loader.load_sop_document(doc_id)
                 
-                # Map tool descriptions to use cases based on tool_id
-                use_case_map = {
-                    "CLI": "File operations, system commands, running scripts, installing packages",
-                    "LLM": "Text analysis, content generation, writing, planning, reasoning tasks", 
-                    "PYTHON_EXECUTOR": "Data processing, calculations, REST API calls, complex logic, file manipulation",
-                    "WEB_USER_COMMUNICATE": "Getting user input, asking questions, manual tasks requiring human intervention, use it very carefully, only ask user question when you are sure you need the user's input."
-                }
-                
-                tool_id = sop_doc.tool.get('tool_id', '')
-                # Use predefined use case if available, otherwise use the tool's description from the document
-                use_case = use_case_map.get(tool_id, sop_doc.description)
+                # Use the SOP description directly so each document remains the single source of truth
+                use_case = sop_doc.description
                 
                 available_tools.append({
                     "doc_id": doc_id,
