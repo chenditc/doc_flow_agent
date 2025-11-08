@@ -37,10 +37,7 @@ class LLMTool(BaseTool):
 
         api_key = os.getenv("OPENAI_API_KEY", "")
         base_url = os.getenv("OPENAI_API_BASE", "https://openrouter.ai/api/v1")
-        if "cognitiveservices.azure.com" in base_url and not api_key:
-            api_key = self.create_azure_token_provider()
-            print("[LLM INIT] Using Azure OpenAI endpoint")
-
+        
         self.client = AsyncOpenAI(
             base_url=base_url,
             api_key=api_key
@@ -48,14 +45,6 @@ class LLMTool(BaseTool):
         self.model = os.getenv("OPENAI_MODEL", "openai/gpt-4o-2024-11-20")  
 
         self.small_model = os.environ.get("OPENAI_SMALL_MODEL", self.model)
-
-    def create_azure_token_provider(self):
-        from azure.identity.aio import DefaultAzureCredential, get_bearer_token_provider
-
-        token_provider = get_bearer_token_provider(
-            DefaultAzureCredential(), "https://cognitiveservices.azure.com/.default"
-        )
-        return token_provider
 
     async def execute(
         self,

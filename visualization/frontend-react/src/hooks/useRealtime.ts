@@ -28,6 +28,8 @@ export const useRealtime = (options: UseRealtimeOptions = {}) => {
   } = useTraceContext();
 
   const refreshTrace = useRefreshTrace();
+  const lastRefreshTsRef = useRef<number>(0);
+  const REFRESH_THROTTLE_MS = 2000;
   const optionsRef = useRef(options);
 
   // Update options ref when props change
@@ -87,8 +89,14 @@ export const useRealtime = (options: UseRealtimeOptions = {}) => {
         
         // Trigger a trace refresh when we receive updates
         if (state.selectedTraceId) {
-          console.log('[useRealtime] refreshing trace due to realtime message. traceId:', state.selectedTraceId);
-          refreshTrace.mutate(state.selectedTraceId);
+          const now = Date.now();
+          if (now - lastRefreshTsRef.current >= REFRESH_THROTTLE_MS) {
+            console.log('[useRealtime] refreshing trace due to realtime message. traceId:', state.selectedTraceId);
+            refreshTrace.mutate(state.selectedTraceId);
+            lastRefreshTsRef.current = now;
+          } else {
+            console.log('[useRealtime] throttled trace refresh; last refresh', now - lastRefreshTsRef.current, 'ms ago');
+          }
         }
         
         // Call user-provided callback

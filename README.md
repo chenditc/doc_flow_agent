@@ -104,11 +104,63 @@ Services:
   - Proxies `/api/traces`, `/api/llm-tuning`, `/debug`, `/health` → visualization (UI route `/traces` now handled client-side)
 - Orchestrator API (internal): `orchestrator:8001` (reachable via compose network)
 - Visualization API (internal): `visualization:8000`
+- Sandbox API: http://localhost:8080 (exposed by the `sandbox` service)
 
 Persistent Data Volumes:
 - `traces` (shared trace JSON files)
 - `jobs` (job metadata & logs)
 - `log` (general logs)
+
+### Remote Sandbox Execution
+
+This project supports running jobs inside an isolated Sandbox instead of the local subprocess. The Sandbox exposes HTTP APIs on port 8080 and is included as a service in `docker-compose.yml`.
+
+Key behaviors:
+- If environment variable `DEFAULT_SANDBOX_URL` is set inside the orchestrator container, the orchestrator will always use the Sandbox for job execution (even if a job request does not specify a `sandbox_url`).
+- If `DEFAULT_SANDBOX_URL` is not set, you can still submit a job with a `sandbox_url` to run it in the Sandbox. If neither is provided, the job runs locally.
+
+Compose integration:
+- The `sandbox` service is built from `Dockerfile.sandbox` (base image: `enterprise-public-cn-beijing.cr.volces.com/vefaas-public/all-in-one-sandbox:latest`).
+- The orchestrator service injects `DEFAULT_SANDBOX_URL=http://sandbox:8080` by default and `depends_on` the sandbox so remote mode is enabled out-of-the-box in Compose.
+
+Request/Response additions:
+- Submit Job (request field): `sandbox_url` (optional)
+- List/Get Job (response field): `sandbox_url` (null for local runs)
+
+Remote execution flow (validated against Sandbox APIs):
+- Execute: `POST /v1/shell/exec` with `{"exec_dir":"/app","command":"<shell>","async_mode":true,"timeout":86400}` → returns `data.session_id`.
+- Wait/poll: `POST /v1/shell/wait` with `{"id":"<session_id>","seconds":1}` until `data.status` is one of `completed | terminated | hard_timeout | no_change_timeout` (polling interval ~3.0s to reduce load).
+- View exit code: `POST /v1/shell/view` → read `data.exit_code`.
+- Logs: Output is redirected to `/app/jobs/<job_id>/engine_stdout.log` inside Sandbox and mirrored to local `jobs/<job_id>/engine_stdout.log`. The orchestrator also supports live tail via Sandbox file API `POST /v1/file/read`.
+- Cancel: `POST /jobs/{job_id}/cancel` triggers Sandbox `POST /v1/shell/kill` (when remote) and marks job `CANCELLED`.
+
+Example: Submit a job (via frontend reverse proxy):
+```bash
+curl -X POST http://localhost:28080/api/jobs \
+  -H 'Content-Type: application/json' \
+  -d '{"task_description": "Check Beijing time using bash"}'
+```
+
+Inspect job list and details:
+```bash
+curl http://localhost:28080/api/jobs | jq
+curl http://localhost:28080/api/jobs/<job_id> | jq
+```
+
+Read logs (supports tail parameter):
+```bash
+curl "http://localhost:28080/api/jobs/<job_id>/logs?tail=200"
+```
+
+Cancel a job:
+```bash
+curl -X POST http://localhost:28080/api/jobs/<job_id>/cancel
+```
+
+Notes:
+- When `DEFAULT_SANDBOX_URL` is present, the orchestrator always prefers Sandbox execution. To force local mode in Compose, remove or override this env var.
+- The remote path only catches specific exceptions (`httpx.HTTPError`, `ValueError` for response shape, and `OSError` for local I/O). Other exceptions bubble up for visibility, per code guide.
+- Polling frequency for `/v1/shell/wait` is tuned to lower service load (sleep ~3.0s between polls when still running).
 
 ### Environment Variables & Credentials
 

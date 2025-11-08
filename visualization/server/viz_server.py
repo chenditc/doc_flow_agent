@@ -24,6 +24,8 @@ from pydantic import BaseModel
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
+from visualization.server.trace_stream import TraceStreamManager
+
 # Add path to import tools
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
@@ -56,100 +58,58 @@ except Exception:
     logger.warning("Faulthandler not available; install or rely on /debug/threads endpoint")
 
 # Global variables for real-time monitoring
-active_connections: Dict[str, List[asyncio.Queue]] = {}
 file_observer = None
-# Capture the main asyncio event loop so watchdog thread can safely schedule work
-main_event_loop: Optional[asyncio.AbstractEventLoop] = None
- 
+
 # Debounce control to avoid flooding the event loop with too many broadcasts
 DEBOUNCE_SECONDS = 0.3
-_pending_broadcast_handles: Dict[str, asyncio.TimerHandle] = {}
 
 class TraceFileHandler(FileSystemEventHandler):
     """Handler for file system events on trace files."""
-    
+
+    def __init__(self, stream_manager: TraceStreamManager):
+        super().__init__()
+        self.stream_manager = stream_manager
+
     def on_modified(self, event):
-        """Handle file modification events."""
+        self._maybe_notify(event.src_path, event.is_directory)
+
+    def on_created(self, event):
+        self._maybe_notify(event.src_path, event.is_directory)
+
+    def on_moved(self, event):
         if event.is_directory:
             return
-            
-        if not event.src_path.endswith('.json'):
+        self._maybe_notify(event.dest_path, False)
+
+    def _maybe_notify(self, path: str, is_dir: bool):
+        if is_dir:
             return
-            
-        # Extract trace ID from file path
-        trace_id = Path(event.src_path).stem
-        logger.info(f"Trace file modified: {trace_id}")
+        if not path.endswith('.json'):
+            return
+        trace_id = Path(path).stem
+        logger.info(f"Trace file updated: {trace_id}")
+        self.stream_manager.notify_file_modified(trace_id)
 
-        # Notify connections using a debounced scheduler on the main event loop.
-        # IMPORTANT: watchdog invokes this in a thread; only schedule work, do not touch asyncio objects.
-        if main_event_loop is not None:
-            try:
-                main_event_loop.call_soon_threadsafe(_schedule_debounced_broadcast, trace_id)
-            except Exception as e:
-                logger.error(f"Failed to schedule debounced SSE broadcast on main loop: {e}")
-        else:
-            logger.warning("Main event loop not set; skipping SSE broadcast from watchdog thread")
-
-def _schedule_debounced_broadcast(trace_id: str):
-    """Debounce broadcasts for a trace: collapse rapid file change events.
-
-    Must be called on the asyncio loop thread.
-    """
-    loop = asyncio.get_running_loop()
-    # Cancel any existing pending broadcast
-    handle = _pending_broadcast_handles.get(trace_id)
-    if handle and not handle.cancelled():
-        handle.cancel()
-    # Schedule a new broadcast after DEBOUNCE_SECONDS
-    new_handle = loop.call_later(DEBOUNCE_SECONDS, _broadcast_sse_message_in_loop, trace_id)
-    _pending_broadcast_handles[trace_id] = new_handle
-
-def _broadcast_sse_message_in_loop(trace_id: str):
-    """Broadcast an SSE message to all connections for a trace within the asyncio loop thread."""
-    # Clear pending handle if this is the scheduled run
-    handle = _pending_broadcast_handles.pop(trace_id, None)
-    if handle and not handle.cancelled():
-        # nothing else needed; just ensure it's removed
-        pass
-
-    queues = active_connections.get(trace_id, [])
-    if not queues:
-        return
-    import time
-    message: Dict[str, Any] = {
-        "event": "file_updated",
-        "trace_id": trace_id,
-        "timestamp": time.time(),
-    }
-    logger.info(f"Sending SSE message to {len(queues)} connections: {message}")
-    for queue in list(queues):
-        try:
-            queue.put_nowait(message)
-        except asyncio.QueueFull:
-            logger.warning(f"Queue full for trace {trace_id}, dropping message")
-        except Exception as e:
-            logger.error(f"Error adding message to queue in loop: {e}")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage app lifecycle events (startup and shutdown)."""
-    global file_observer, main_event_loop
+    global file_observer
+
+    # Capture the running loop for cross-thread scheduling
+    try:
+        loop = asyncio.get_running_loop()
+        trace_stream_manager.attach_loop(loop)
+    except RuntimeError:
+        trace_stream_manager.detach_loop()
+        logger.warning("Could not capture main event loop during startup")
     
     # Startup
-    # Check if we're in testing mode (don't start file watcher during tests)
-    import os
     if os.getenv('TESTING') == 'true':
         logger.info("Testing mode detected, file watcher disabled")
     else:
-        # Capture the running loop for cross-thread scheduling
-        try:
-            main_event_loop = asyncio.get_running_loop()
-        except RuntimeError:
-            main_event_loop = None
-            logger.warning("Could not capture main event loop during startup")
-        
         if TRACES_DIR.exists():
-            event_handler = TraceFileHandler()
+            event_handler = TraceFileHandler(trace_stream_manager)
             file_observer = Observer()
             file_observer.schedule(event_handler, str(TRACES_DIR), recursive=False)
             file_observer.start()
@@ -174,19 +134,7 @@ async def lifespan(app: FastAPI):
         finally:
             file_observer = None
     
-    # Cancel any pending debounced broadcasts
-    for trace_id, handle in list(_pending_broadcast_handles.items()):
-        try:
-            if handle and not handle.cancelled():
-                handle.cancel()
-        except Exception:
-            pass
-    _pending_broadcast_handles.clear()
-
-    # Clear all active connections
-    active_connections.clear()
-    logger.info("All SSE connections cleared")
-    main_event_loop = None
+    await trace_stream_manager.shutdown()
 
 # Create FastAPI app
 app = FastAPI(
@@ -221,6 +169,17 @@ app.add_middleware(
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 TRACES_DIR = PROJECT_ROOT / "traces"
 REACT_BUILD_DIR = PROJECT_ROOT / "visualization" / "frontend-react" / "dist"
+_orch_base = os.getenv("ORCHESTRATOR_BASE_URL", "").strip()
+ORCHESTRATOR_BASE_URL = _orch_base.rstrip("/") if _orch_base else ""
+ORCHESTRATOR_SYNC_TIMEOUT = float(os.getenv("ORCHESTRATOR_SYNC_TIMEOUT", "10.0"))
+TRACE_SYNC_POLL_INTERVAL = float(os.getenv("TRACE_SYNC_POLL_INTERVAL", "2.0"))
+
+trace_stream_manager = TraceStreamManager(
+    orchestrator_base_url=ORCHESTRATOR_BASE_URL,
+    sync_timeout=ORCHESTRATOR_SYNC_TIMEOUT,
+    poll_interval=TRACE_SYNC_POLL_INTERVAL,
+    debounce_seconds=DEBOUNCE_SECONDS,
+)
 
 # Include the LLM tuning router
 app.include_router(llm_tuning_router)
@@ -240,24 +199,14 @@ async def debug_state():
     try:
         loop = asyncio.get_running_loop()
         # Summarize active connections and queue sizes
-        conn_summary: Dict[str, Any] = {}
-        for tid, queues in active_connections.items():
-            try:
-                q_sizes = [q.qsize() for q in queues]
-            except Exception:
-                q_sizes = [None for _ in queues]
-            conn_summary[tid] = {
-                "connections": len(queues),
-                "queue_sizes": q_sizes,
-            }
-        # Pending debounced broadcasts
-        pending = list(_pending_broadcast_handles.keys())
+        conn_summary = trace_stream_manager.connection_debug_snapshot()
+        pending = trace_stream_manager.pending_broadcast_traces()
         # File observer status
         observer_alive = bool(file_observer and file_observer.is_alive())
         # Loop info
         tasks = list(asyncio.all_tasks(loop))
         return {
-            "active_traces": list(active_connections.keys()),
+            "active_traces": trace_stream_manager.active_trace_ids(),
             "connections": conn_summary,
             "pending_broadcasts": pending,
             "file_observer_alive": observer_alive,
@@ -312,8 +261,8 @@ async def list_traces():
 @app.get("/api/traces/latest")
 async def get_latest_trace():
     """
-    Get the latest trace ID based on filename timestamp.
-    Returns the trace ID of the most recently created trace.
+    Get the latest trace ID based on file modification time.
+    Returns the trace ID of the most recently updated trace.
     """
     try:
         if not TRACES_DIR.exists():
@@ -324,10 +273,9 @@ async def get_latest_trace():
         if not trace_files:
             raise HTTPException(status_code=404, detail="No trace files found")
         
-        # Sort files by name (which includes timestamp) in descending order
-        # Since files are named session_YYYYMMDD_HHMMSS_<hash>.json, 
-        # sorting by name will sort by timestamp
-        latest_file = max(trace_files, key=lambda f: f.name)
+        # Use modification time to identify the freshest trace. This works even when filenames
+        # are not timestamped (e.g., when traces share the job_id as their name).
+        latest_file = max(trace_files, key=lambda f: f.stat().st_mtime)
         latest_trace_id = latest_file.stem
         
         logger.info(f"Latest trace identified: {latest_trace_id}")
@@ -354,6 +302,8 @@ async def get_trace(trace_id: str) -> Dict[str, Any]:
     if trace_id.endswith('.json'):
         trace_id = trace_id[:-5]
     
+    await trace_stream_manager.request_sync_once(trace_id, force=True)
+
     # Construct file path
     trace_file = TRACES_DIR / f"{trace_id}.json"
     
@@ -392,15 +342,18 @@ async def stream_trace_updates(trace_id: str):
         trace_id = trace_id[:-5]
     
     logger.info(f"[SSE] Starting SSE stream handler for trace: {trace_id}")
+
+    await trace_stream_manager.request_sync_once(trace_id, force=True)
     
     # Create a queue for this connection
-    message_queue = asyncio.Queue(maxsize=100)
-    
-    # Add to active connections
-    if trace_id not in active_connections:
-        active_connections[trace_id] = []
-    active_connections[trace_id].append(message_queue)
-    logger.info(f"[SSE] Added connection for trace {trace_id}. Total for this trace: {len(active_connections[trace_id])}. All traces with connections: {list(active_connections.keys())}")
+    message_queue = trace_stream_manager.register_connection(trace_id)
+    trace_stream_manager.ensure_sync_polling(trace_id)
+    logger.info(
+        "[SSE] Added connection for trace %s. Total for this trace: %d. Active traces: %s",
+        trace_id,
+        trace_stream_manager.connection_count(trace_id),
+        trace_stream_manager.active_trace_ids(),
+    )
     
     async def event_stream():
         """Generate SSE events for the client."""
@@ -431,11 +384,7 @@ async def stream_trace_updates(trace_id: str):
         except Exception as e:
             logger.error(f"SSE stream error for trace {trace_id}: {e}")
         finally:
-            # Clean up connection
-            if trace_id in active_connections and message_queue in active_connections[trace_id]:
-                active_connections[trace_id].remove(message_queue)
-                if not active_connections[trace_id]:
-                    del active_connections[trace_id]
+            trace_stream_manager.unregister_connection(trace_id, message_queue)
             logger.info(f"[SSE] Stream closed for trace: {trace_id}")
     
     return StreamingResponse(

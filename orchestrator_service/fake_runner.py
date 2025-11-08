@@ -10,13 +10,17 @@ import os
 from pathlib import Path
 
 
-async def main_async(job_id: str, task: str, sleep: float):
+async def main_async(job_id: str, task: str, sleep: float, context_file: str | None):
     await asyncio.sleep(sleep)
-    base_dir = os.getenv("ORCHESTRATOR_JOBS_DIR")
-    job_root = Path(base_dir) if base_dir else Path("jobs")
-    job_dir = job_root / job_id
+    if context_file:
+        context_path = Path(context_file)
+        job_dir = context_path.parent
+    else:
+        base_dir = os.getenv("ORCHESTRATOR_JOBS_DIR")
+        job_root = Path(base_dir) if base_dir else Path("jobs")
+        job_dir = job_root / job_id
+        context_path = job_dir / "context.json"
     job_dir.mkdir(parents=True, exist_ok=True)
-    context_file = job_dir / "context.json"
     request_env = {}
     request_file = job_dir / "request.json"
     if request_file.exists():
@@ -27,7 +31,7 @@ async def main_async(job_id: str, task: str, sleep: float):
         except (OSError, json.JSONDecodeError):
             request_env = {}
     context = {"fake_runner": True, "task": task, "status": "done", "env_vars": request_env}
-    context_file.write_text(json.dumps(context, ensure_ascii=False, indent=2), encoding="utf-8")
+    context_path.write_text(json.dumps(context, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"FAKE RUNNER completed job {job_id}")
 
 
@@ -38,6 +42,7 @@ def main():
     parser.add_argument("--max-tasks", required=False)
     parser.add_argument("--sleep", type=float, default=0.05)
     parser.add_argument("--trace-file", required=False, help="Pre-created trace session file (ignored by fake runner)")
+    parser.add_argument("--context-file", required=False, help="Path to persist job context JSON (optional)")
     args = parser.parse_args()
     # Allow environment variable override for even faster tests
     sleep_override = os.getenv("FAKE_RUNNER_SLEEP")
@@ -46,7 +51,7 @@ def main():
             args.sleep = float(sleep_override)
         except ValueError:
             pass
-    asyncio.run(main_async(args.job_id, args.task, args.sleep))
+    asyncio.run(main_async(args.job_id, args.task, args.sleep, args.context_file))
 
 
 if __name__ == "__main__":  # pragma: no cover

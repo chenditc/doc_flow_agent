@@ -1,5 +1,7 @@
 """FastAPI application for orchestrator service."""
 
+import json
+from pathlib import Path
 from typing import Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, Query
@@ -14,6 +16,7 @@ class SubmitJobRequest(BaseModel):
     task_description: str = Field(..., min_length=1, max_length=10000)
     max_tasks: Optional[int] = Field(default=50, ge=1, le=1000)
     env_vars: Optional[Dict[str, str]] = Field(default=None)
+    sandbox_url: Optional[str] = Field(default=None, description="Remote sandbox base URL; if omitted and DEFAULT_SANDBOX_URL is set, sandbox will be used")
 
     @validator("env_vars")
     def validate_env_vars(cls, value: Optional[Dict[str, str]]):
@@ -41,12 +44,21 @@ class JobResponse(BaseModel):
     max_tasks: Optional[int]
     error: Optional[dict] = None
     env_vars: Dict[str, str] = Field(default_factory=dict)
+    sandbox_url: Optional[str] = None
 
 
 class CancelJobResponse(BaseModel):
     job_id: str
     status: str
     cancelled: bool
+
+
+class TraceSyncResponse(BaseModel):
+    trace_id: str
+    job_id: str
+    synced: bool
+    job_status: str
+    is_terminal: bool
 
 
 # Initialize FastAPI app and manager
@@ -65,7 +77,8 @@ async def submit_job(request: SubmitJobRequest):
     job = manager.create_job(
         task_description=request.task_description,
         max_tasks=request.max_tasks,
-        env_vars=request.env_vars
+        env_vars=request.env_vars,
+        sandbox_url=request.sandbox_url,
     )
     return SubmitJobResponse(job_id=job.job_id, status=job.status)
 
@@ -99,6 +112,7 @@ async def list_jobs(
             max_tasks=job.max_tasks,
             error=job.error,
             env_vars=job.env_vars,
+            sandbox_url=job.sandbox_url,
         )
         for job in jobs
     ]
@@ -122,6 +136,7 @@ async def get_job(job_id: str):
         max_tasks=job.max_tasks,
         error=job.error,
         env_vars=job.env_vars,
+        sandbox_url=job.sandbox_url,
     )
 
 
@@ -158,17 +173,54 @@ async def get_job_logs(
     return {"job_id": job_id, "logs": logs}
 
 
+@app.post("/traces/{trace_id}/sync", response_model=TraceSyncResponse)
+async def sync_trace_file(trace_id: str, force: bool = Query(False, description="Force download even if file exists locally")):
+    """Request a trace file refresh from remote sandbox (if applicable)."""
+    normalized = trace_id.strip()
+    if not normalized:
+        raise HTTPException(status_code=400, detail="Trace ID is required")
+    if normalized.endswith(".json"):
+        normalized = normalized[:-5]
+    trace_filename = f"{normalized}.json"
+    job_id = normalized
+    job = manager.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Trace not associated with any known job")
+    try:
+        synced = await manager.sync_trace_file(
+            trace_filename,
+            job_id=job.job_id,
+            force=force or job.status in ("RUNNING", "STARTING"),
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        raise HTTPException(status_code=500, detail=f"Failed to sync trace: {exc}") from exc
+    job_status = job.status or "UNKNOWN"
+    is_terminal = job_status in ("COMPLETED", "FAILED", "CANCELLED")
+    return TraceSyncResponse(
+        trace_id=normalized,
+        job_id=job.job_id,
+        synced=synced,
+        job_status=job_status,
+        is_terminal=is_terminal,
+    )
+
+
 @app.get("/jobs/{job_id}/context")
-async def get_job_context(job_id: str):
+async def get_job_context(job_id: str, refresh: bool = Query(False, description="Force refresh from sandbox if running")):
     """Get job execution context."""
-    from pathlib import Path
-    import json
-    
     job = manager.get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    
-    context_file = Path("jobs") / job_id / "context.json"
+
+    try:
+        await manager.sync_job_context(
+            job_id,
+            force=refresh or job.status in ("RUNNING", "STARTING"),
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        raise HTTPException(status_code=500, detail=f"Failed to sync context: {exc}") from exc
+
+    context_file = manager.jobs_dir / job_id / "context.json"
     if not context_file.exists():
         raise HTTPException(status_code=404, detail="Context not found")
     

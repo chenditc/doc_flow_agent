@@ -101,6 +101,8 @@ export const JobDetailPage: React.FC = () => {
     refetchInterval: 3000 // Simple 3 second polling for now
   });
 
+  const isTerminalJob = job?.status === 'FAILED' || job?.status === 'COMPLETED';
+
   // Fetch job logs
   const {
     data: logsData,
@@ -110,7 +112,7 @@ export const JobDetailPage: React.FC = () => {
     queryKey: ['job-logs', jobId, logTailLines],
     queryFn: () => jobService.getJobLogs(jobId!, logTailLines),
     enabled: !!jobId && activeTab === 1,
-    refetchInterval: 2000 // Simple 2 second polling for logs
+    refetchInterval: isTerminalJob ? false : 2000 // Stop polling once job finishes
   });
 
   // Fetch job context

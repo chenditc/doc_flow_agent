@@ -29,7 +29,7 @@ vi.mock('../services', () => {
         created_at: new Date().toISOString(),
         started_at: new Date().toISOString(),
         finished_at: new Date().toISOString(),
-        trace_files: ['session_20250101_000000_abcd1234.json'],
+        trace_files: ['job123.json'],
         max_tasks: 10
       }),
       getJobLogs: vi.fn().mockResolvedValue({ job_id: 'job123', logs: '' }),
@@ -48,7 +48,7 @@ describe('JobDetailPage trace link', () => {
       created_at: new Date().toISOString(),
       started_at: new Date().toISOString(),
       finished_at: new Date().toISOString(),
-      trace_files: ['session_20250101_000000_abcd1234.json'],
+      trace_files: ['job123.json'],
       max_tasks: 10
     });
   });
@@ -73,7 +73,7 @@ describe('JobDetailPage trace link', () => {
     fireEvent.click(tracesTab);
 
     // Now list should render trace file entry
-    const traceItem = await screen.findByText(/session_20250101_000000_abcd1234\.json/);
+    const traceItem = await screen.findByText(/job123\.json/);
     fireEvent.click(traceItem);
 
     // MemoryRouter doesn't update window.location, so assert via waiting for trace viewer route element
@@ -92,7 +92,7 @@ describe('JobDetailPage trace link', () => {
       created_at: new Date().toISOString(),
       started_at: new Date().toISOString(),
       finished_at: null,
-      trace_files: ['session_20250101_000000_abcd1234.json'],
+      trace_files: ['job123.json'],
       max_tasks: 10
     });
 
@@ -113,7 +113,7 @@ describe('JobDetailPage trace link', () => {
     const tracesTab = await screen.findByRole('tab', { name: /Traces/ });
     fireEvent.click(tracesTab);
 
-    const traceItem = await screen.findByText(/session_20250101_000000_abcd1234\.json/);
+    const traceItem = await screen.findByText(/job123\.json/);
     fireEvent.click(traceItem);
 
     await waitFor(() => {

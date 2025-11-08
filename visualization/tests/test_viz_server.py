@@ -49,9 +49,11 @@ class TestVizServer:
         """Create test client with temporary trace directory"""
         with tempfile.TemporaryDirectory() as temp_dir:
             # Create mock trace file
-            trace_file = Path(temp_dir) / "session_test_123.json"
+            trace_file = Path(temp_dir) / "job123.json"
             with open(trace_file, 'w') as f:
                 json.dump(MOCK_TRACE_DATA, f)
+            now = time.time()
+            os.utime(trace_file, (now, now))
             
             # Import and configure the server
             with patch('visualization.server.viz_server.TRACES_DIR', Path(temp_dir)):
@@ -73,11 +75,11 @@ class TestVizServer:
         assert response.status_code == 200
         data = response.json()
         assert isinstance(data, list)
-        assert 'session_test_123' in data
+        assert 'job123' in data
 
     def test_get_trace_by_id(self, client):
         """Test getting specific trace by ID via new API path"""
-        response = client.get('/api/traces/session_test_123')
+        response = client.get('/api/traces/job123')
         assert response.status_code == 200
         data = response.json()
         assert data['session_id'] == 'test-session'
@@ -103,23 +105,25 @@ class TestVizServer:
         assert response.status_code == 200
         data = response.json()
         assert 'trace_id' in data
-        assert data['trace_id'] == 'session_test_123'
+        assert data['trace_id'] == 'job123'
 
     def test_get_latest_trace_multiple_files(self):
         """Test getting latest trace when multiple trace files exist"""
         with tempfile.TemporaryDirectory() as temp_dir:
-            # Create multiple trace files with different timestamps
+            # Create multiple trace files with controlled modification times
             trace_files = [
-                "session_20250820_100000_abc123.json",
-                "session_20250820_120000_def456.json", 
-                "session_20250821_090000_ghi789.json",  # Latest date
-                "session_20250821_080000_jkl012.json"   # Latest date but earlier time
+                "job_a.json",
+                "job_b.json",
+                "job_c.json",
+                "job_d.json",
             ]
             
-            for trace_file in trace_files:
+            base_time = time.time()
+            for idx, trace_file in enumerate(trace_files):
                 file_path = Path(temp_dir) / trace_file
                 with open(file_path, 'w') as f:
                     json.dump(MOCK_TRACE_DATA, f)
+                os.utime(file_path, (base_time + idx, base_time + idx))
             
             with patch('visualization.server.viz_server.TRACES_DIR', Path(temp_dir)):
                 from visualization.server.viz_server import app
@@ -128,8 +132,8 @@ class TestVizServer:
                     response = client.get('/api/traces/latest')
                     assert response.status_code == 200
                     data = response.json()
-                    # Should return the lexicographically last filename (latest timestamp)
-                    assert data['trace_id'] == 'session_20250821_090000_ghi789'
+                    # Should return the file with the most recent mtime (job_d)
+                    assert data['trace_id'] == 'job_d'
 
     def test_get_latest_trace_no_traces(self):
         """Test getting latest trace when no traces exist"""

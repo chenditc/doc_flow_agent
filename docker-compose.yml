@@ -24,6 +24,12 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
+    depends_on:
+      sandbox:
+        condition: service_started
+    environment:
+      # Inject default sandbox url so orchestrator always uses sandbox if present
+      - DEFAULT_SANDBOX_URL=http://sandbox:8080
 
   visualization:
     build:
@@ -32,6 +38,8 @@ services:
     image: docflow/visualization:latest
     env_file:
       - .env
+    environment:
+      - ORCHESTRATOR_BASE_URL=http://orchestrator:8001
     volumes:
       - traces:/app/traces:ro
       - log:/app/log
@@ -69,6 +77,25 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+      start_period: 10s
+
+  sandbox:
+    build:
+      context: .
+      dockerfile: Dockerfile.sandbox
+    image: docflow/sandbox:latest
+    ports:
+      - "8080:8080"
+    security_opt:
+      - seccomp=unconfined
+    env_file:
+      - .env
+    # The base image starts the sandbox server; no command override here
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/v1/sandbox"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
       start_period: 10s
 
 volumes:

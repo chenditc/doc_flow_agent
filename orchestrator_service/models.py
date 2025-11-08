@@ -19,6 +19,13 @@ class Job:
     max_tasks: Optional[int] = 50
     error: Optional[Dict[str, Any]] = None
     env_vars: Dict[str, str] = field(default_factory=dict)
+    # Optional sandbox endpoint; when set, run job in remote sandbox instead of local subprocess.
+    # Note: If environment variable DEFAULT_SANDBOX_URL is present in orchestrator, it always takes precedence.
+    sandbox_url: Optional[str] = None
+    # Optional sandbox session id recorded when running remotely; used for remote cancellation or introspection.
+    sandbox_session_id: Optional[str] = None
+    # Remote log path when executing inside sandbox; used for tailing/downloading logs.
+    sandbox_log_path: Optional[str] = None
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert job to dictionary for JSON serialization."""

@@ -374,6 +374,8 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
     
     def save_context(self):
         """Save context to file"""
+        # Ensure target directory exists before writing
+        self.context_file.parent.mkdir(parents=True, exist_ok=True)
         with open(self.context_file, 'w', encoding='utf-8') as f:
             json.dump(self.context, f, ensure_ascii=False, indent=2)
     
