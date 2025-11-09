@@ -24,6 +24,8 @@ SANDBOX_WORKDIR = PurePosixPath(os.getenv("SANDBOX_WORKDIR", "/app"))
 SANDBOX_TRACES_DIR = SANDBOX_WORKDIR / "traces"
 SANDBOX_JOBS_DIR = SANDBOX_WORKDIR / "jobs"
 REMOTE_ARTIFACT_TIMEOUT = float(os.getenv("REMOTE_ARTIFACT_TIMEOUT", "60.0"))
+LOCAL_TASK_FILES_DIR = Path(os.getenv("LOCAL_TASK_FILES_DIR", "/tmp/doc_engine_tasks"))
+SANDBOX_TASK_FILES_DIR = PurePosixPath(os.getenv("SANDBOX_TASK_FILES_DIR", "/tmp"))
 
 
 @dataclass
@@ -116,14 +118,12 @@ class SandboxRunner(BaseRunner):
         *,
         sandbox_url: str,
         command: List[str],
-        env: Dict[str, str],
         log_path: Path,
         remote_log_path: str,
         request_timeout: float = 86400.0,
     ):
         self.sandbox_url = sandbox_url.rstrip("/")
         self.command = command
-        self.environment = env
         self.log_path = log_path
         self.remote_log_path = remote_log_path
         self.request_timeout = request_timeout
@@ -231,14 +231,7 @@ class SandboxRunner(BaseRunner):
             await http_client.aclose()
 
     def _build_command_string(self) -> str:
-        env_assignments = [
-            f"{key}={shlex.quote(str(value))}"
-            for key, value in self.environment.items()
-        ]
-        command_part = shlex.join(self.command)    
-        if env_assignments:
-            return " ".join(env_assignments + [command_part])
-        return command_part
+        return shlex.join(self.command)
 
     def _wrap_with_log_redirection(self, command: str) -> str:
         log_path = shlex.quote(self.remote_log_path)
@@ -440,6 +433,16 @@ class ExecutionManager:
     def _build_remote_context_path(self, job_id: str) -> str:
         return str(SANDBOX_JOBS_DIR / job_id / "context.json")
 
+    def _build_remote_task_path(self, job_id: str) -> str:
+        return str(SANDBOX_TASK_FILES_DIR / f"{job_id}.task")
+
+    def _build_remote_env_path(self, job_id: str) -> str:
+        return str(SANDBOX_TASK_FILES_DIR / f"{job_id}.env.json")
+
+    @staticmethod
+    def _normalize_env(env: Dict[str, Any]) -> Dict[str, str]:
+        return {str(key): str(value) for key, value in env.items()}
+
     async def sync_job_context(self, job_id: str, *, force: bool = False) -> bool:
         job = self._jobs.get(job_id)
         if not job:
@@ -541,6 +544,88 @@ class ExecutionManager:
             timeout=self._remote_artifact_timeout,
         )
 
+    def _create_local_task_file(self, job_id: str, task_description: str) -> Path:
+        LOCAL_TASK_FILES_DIR.mkdir(parents=True, exist_ok=True)
+        task_path = LOCAL_TASK_FILES_DIR / f"{job_id}.task"
+        task_path.write_text(task_description, encoding="utf-8")
+        try:
+            os.chmod(task_path, 0o600)
+        except OSError:
+            pass
+        return task_path
+
+    def _create_local_env_file(self, job_id: str, env: Dict[str, str]) -> Path:
+        env_path = self.jobs_dir / job_id / "env.json"
+        env_path.parent.mkdir(parents=True, exist_ok=True)
+        normalized_env = self._normalize_env(env)
+        with open(env_path, "w", encoding="utf-8") as env_file:
+            json.dump(normalized_env, env_file, ensure_ascii=False, indent=2)
+        try:
+            os.chmod(env_path, 0o600)
+        except OSError:
+            pass
+        return env_path
+
+    async def _upload_task_description_file(
+        self,
+        *,
+        sandbox_url: str,
+        job_id: str,
+        task_description: str,
+    ) -> str:
+        remote_path = self._build_remote_task_path(job_id)
+        http_client = httpx.AsyncClient(timeout=self._remote_artifact_timeout)
+        sandbox_client = AsyncSandbox(
+            base_url=sandbox_url.rstrip("/"),
+            timeout=self._remote_artifact_timeout,
+            httpx_client=http_client,
+        )
+        try:
+            upload_response = await sandbox_client.file.upload_file(
+                file=(f"{job_id}.task", task_description.encode("utf-8"), "text/plain"),
+                path=remote_path,
+            )
+        finally:
+            await http_client.aclose()
+        if upload_response.success is False:
+            message = upload_response.message or "sandbox upload failed"
+            raise RuntimeError(f"Sandbox task upload failed: {message}")
+        upload_data = upload_response.data
+        if not upload_data or not upload_data.success:
+            raise RuntimeError("Sandbox task upload returned no data")
+        return upload_data.file_path or remote_path
+
+    async def _upload_env_file(
+        self,
+        *,
+        sandbox_url: str,
+        job_id: str,
+        env: Dict[str, str],
+    ) -> str:
+        remote_path = self._build_remote_env_path(job_id)
+        normalized_env = self._normalize_env(env)
+        payload = json.dumps(normalized_env, ensure_ascii=False).encode("utf-8")
+        http_client = httpx.AsyncClient(timeout=self._remote_artifact_timeout)
+        sandbox_client = AsyncSandbox(
+            base_url=sandbox_url.rstrip("/"),
+            timeout=self._remote_artifact_timeout,
+            httpx_client=http_client,
+        )
+        try:
+            upload_response = await sandbox_client.file.upload_file(
+                file=(f"{job_id}.env.json", payload, "application/json"),
+                path=remote_path,
+            )
+        finally:
+            await http_client.aclose()
+        if upload_response.success is False:
+            message = upload_response.message or "sandbox upload failed"
+            raise RuntimeError(f"Sandbox env upload failed: {message}")
+        upload_data = upload_response.data
+        if not upload_data or not upload_data.success:
+            raise RuntimeError("Sandbox env upload returned no data")
+        return upload_data.file_path or remote_path
+
     def _create_runner(
         self,
         job: Job,
@@ -550,13 +635,11 @@ class ExecutionManager:
         remote_log_path: Optional[str] = None,
     ) -> BaseRunner:
         if job.sandbox_url:
-            sandbox_environment = {key: str(value) for key, value in env.items()}
             if not remote_log_path:
                 raise ValueError("remote_log_path must be provided for sandbox jobs")
             return SandboxRunner(
                 sandbox_url=job.sandbox_url,
                 command=command,
-                env=sandbox_environment,
                 log_path=log_path,
                 remote_log_path=remote_log_path,
             )
@@ -680,18 +763,42 @@ class ExecutionManager:
             self._persist_status(job)
         runner_module = os.getenv("ORCHESTRATOR_RUNNER_MODULE", "orchestrator_service.runner")
         job_dir = self.jobs_dir / job.job_id
-        cmd = [
-            "python", "-u", "-m", runner_module,
-            "--job-id", job.job_id,
-            "--task", job.task_description,
-            "--max-tasks", str(job.max_tasks),
-            "--trace-file", trace_filename,
-            "--context-file", str(job_dir / "context.json")
-        ]
-        log_path = job_dir / "engine_stdout.log"
+        task_file_arg: Optional[str] = None
+        local_task_file: Optional[Path] = None
+        if job.sandbox_url:
+            task_file_arg = await self._upload_task_description_file(
+                sandbox_url=job.sandbox_url,
+                job_id=job.job_id,
+                task_description=job.task_description,
+            )
+        else:
+            local_task_file = self._create_local_task_file(job.job_id, job.task_description)
+            task_file_arg = str(local_task_file)
+        if not task_file_arg:
+            raise RuntimeError("Failed to prepare task description file")
         env = os.environ.copy()
         env.update(job.env_vars)
         env.setdefault("ORCHESTRATOR_JOBS_DIR", str(self.jobs_dir))
+        if job.sandbox_url:
+            env_file_arg = await self._upload_env_file(
+                sandbox_url=job.sandbox_url,
+                job_id=job.job_id,
+                env=env,
+            )
+        else:
+            env_file_arg = str(self._create_local_env_file(job.job_id, env))
+        if not env_file_arg:
+            raise RuntimeError("Failed to prepare environment file")
+        cmd = [
+            "python", "-u", "-m", runner_module,
+            "--job-id", job.job_id,
+            "--task-file", task_file_arg,
+            "--max-tasks", str(job.max_tasks),
+            "--trace-file", trace_filename,
+            "--context-file", str(job_dir / "context.json"),
+            "--env-file", env_file_arg,
+        ]
+        log_path = job_dir / "engine_stdout.log"
 
         remote_log_path = job.sandbox_log_path if job.sandbox_url else None
         runner = self._create_runner(job, cmd, env, log_path, remote_log_path=remote_log_path)
@@ -707,6 +814,11 @@ class ExecutionManager:
             runner_result = await runner.wait()
         finally:
             self._runners.pop(job.job_id, None)
+            if local_task_file:
+                try:
+                    local_task_file.unlink(missing_ok=True)
+                except OSError:
+                    pass
 
         if job.sandbox_url:
             await self.sync_job_context(job.job_id, force=True)

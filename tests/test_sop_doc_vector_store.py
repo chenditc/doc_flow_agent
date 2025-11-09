@@ -47,8 +47,8 @@ async def test_vector_store_builds_and_searches(tmp_path):
     )
 
     embeddings: Dict[str, List[float]] = {
-        "Run Python code for automation tasks.": [0.9, 0.1],
-        "Visit websites via browser automation.": [0.1, 0.9],
+        "tools/python: Run Python code for automation tasks.": [0.9, 0.1],
+        "tools/web: Visit websites via browser automation.": [0.1, 0.9],
         "Query xxx website": [0.2, 0.8],
     }
 
@@ -65,7 +65,7 @@ async def test_vector_store_builds_and_searches(tmp_path):
     assert match.doc_id == "tools/web"
     assert match.directories == ["tools"]
     assert match.tool_id == "WEB_VISITOR"
-    assert match.description == "Visit websites via browser automation."
+    assert match.description == "tools/web: Visit websites via browser automation."
     assert match.metadata["doc_id"] == "tools/web"
     assert match.score >= 0
 
@@ -93,7 +93,7 @@ async def test_vector_store_uses_doc_id_when_description_missing(tmp_path):
     )
 
     embeddings = {
-        "Search across indexed content.": [0.7, 0.3],
+        "tools/search: Search across indexed content.": [0.7, 0.3],
         "general/plan": [0.2, 0.8],
         "search query": [0.6, 0.4],
     }
@@ -105,7 +105,7 @@ async def test_vector_store_uses_doc_id_when_description_missing(tmp_path):
         store = SOPDocVectorStore(docs_dir=str(docs_dir))
         await store.build()
         calls = [call.args[0] for call in mock_embed.call_args_list]
-        assert "Search across indexed content." in calls
+        assert "tools/search: Search across indexed content." in calls
         assert "general/plan" in calls
         results = await store.similarity_search("search query", k=1)
 

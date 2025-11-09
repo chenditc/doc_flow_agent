@@ -514,7 +514,84 @@ tool:
             sop_doc_id, doc_selection_message = result
             self.assertEqual(sop_doc_id, "tools/python")
             self.assertEqual(doc_selection_message, "")
-    
+
+    def test_vector_search_candidates_are_included_in_valid_docs(self):
+        """Ensure vector search suggestions are added ahead of standard tools."""
+        mock_llm_tool = AsyncMock()
+        mock_llm_tool.execute.return_value = {
+            "content": "Task analysis completed.",
+            "tool_calls": [{
+                "name": "select_tool_for_task",
+                "arguments": {
+                    "can_complete_with_tool": True,
+                    "selected_tool_doc": "custom/doc",
+                    "reasoning": "Vector doc fits best"
+                }
+            }]
+        }
+
+        parser = SOPDocumentParser(llm_tool=mock_llm_tool)
+
+        async def fake_vector_candidates(self, description: str, k: int = 5):
+            return [{"doc_id": "custom/doc", "description": "Custom doc description"}]
+
+        available_tools = [{
+            "doc_id": "tools/python",
+            "description": "Python executor",
+            "use_case": "Automate tasks"
+        }]
+
+        with patch.object(SOPDocumentParser, "_get_vector_search_candidates", new=fake_vector_candidates), \
+             patch.object(SOPDocumentParser, "_get_available_tools", return_value=available_tools):
+            async def run_test():
+                return await parser._select_tool_for_task("Need a custom doc")
+
+            result = asyncio.run(run_test())
+
+        self.assertEqual(result[0], "custom/doc")
+        call_payload = mock_llm_tool.execute.call_args[0][0]
+        enum_values = call_payload["tools"][0]["function"]["parameters"]["properties"]["selected_tool_doc"]["enum"]
+        self.assertEqual(enum_values[0], "custom/doc")
+        self.assertIn("custom/doc: Custom doc description", call_payload["prompt"])
+
+    def test_vector_search_deduplicates_existing_docs(self):
+        """Ensure vector search entries aren't duplicated when already a tool."""
+        mock_llm_tool = AsyncMock()
+        mock_llm_tool.execute.return_value = {
+            "content": "Task analysis completed.",
+            "tool_calls": [{
+                "name": "select_tool_for_task",
+                "arguments": {
+                    "can_complete_with_tool": True,
+                    "selected_tool_doc": "tools/python",
+                    "reasoning": "Python fits"
+                }
+            }]
+        }
+
+        parser = SOPDocumentParser(llm_tool=mock_llm_tool)
+
+        async def fake_vector_candidates(self, description: str, k: int = 5):
+            return [{"doc_id": "tools/python", "description": "Vector hit"}]
+
+        available_tools = [{
+            "doc_id": "tools/python",
+            "description": "Python executor",
+            "use_case": "Automate tasks"
+        }]
+
+        with patch.object(SOPDocumentParser, "_get_vector_search_candidates", new=fake_vector_candidates), \
+             patch.object(SOPDocumentParser, "_get_available_tools", return_value=available_tools):
+            async def run_test():
+                return await parser._select_tool_for_task("Need python tool")
+
+            result = asyncio.run(run_test())
+
+        self.assertEqual(result[0], "tools/python")
+        call_payload = mock_llm_tool.execute.call_args[0][0]
+        enum_values = call_payload["tools"][0]["function"]["parameters"]["properties"]["selected_tool_doc"]["enum"]
+        self.assertEqual(enum_values.count("tools/python"), 1)
+
     def test_parse_sop_doc_id_unexpected_tool_call_raises_exception(self):
         """Test that unexpected tool call raises ValueError"""
         # Create a mock LLMTool instance that returns unexpected tool call

@@ -21,7 +21,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Ensure expected directories exist for runner
-RUN mkdir -p /app/traces /app/jobs /app/log && chmod -R 777 /app/traces /app/jobs /app/log
+RUN mkdir -p /app/traces /app/jobs /app/log /app/user_comm/ && chmod -R 777 /app/traces /app/jobs /app/log /app/user_comm/ 
 
 # Expose sandbox API port
 EXPOSE 8080

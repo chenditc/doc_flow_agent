@@ -20,8 +20,11 @@ import json
 import yaml
 import re
 from pathlib import Path
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, TYPE_CHECKING
 from dataclasses import dataclass
+
+if TYPE_CHECKING:
+    from sop_doc_vector_store import SOPDocVectorStore
 
 
 @dataclass
@@ -99,9 +102,16 @@ class SOPDocumentLoader:
         if 'parameters' in tool_data:
             tool_data = self._replace_tool_parameters_with_sections(tool_data, parameters)
         
+
+        combined_description = doc_data.get('description', '')
+        if not combined_description.endswith("。"):
+            combined_description += "。"
+        if doc_data.get('output_description', ''):
+            combined_description += "输出：" + doc_data.get('output_description', '')
+
         return SOPDocument(
             doc_id=doc_data.get('doc_id', doc_id),
-            description=doc_data.get('description', ''),
+            description=combined_description,
             aliases=doc_data.get('aliases', []),
             tool=tool_data,
             input_json_path=doc_data.get('input_json_path', {}),
@@ -163,6 +173,7 @@ class SOPDocumentParser:
         self.loader = SOPDocumentLoader(docs_dir)
         self.llm_tool = llm_tool
         self.tracer = tracer
+        self._vector_store: Optional['SOPDocVectorStore'] = None
         if self.tracer is None:
             # For backwards compatibility in tests, create a minimal tracer
             from tracing import ExecutionTracer
@@ -298,11 +309,17 @@ class SOPDocumentParser:
         # Use injected LLM tool if available, otherwise create a new one
         llm_tool = self.llm_tool if self.llm_tool is not None else LLMTool()
         
+        # Gather vector-search based candidates first
+        vector_candidates = await self._get_vector_search_candidates(description, k=5)
+        
         # Get available tool SOPs dynamically
         available_tools = self._get_available_tools()
-        
-        # Build valid doc IDs from available tools
         valid_docs = [tool["doc_id"] for tool in available_tools] + ["general/plan"]
+
+        for candidate in vector_candidates:
+            doc_id = candidate["doc_id"]
+            if doc_id and doc_id not in valid_docs:
+                valid_docs.insert(0, doc_id)
         
         # Create tool schema for tool selection
         tool_selection_schema = {
@@ -344,8 +361,8 @@ You can complete almost anything using python + llm tool. Any task can be comple
 Available tools:
 """
         
-        for tool in available_tools:
-            prompt += f"- {tool['doc_id']}: {tool['description']}\n  Use cases: {tool['use_case']}\n\n"
+        for tool in available_tools + vector_candidates:
+            prompt += f"- {tool['doc_id']}: {tool['description']}\n\n"
         
         # Add previous executed tasks information if available
         previous_tasks_section = ""
@@ -406,6 +423,46 @@ Please use the select_tool_for_task function to provide your analysis.
             raise ValueError(f"Invalid tool selection: {selected_doc}, valid options are: {', '.join(valid_docs)}")
         
         return selected_doc, message_to_user
+
+    async def _get_vector_search_candidates(self, description: str, k: int = 5) -> List[Dict[str, str]]:
+        """Return top-k SOP doc suggestions using the vector store."""
+        store = await self._ensure_vector_store()
+        if store is None:
+            return []
+        try:
+            results = await store.similarity_search(description, k=k)
+        except Exception as exc:  # pragma: no cover - defensive log
+            print(f"[SOP_VECTOR_SEARCH] Failed to search vector store: {exc}")
+            return []
+
+        suggestions: List[Dict[str, str]] = []
+        seen: set[str] = set()
+        for result in results:
+            doc_id = getattr(result, "doc_id", "")
+            if not doc_id or doc_id in seen:
+                continue
+            suggestions.append({
+                "doc_id": doc_id,
+                "description": result.description,
+            })
+            seen.add(doc_id)
+        return suggestions
+
+    async def _ensure_vector_store(self) -> Optional['SOPDocVectorStore']:
+        """Lazily build the SOP vector store the first time it's needed."""
+        if self._vector_store is not None:
+            return self._vector_store
+
+        try:
+            from sop_doc_vector_store import SOPDocVectorStore
+
+            store = SOPDocVectorStore(docs_dir=str(self.loader.docs_dir))
+            await store.build()
+            self._vector_store = store
+        except Exception as exc:  # pragma: no cover - defensive log
+            print(f"[SOP_VECTOR_SEARCH] Unable to initialize vector store: {exc}")
+            return None
+        return self._vector_store
     
     async def _validate_with_llm(self, description: str, candidates: List[tuple], all_doc_ids: List[str]) -> str:
         """Use LLM to validate and select the best matching doc_id"""

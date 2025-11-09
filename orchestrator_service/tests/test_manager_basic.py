@@ -89,3 +89,10 @@ async def test_env_vars_propagation(manager):
         context_data = json.load(f)
 
     assert context_data.get("env_vars") == env_vars
+
+    env_file = Path(manager.jobs_dir / job.job_id / "env.json")
+    assert env_file.exists()
+    with env_file.open("r", encoding="utf-8") as f:
+        env_data = json.load(f)
+    for key, value in env_vars.items():
+        assert env_data.get(key) == value
