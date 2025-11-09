@@ -88,9 +88,8 @@ class SOPDocVectorStore:
                     sop_doc.tool.get("tool_id") if isinstance(sop_doc.tool, dict) else None
                 )
                 description = (sop_doc.description or "").strip()
-                output_description = (sop_doc.output_description or "").strip()
                 if description:
-                    text = f"{description} "
+                    text = f"{description}"
                 else:
                     metadata["used_doc_id_fallback"] = True
 
