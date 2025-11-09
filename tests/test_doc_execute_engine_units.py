@@ -572,6 +572,57 @@ class TestDocExecuteEngineUnits(unittest.TestCase):
         mock_generate_output_path.assert_not_awaited()
         mock_save_context.assert_not_called()
 
+    @patch.object(DocExecuteEngine, "_attempt_subtree_compaction", new_callable=AsyncMock)
+    @patch.object(DocExecuteEngine, "parse_new_tasks_from_output", new_callable=AsyncMock)
+    def test_execute_task_injects_planning_metadata(self, mock_parse_new_tasks, mock_compaction):
+        """general/plan tasks should receive planning metadata variables before template rendering."""
+        engine = DocExecuteEngine(enable_tracing=False)
+        engine.context = {
+            "current_task": "Plan a multi-step data migration"
+        }
+
+        task = Task(
+            task_id="plan_task",
+            description="Plan migration",
+            sop_doc_id="general/plan",
+            tool={
+                "tool_id": "LLM",
+                "parameters": {
+                    "prompt": (
+                        "Plan: {task_description}\n"
+                        "{available_tool_docs_xml}\n"
+                        "{vector_tool_suggestions_xml}"
+                    )
+                }
+            },
+            input_json_path={"task_description": "$.current_task"},
+            output_json_path="$.plan_output",
+            output_description="Planning result",
+            skip_new_task_generation=True,
+            requires_planning_metadata=True
+        )
+
+        planning_metadata = {
+            "available_tools_markdown": "Available tools (SOP references):\n<tool>\n  <tool_id>tools/python</tool_id>\n  <tool_description>Python executor</tool_description>\n</tool>",
+            "vector_candidates_markdown": "Vector-recommended tools:\n<tool>\n  <tool_id>custom/doc</tool_id>\n  <tool_description>Custom doc</tool_description>\n</tool>",
+            "available_tools_json": '[{"doc_id":"tools/python"}]',
+            "vector_candidates_json": '[{"doc_id":"custom/doc"}]'
+        }
+
+        engine.sop_parser.get_planning_metadata = AsyncMock(return_value=planning_metadata)
+        engine.sop_loader.load_sop_document = MagicMock(return_value=MagicMock(body=""))
+        engine.tools["LLM"].execute = AsyncMock(return_value={"content": "ok"})
+
+        mock_compaction.return_value = False
+
+        asyncio.run(engine.execute_task(task))
+
+        engine.sop_parser.get_planning_metadata.assert_awaited_once()
+        called_params = engine.tools["LLM"].execute.await_args.args[0]
+        self.assertIn("<tool_id>tools/python</tool_id>", called_params["prompt"])
+        self.assertIn("<tool_id>custom/doc</tool_id>", called_params["prompt"])
+        mock_parse_new_tasks.assert_not_awaited()
+
 
 if __name__ == '__main__':
     unittest.main()

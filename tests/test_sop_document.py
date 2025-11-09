@@ -156,6 +156,7 @@ This document has no parameters sections.
         self.assertIn("parameters.prompt", doc.parameters)
         self.assertEqual(doc.input_description["task"], "The task to perform")
         self.assertEqual(doc.output_description, "The result")
+        self.assertFalse(doc.requires_planning_metadata)
     
     def test_load_nested_document(self):
         """Test loading a document from subdirectory"""
@@ -169,6 +170,7 @@ This document has no parameters sections.
         self.assertEqual(doc.output_json_path, "$.result.output")
         self.assertIn("parameters.command", doc.parameters)
         self.assertIn("Extra Section", doc.parameters)
+        self.assertFalse(doc.requires_planning_metadata)
     
     def test_load_nonexistent_document(self):
         """Test loading a non-existent document"""
@@ -342,6 +344,7 @@ doc_id: general/plan
 description: Break down complex tasks into multiple manageable substeps
 tool:
   tool_id: LLM
+requires_planning_metadata: true
 ---
 # Task Planning Tool
 """
@@ -388,6 +391,11 @@ tool:
         empty_parser = SOPDocumentParser("/nonexistent/path")
         doc_ids = empty_parser._get_all_doc_ids()
         self.assertEqual(doc_ids, [])
+    
+    def test_plan_document_requires_metadata_flag(self):
+        """Ensure plan SOP is marked for planning metadata injection."""
+        doc = self.parser.loader.load_sop_document("general/plan")
+        self.assertTrue(doc.requires_planning_metadata)
     
     def test_validate_with_llm_success(self):
         """Test successful LLM validation"""

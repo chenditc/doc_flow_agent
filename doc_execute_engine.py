@@ -100,6 +100,7 @@ class Task:
     result_validation_rule: str = None  # Rule for validating task result in subtree compaction
     skip_new_task_generation: bool = False  # New flag to skip new task generation phase
     execution_order: Optional[int] = None  # Order in which the task was executed
+    requires_planning_metadata: bool = False  # Whether planner metadata should be injected
     
     def __post_init__(self):
         # Auto-generate short_name if not provided
@@ -245,7 +246,7 @@ You're assigning compact, unique short names to newly generated tasks. Requireme
 - Try to keep names under 15 words
 - You can change existing names if needed to ensure uniqueness
 - Represent parent-child task relationship if possible.
-- Represent the order of task if possible. Like step 3.4.2
+- Represent the order of task if possible. Like step 3.4.2, but don't use task id in the order representation, task id is too long.
 - Task on same level tend to have similar prefix for better grouping.
 
 Use the XML blocks below. Do not include any markdown. Return only via the function call with assignments for ALL new tasks.
@@ -402,6 +403,19 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
             template = template.replace(f"{{{key}}}", str(value))
         return template
     
+    def _needs_planning_metadata(self, task: Task) -> bool:
+        """Return True if the task should receive planning metadata injections."""
+        return task.requires_planning_metadata
+    
+    def _build_planning_metadata_variables(self, planning_metadata: Dict[str, Any]) -> Dict[str, Any]:
+        """Convert planning metadata to template-friendly variables."""
+        return {
+            "available_tool_docs_xml": planning_metadata.get("available_tools_markdown", ""),
+            "vector_tool_suggestions_xml": planning_metadata.get("vector_candidates_markdown", ""),
+            "available_tool_docs_json": planning_metadata.get("available_tools_json", "[]"),
+            "vector_tool_suggestions_json": planning_metadata.get("vector_candidates_json", "[]"),
+        }
+    
     def add_execution_prefix_to_path(self, json_path: str) -> str:
         """Add execution counter prefix to JSON path
         
@@ -492,6 +506,7 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
         output_description = sop_doc.output_description
         result_validation_rule = sop_doc.result_validation_rule
         skip_new_task_generation = sop_doc.skip_new_task_generation
+        requires_planning_metadata = sop_doc.requires_planning_metadata
         
         return Task(
             task_id=pending_task.task_id,
@@ -504,7 +519,8 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
             output_json_path=output_json_path,
             output_description=output_description,
             result_validation_rule=result_validation_rule,
-            skip_new_task_generation=skip_new_task_generation
+            skip_new_task_generation=skip_new_task_generation,
+            requires_planning_metadata=requires_planning_metadata
         )
     
     async def create_task_from_description(self, pending_task: PendingTask) -> Task:
@@ -611,6 +627,14 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
             
             # Prepare tool parameters
             tool_params = task.tool.get('parameters', {}).copy()
+            
+            # Inject planning metadata when needed for planning/evaluation SOPs
+            if self._needs_planning_metadata(task):
+                description_for_metadata = self.context.get("current_task", task.description)
+                planning_metadata = await self.sop_parser.get_planning_metadata(description_for_metadata)
+                planning_variables = self._build_planning_metadata_variables(planning_metadata)
+                input_values.update(planning_variables)
+                print(f"[TASK_EXECUTION] Injected planning metadata for task {task.task_id}")
             
             # Render all string parameters with input values
             for param_key, param_value in tool_params.items():

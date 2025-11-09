@@ -43,6 +43,7 @@ class SOPDocument:
     output_description: str  # New field for output description
     result_validation_rule: str  # New field for result validation rule
     skip_new_task_generation: bool = False  # If true, engine should skip generating follow-up tasks
+    requires_planning_metadata: bool = False  # If true, planner metadata should be injected for this SOP
 
 
 class SOPDocumentLoader:
@@ -122,7 +123,8 @@ class SOPDocumentLoader:
             input_description=doc_data.get('input_description', {}),  # New field for input descriptions
             output_description=doc_data.get('output_description', ''),  # New field for output description
             result_validation_rule=doc_data.get('result_validation_rule', ''),  # New field for result validation rule
-            skip_new_task_generation=str(doc_data.get('skip_new_task_generation', 'false')).lower() == 'true'
+            skip_new_task_generation=str(doc_data.get('skip_new_task_generation', 'false')).lower() == 'true',
+            requires_planning_metadata=str(doc_data.get('requires_planning_metadata', 'false')).lower() == 'true'
         )
     
     def _parse_markdown_sections(self, body: str) -> Dict[str, str]:
@@ -349,11 +351,11 @@ class SOPDocumentParser:
 
         valid_doc_ids = self._build_valid_doc_id_list(available_tools, vector_candidates)
         available_tools_markdown = self._format_doc_list_markdown(
-            "Available standard tools",
+            "Available tools (SOP references)",
             available_tools or []
         )
         vector_candidates_markdown = self._format_doc_list_markdown(
-            "SOP doc recommended tools",
+            "Vector-recommended tools",
             vector_candidates or []
         )
 

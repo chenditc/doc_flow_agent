@@ -9,6 +9,7 @@ tool:
   tool_id: LLM
   parameters:
     prompt: "{parameters.prompt}"
+requires_planning_metadata: true
 input_description:
   task_description: Complex task that needs to be broken down into multiple steps
   related_context: All related context that might be helpful to clarify the task or be used during task execution. Need to include additional explanation on how it's related.
@@ -45,5 +46,19 @@ For each sub task, explicitly mark it using the format:
 <CONTEXT_INFORMATION_RELATED_TO_THIS_TASK>
 {related_context}
 </CONTEXT_INFORMATION_RELATED_TO_THIS_TASK>
+
+### Tool References For Planning
+Use the following tool SOPs when deciding which capability should execute each sub task. Always reference the exact `doc_id` when describing a follow-up action.
+
+<AVAILABLE_TOOLS_FOR_PLANNING>
+{available_tool_docs_xml}
+</AVAILABLE_TOOLS_FOR_PLANNING>
+
+### Additional Tool Suggestions From Similarity Search
+Consider these when the direct tool list does not contain an obvious match.
+
+<VECTOR_RECOMMENDED_TOOLS>
+{vector_tool_suggestions_xml}
+</VECTOR_RECOMMENDED_TOOLS>
 
 Please break down this task into clear, actionable substeps. Think through the logical sequence and create comprehensive steps that will lead to successful completion of the overall task.
