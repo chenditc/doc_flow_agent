@@ -110,6 +110,9 @@ class SOPDocumentLoader:
             combined_description += "。"
         if doc_data.get('output_description', ''):
             combined_description += "输出：" + doc_data.get('output_description', '')
+        if doc_data.get('input_description', {}):
+            input_descs = "; ".join([f"{k}: {v}" for k, v in doc_data.get('input_description', {}).items()])
+            combined_description += " 输入：" + input_descs
 
         return SOPDocument(
             doc_id=doc_data.get('doc_id', doc_id),
