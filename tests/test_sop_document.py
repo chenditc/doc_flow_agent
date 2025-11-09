@@ -149,7 +149,7 @@ This document has no parameters sections.
         doc = self.loader.load_sop_document("basic")
         
         self.assertEqual(doc.doc_id, "basic")
-        self.assertEqual(doc.description, "Basic test document")
+        self.assertEqual(doc.description, "Basic test document。输出：The result")
         self.assertEqual(doc.aliases, ["basic", "test"])
         self.assertEqual(doc.tool["tool_id"], "LLM")
         self.assertEqual(doc.tool["parameters"]["prompt"], "This is a basic test prompt: {task}")
@@ -162,7 +162,7 @@ This document has no parameters sections.
         doc = self.loader.load_sop_document("tools/complex")
         
         self.assertEqual(doc.doc_id, "tools/complex")
-        self.assertEqual(doc.description, "Complex test document")
+        self.assertEqual(doc.description, "Complex test document。输出：Command execution result")
         self.assertEqual(doc.aliases, ["complex", "advanced"])
         self.assertEqual(doc.tool["tool_id"], "CLI")
         self.assertEqual(doc.input_json_path["script"], "$.script")
@@ -591,6 +591,56 @@ tool:
         call_payload = mock_llm_tool.execute.call_args[0][0]
         enum_values = call_payload["tools"][0]["function"]["parameters"]["properties"]["selected_tool_doc"]["enum"]
         self.assertEqual(enum_values.count("tools/python"), 1)
+    
+    def test_get_planning_metadata_combines_sources(self):
+        """Ensure helper returns combined metadata for planners."""
+        parser = self.parser
+
+        async def fake_vector_candidates(self, description: str, k: int = 5):
+            return [{"doc_id": "custom/doc", "description": "Custom doc description"}]
+
+        available_tools = [{
+            "doc_id": "tools/python",
+            "description": "Python executor",
+            "use_case": "Automate tasks"
+        }]
+
+        with patch.object(SOPDocumentParser, "_get_vector_search_candidates", new=fake_vector_candidates), \
+             patch.object(SOPDocumentParser, "_get_available_tools", return_value=available_tools):
+            metadata = asyncio.run(parser.get_planning_metadata("Need a custom doc"))
+
+        self.assertEqual(metadata["available_tools"], available_tools)
+        self.assertEqual(metadata["vector_candidates"][0]["doc_id"], "custom/doc")
+        self.assertEqual(metadata["valid_doc_ids"][0], "custom/doc")
+        self.assertIn("Available tools (SOP references):", metadata["available_tools_markdown"])
+        self.assertIn("<tool_id>tools/python</tool_id>", metadata["available_tools_markdown"])
+        self.assertIn("<tool_description>Python executor</tool_description>", metadata["available_tools_markdown"])
+        self.assertIn("Vector-recommended tools:", metadata["vector_candidates_markdown"])
+        self.assertIn("<tool_id>custom/doc</tool_id>", metadata["vector_candidates_markdown"])
+        self.assertIn("<tool_description>Custom doc description</tool_description>", metadata["vector_candidates_markdown"])
+        self.assertIn("custom/doc", metadata["vector_candidates_json"])
+        self.assertIn("tools/python", metadata["available_tools_json"])
+
+    def test_get_planning_metadata_without_description_skips_vector(self):
+        """Ensure helper can skip vector suggestions when description missing."""
+        parser = self.parser
+
+        async def failing_vector_candidates(self, description: str, k: int = 5):
+            raise AssertionError("Vector search should not run without description")
+
+        available_tools = [{
+            "doc_id": "tools/python",
+            "description": "Python executor",
+            "use_case": "Automate tasks"
+        }]
+
+        with patch.object(SOPDocumentParser, "_get_vector_search_candidates", new=failing_vector_candidates), \
+             patch.object(SOPDocumentParser, "_get_available_tools", return_value=available_tools):
+            metadata = asyncio.run(parser.get_planning_metadata(None))
+
+        self.assertEqual(metadata["vector_candidates"], [])
+        self.assertIn("<tool_id>NONE</tool_id>", metadata["vector_candidates_markdown"])
+        self.assertIn("general/plan", metadata["valid_doc_ids"])
 
     def test_parse_sop_doc_id_unexpected_tool_call_raises_exception(self):
         """Test that unexpected tool call raises ValueError"""

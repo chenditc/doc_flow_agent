@@ -24,8 +24,6 @@ SANDBOX_WORKDIR = PurePosixPath(os.getenv("SANDBOX_WORKDIR", "/app"))
 SANDBOX_TRACES_DIR = SANDBOX_WORKDIR / "traces"
 SANDBOX_JOBS_DIR = SANDBOX_WORKDIR / "jobs"
 REMOTE_ARTIFACT_TIMEOUT = float(os.getenv("REMOTE_ARTIFACT_TIMEOUT", "60.0"))
-LOCAL_TASK_FILES_DIR = Path(os.getenv("LOCAL_TASK_FILES_DIR", "/tmp/doc_engine_tasks"))
-SANDBOX_TASK_FILES_DIR = PurePosixPath(os.getenv("SANDBOX_TASK_FILES_DIR", "/tmp"))
 
 
 @dataclass
@@ -434,10 +432,10 @@ class ExecutionManager:
         return str(SANDBOX_JOBS_DIR / job_id / "context.json")
 
     def _build_remote_task_path(self, job_id: str) -> str:
-        return str(SANDBOX_TASK_FILES_DIR / f"{job_id}.task")
+        return str(SANDBOX_JOBS_DIR / job_id / f"{job_id}.task")
 
     def _build_remote_env_path(self, job_id: str) -> str:
-        return str(SANDBOX_TASK_FILES_DIR / f"{job_id}.env.json")
+        return str(SANDBOX_JOBS_DIR / job_id / f"{job_id}.env.json")
 
     @staticmethod
     def _normalize_env(env: Dict[str, Any]) -> Dict[str, str]:
@@ -545,8 +543,9 @@ class ExecutionManager:
         )
 
     def _create_local_task_file(self, job_id: str, task_description: str) -> Path:
-        LOCAL_TASK_FILES_DIR.mkdir(parents=True, exist_ok=True)
-        task_path = LOCAL_TASK_FILES_DIR / f"{job_id}.task"
+        job_dir = self.jobs_dir / job_id
+        job_dir.mkdir(parents=True, exist_ok=True)
+        task_path = job_dir / f"{job_id}.task"
         task_path.write_text(task_description, encoding="utf-8")
         try:
             os.chmod(task_path, 0o600)
@@ -764,7 +763,6 @@ class ExecutionManager:
         runner_module = os.getenv("ORCHESTRATOR_RUNNER_MODULE", "orchestrator_service.runner")
         job_dir = self.jobs_dir / job.job_id
         task_file_arg: Optional[str] = None
-        local_task_file: Optional[Path] = None
         if job.sandbox_url:
             task_file_arg = await self._upload_task_description_file(
                 sandbox_url=job.sandbox_url,
@@ -772,8 +770,7 @@ class ExecutionManager:
                 task_description=job.task_description,
             )
         else:
-            local_task_file = self._create_local_task_file(job.job_id, job.task_description)
-            task_file_arg = str(local_task_file)
+            task_file_arg = str(self._create_local_task_file(job.job_id, job.task_description))
         if not task_file_arg:
             raise RuntimeError("Failed to prepare task description file")
         env = os.environ.copy()
@@ -814,11 +811,6 @@ class ExecutionManager:
             runner_result = await runner.wait()
         finally:
             self._runners.pop(job.job_id, None)
-            if local_task_file:
-                try:
-                    local_task_file.unlink(missing_ok=True)
-                except OSError:
-                    pass
 
         if job.sandbox_url:
             await self.sync_job_context(job.job_id, force=True)

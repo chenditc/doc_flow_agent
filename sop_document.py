@@ -22,6 +22,7 @@ import re
 from pathlib import Path
 from typing import Dict, List, Any, Optional, TYPE_CHECKING
 from dataclasses import dataclass
+from xml.sax.saxutils import escape
 
 if TYPE_CHECKING:
     from sop_doc_vector_store import SOPDocVectorStore
@@ -264,7 +265,7 @@ class SOPDocumentParser:
     def _get_all_doc_ids(self) -> List[str]:
         """Get all available SOP document IDs from the docs directory"""
         return self.loader.list_doc_ids()
-    
+
     def _get_available_tools(self) -> List[Dict[str, str]]:
         """Get available tool SOPs by scanning the tools directory"""
         available_tools = []
@@ -290,8 +291,81 @@ class SOPDocumentParser:
             except Exception as e:
                 print(f"[TOOL_DISCOVERY] Warning: Could not load tool SOP {doc_id}: {e}")
                 continue
-        
+
         return available_tools
+    
+    def _build_valid_doc_id_list(
+        self,
+        available_tools: List[Dict[str, str]],
+        vector_candidates: List[Dict[str, str]]
+    ) -> List[str]:
+        """Return ordered doc_id options for tool selection."""
+        valid_docs: List[str] = [tool["doc_id"] for tool in available_tools if tool.get("doc_id")]
+        if "general/plan" not in valid_docs:
+            valid_docs.append("general/plan")
+
+        for candidate in vector_candidates:
+            doc_id = candidate.get("doc_id")
+            if doc_id and doc_id not in valid_docs:
+                valid_docs.insert(0, doc_id)
+        return valid_docs
+
+    def _format_doc_list_markdown(self, title: str, docs: List[Dict[str, str]]) -> str:
+        """Return a simple markdown block summarizing doc IDs and descriptions."""
+        lines = [f"{title}:"]
+        if not docs:
+            lines.append("<tool>")
+            lines.append("  <tool_id>NONE</tool_id>")
+            lines.append("  <tool_description>No tools available</tool_description>")
+            lines.append("</tool>")
+        else:
+            for doc in docs:
+                doc_id = escape(doc.get("doc_id", "unknown"))
+                description = escape((doc.get("description") or "").strip())
+                lines.append("<tool>")
+                lines.append(f"  <tool_id>{doc_id}</tool_id>")
+                lines.append(f"  <tool_description>{description}</tool_description>")
+                lines.append("</tool>")
+        return "\n".join(lines)
+    
+    async def get_planning_metadata(
+        self,
+        description: Optional[str] = None,
+        *,
+        include_vector_candidates: bool = True,
+        vector_k: int = 5
+    ) -> Dict[str, Any]:
+        """Return metadata about available tool SOPs and similar documents.
+
+        This helper consolidates the different discovery mechanisms we already
+        have (explicit tool docs + vector search suggestions) so other prompts
+        like planners or evaluators can inject the same information without
+        reimplementing the logic.
+        """
+        available_tools = self._get_available_tools()
+        vector_candidates: List[Dict[str, str]] = []
+        if include_vector_candidates and description:
+            vector_candidates = await self._get_vector_search_candidates(description, k=vector_k)
+
+        valid_doc_ids = self._build_valid_doc_id_list(available_tools, vector_candidates)
+        available_tools_markdown = self._format_doc_list_markdown(
+            "Available standard tools",
+            available_tools or []
+        )
+        vector_candidates_markdown = self._format_doc_list_markdown(
+            "SOP doc recommended tools",
+            vector_candidates or []
+        )
+
+        return {
+            "available_tools": available_tools,
+            "vector_candidates": vector_candidates,
+            "valid_doc_ids": valid_doc_ids,
+            "available_tools_markdown": available_tools_markdown,
+            "vector_candidates_markdown": vector_candidates_markdown,
+            "available_tools_json": json.dumps(available_tools, ensure_ascii=False, indent=2),
+            "vector_candidates_json": json.dumps(vector_candidates, ensure_ascii=False, indent=2)
+        }
     
     async def _select_tool_for_task(self, description: str, completed_tasks_info: List[Dict[str, str]] = None) -> tuple[str, str]:
         """Use LLM to determine if task can be completed by any available tool or needs planning
@@ -309,18 +383,11 @@ class SOPDocumentParser:
         # Use injected LLM tool if available, otherwise create a new one
         llm_tool = self.llm_tool if self.llm_tool is not None else LLMTool()
         
-        # Gather vector-search based candidates first
-        vector_candidates = await self._get_vector_search_candidates(description, k=5)
-        
-        # Get available tool SOPs dynamically
-        available_tools = self._get_available_tools()
-        valid_docs = [tool["doc_id"] for tool in available_tools] + ["general/plan"]
+        metadata = await self.get_planning_metadata(description)
+        available_tools = metadata["available_tools"]
+        vector_candidates = metadata["vector_candidates"]
+        valid_docs = metadata["valid_doc_ids"]
 
-        for candidate in vector_candidates:
-            doc_id = candidate["doc_id"]
-            if doc_id and doc_id not in valid_docs:
-                valid_docs.insert(0, doc_id)
-        
         # Create tool schema for tool selection
         tool_selection_schema = {
             "type": "function",

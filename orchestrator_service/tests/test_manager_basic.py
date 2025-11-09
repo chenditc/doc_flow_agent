@@ -96,3 +96,7 @@ async def test_env_vars_propagation(manager):
         env_data = json.load(f)
     for key, value in env_vars.items():
         assert env_data.get(key) == value
+
+    task_file = Path(manager.jobs_dir / job.job_id / f"{job.job_id}.task")
+    assert task_file.exists()
+    assert task_file.read_text(encoding="utf-8") == job.task_description
