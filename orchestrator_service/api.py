@@ -244,10 +244,11 @@ async def get_sandbox_file(
         first_chunk = await stream_iter.__anext__()
     except StopAsyncIteration:
         await stream_iter.aclose()
+        disposition = _guess_content_disposition(media_type)
         return StreamingResponse(
             empty_stream(),
             media_type=media_type or "application/octet-stream",
-            headers={"Content-Disposition": f"attachment; filename=\"{resolution['filename']}\""},
+            headers={"Content-Disposition": f"{disposition}; filename=\"{resolution['filename']}\""},
         )
     except FileNotFoundError:
         await stream_iter.aclose()
@@ -264,11 +265,18 @@ async def get_sandbox_file(
         finally:
             await stream_iter.aclose()
 
+    disposition = _guess_content_disposition(media_type)
     return StreamingResponse(
         stream_file(),
         media_type=media_type or "application/octet-stream",
-        headers={"Content-Disposition": f"attachment; filename=\"{resolution['filename']}\""},
+        headers={"Content-Disposition": f"{disposition}; filename=\"{resolution['filename']}\""},
     )
+
+
+def _guess_content_disposition(media_type: Optional[str]) -> str:
+    if media_type and media_type.startswith(("text/", "image/")):
+        return "inline"
+    return "attachment"
 
 
 @app.get("/jobs/{job_id}/context")

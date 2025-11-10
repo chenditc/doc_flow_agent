@@ -61,7 +61,12 @@ class WebResultDeliveryTool(BaseTool):
         result_data = parameters.get('result_data', '')
         session_id = parameters.get('session_id', '')
         task_id = parameters.get('task_id', '')
+        job_id = parameters.get('job_id') or os.getenv('DOCFLOW_JOB_ID')
         
+        visualization_base = self._get_visualization_base_url()
+        file_base_url = self._get_file_base_url(visualization_base, session_id, task_id, job_id)
+        result_url = self._get_result_url(visualization_base, session_id, task_id, job_id)
+
         # Get base directory and create session/task directory
         # Reuse user_comm directory structure to avoid docker volume changes
         project_root = Path(__file__).parent.parent
@@ -73,7 +78,7 @@ class WebResultDeliveryTool(BaseTool):
         if index_file.exists():
             print(f"[WEB_RESULT_DELIVERY] Found existing result page for {session_id}/{task_id}")
             return {
-                "result_url": self._get_result_url(session_id, task_id),
+                "result_url": result_url,
                 "status": "ok",
                 "existing": True
             }
@@ -84,11 +89,13 @@ class WebResultDeliveryTool(BaseTool):
         data_file_name = "result_data.json"
         data_file_path = files_dir / data_file_name
         self._write_result_data_file(result_data, data_file_path)
-        
+
+        data_file_url = f"{file_base_url}{data_file_name}"
+
         for i in range(3):
             # Generate HTML page using LLM and get file mappings
             html_content, file_mappings = await self._generate_result_html_with_llm(
-                result_data, session_id, task_id, data_file_name
+                result_data, session_id, task_id, data_file_name, data_file_url, file_base_url
             )
             
             # Copy files based on LLM-identified mappings
@@ -109,7 +116,6 @@ class WebResultDeliveryTool(BaseTool):
         temp_index.replace(index_file)
         
         # Get result URL and notify user
-        result_url = self._get_result_url(session_id, task_id)
         self._notify_user(result_url, session_id, task_id)
         
         print(f"[WEB_RESULT_DELIVERY] Result delivered for {session_id}/{task_id}")
@@ -132,7 +138,7 @@ class WebResultDeliveryTool(BaseTool):
             
             if not source_path or not target_filename:
                 raise ValueError(f"[WEB_RESULT_DELIVERY] Warning: Invalid mapping: {mapping}")
-            
+
             source = Path(source_path)
             if not source.exists():
                 raise ValueError(f"[WEB_RESULT_DELIVERY] Warning: File not found: {source_path}")
@@ -148,13 +154,21 @@ class WebResultDeliveryTool(BaseTool):
             except Exception as e:
                 raise ValueError(f"[WEB_RESULT_DELIVERY] Error copying {source_path}: {e}")
     
-    def _get_result_url(self, session_id: str, task_id: str) -> str:
-        """Construct the result URL for the user."""
+    def _get_visualization_base_url(self) -> str:
         base_url = os.getenv('VISUALIZATION_SERVER_URL', 'http://localhost:8000')
         if not base_url.startswith(('http://', 'https://')):
             print(f"[WEB_RESULT_DELIVERY] Warning: VISUALIZATION_SERVER_URL should include protocol, got: {base_url}")
             base_url = f"http://{base_url}"
-        
+        return base_url.rstrip('/')
+
+    def _get_file_base_url(self, base_url: str, session_id: str, task_id: str, job_id: Optional[str]) -> str:
+        if job_id:
+            return f"{base_url}/sandbox/{job_id}/app/user_comm/sessions/{session_id}/{task_id}/files/"
+        return f"{base_url}/result-delivery/{session_id}/{task_id}/files/"
+
+    def _get_result_url(self, base_url: str, session_id: str, task_id: str, job_id: Optional[str]) -> str:
+        if job_id:
+            return f"{base_url}/sandbox/{job_id}/app/user_comm/sessions/{session_id}/{task_id}/index.html"
         return f"{base_url}/result-delivery/{session_id}/{task_id}/"
     
     def _notify_user(self, result_url: str, session_id: str, task_id: str) -> None:
@@ -190,7 +204,9 @@ class WebResultDeliveryTool(BaseTool):
         result_data: Any, 
         session_id: str, 
         task_id: str,
-        data_file_name: str
+        data_file_name: str,
+        data_file_url: str,
+        file_download_base_url: str,
     ) -> tuple[str, List[Dict[str, str]]]:
         """Generate HTML page using LLM and identify files/images to serve
         
@@ -206,7 +222,6 @@ class WebResultDeliveryTool(BaseTool):
             result_text = str(result_data)
 
         data_file_relative_path = f"files/{data_file_name}"
-        data_file_url = f"/result-delivery/{session_id}/{task_id}/{data_file_relative_path}"
         
         # Prepare prompt for LLM to generate the HTML page and identify files
         llm_prompt = f"""You are a web page generator for a result delivery system. Generate a complete HTML page with Material Design styling that displays task results to the user.
@@ -240,10 +255,10 @@ Requirements for HTML generation:
     - Make long text content scrollable and have a copy button
     - Include a "Download JSON" button that links to the saved file
 4. For any files you identified, create download buttons/links:
-   - Use the URL pattern: /result-delivery/{session_id}/{task_id}/files/{{target_filename}}
+   - Use the URL pattern: {file_download_base_url}{{target_filename}}
    - Style as Material Design buttons with download icons
 5. For any local images you identified, display them inline in the page:
-   - Use the URL pattern: /result-delivery/{session_id}/{task_id}/files/{{target_filename}}
+   - Use the URL pattern: {file_download_base_url}{{target_filename}}
    - Make images responsive and have a download button below
 6. Use modern CSS with good UX (responsive, accessible, clean layout)
 7. Add a header with a success icon and title "Task Result"
@@ -356,10 +371,6 @@ Return both the HTML content and the file mappings using the provided tool."""
         print(f"[WEB_RESULT_DELIVERY] LLM identified {len(file_mappings)} files to serve")
         for mapping in file_mappings:
             print(f"[WEB_RESULT_DELIVERY]   {mapping.get('type', 'file')}: {mapping.get('source')} -> {mapping.get('target')}")
-            # Check if source file exists
-            source_path = mapping.get('source', '')
-            if not source_path or not Path(source_path).exists():
-                raise ValueError(f"File not found: {source_path}")
             
         return html_content, file_mappings
 

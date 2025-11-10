@@ -21,6 +21,7 @@ limitations under the License.
 import json
 import asyncio
 import hashlib
+import os
 from collections import OrderedDict
 from pathlib import Path
 from typing import Dict, List, Any, Optional
@@ -660,6 +661,11 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
                 if 'task_id' not in tool_params:
                     tool_params['task_id'] = task.task_id
                     print(f"Auto-injected task_id: {tool_params['task_id']}")
+                if tool_id == "WEB_RESULT_DELIVERY" and 'job_id' not in tool_params:
+                    job_id = os.getenv("DOCFLOW_JOB_ID")
+                    if job_id:
+                        tool_params['job_id'] = job_id
+                        print(f"Auto-injected job_id: {tool_params['job_id']}")
             
             # Load SOP document body if available
             sop_doc_body = None

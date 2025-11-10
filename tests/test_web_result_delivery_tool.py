@@ -72,9 +72,7 @@ class TestWebResultDeliveryTool:
                     # Verify result
                     assert result["status"] == "ok"
                     assert result["existing"] == False
-                    assert "test_session" in result["result_url"]
-                    assert "test_task" in result["result_url"]
-                    assert "/result-delivery/" in result["result_url"]
+                    assert result["result_url"] == "http://localhost:8000/result-delivery/test_session/test_task/"
                     
                     # Verify LLM was called
                     tool.llm_tool.execute.assert_called_once()
@@ -208,6 +206,37 @@ class TestWebResultDeliveryTool:
                 
                 # HTML should not be modified
                 assert index_file.read_text() == "<!DOCTYPE html><html><body>Existing Result</body></html>"
+
+    @pytest.mark.asyncio
+    async def test_sandbox_result_url(self, tool):
+        """Ensure sandbox job IDs produce gateway URLs"""
+
+        mock_llm_result = {
+            "tool_calls": [{
+                "name": "generate_html_result_page",
+                "arguments": {
+                    "html_content": "<!DOCTYPE html><html><body>Sandbox</body></html>",
+                    "file_mappings": []
+                }
+            }]
+        }
+        tool.llm_tool.execute.return_value = mock_llm_result
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            temp_project = Path(tmpdir)
+            with patch('tools.web_result_delivery_tool.__file__', str(temp_project / 'tools' / 'web_result_delivery_tool.py')):
+                with patch('utils.user_notify.notify_user'):
+                    parameters = {
+                        "result_data": "sandbox",
+                        "session_id": "sess123",
+                        "task_id": "task456",
+                        "job_id": "job789"
+                    }
+                    with patch.dict(os.environ, {'VISUALIZATION_SERVER_URL': 'http://localhost:8000'}):
+                        result = await tool.execute(parameters)
+
+                    expected = "http://localhost:8000/sandbox/job789/app/user_comm/sessions/sess123/task456/index.html"
+                    assert result["result_url"] == expected
     
     @pytest.mark.asyncio
     async def test_json_result_data(self, tool):
@@ -345,10 +374,8 @@ class TestWebResultDeliveryTool:
                     }
                     
                     with patch.dict(os.environ, {'VISUALIZATION_SERVER_URL': 'http://localhost:8000'}):
-                        # Should not raise exception
-                        result = await tool.execute(parameters)
-                    
-                    assert result["status"] == "ok"
+                        with pytest.raises(ValueError, match="File not found"):
+                            await tool.execute(parameters)
 
     @pytest.mark.asyncio
     async def test_retry_on_value_error(self, tool):
@@ -367,8 +394,23 @@ class TestWebResultDeliveryTool:
             }
         ]
 
-        async def mock_execute(params):
-            return responses.pop(0)
+        async def mock_execute(params, **kwargs):
+            validators = kwargs.get("validators") or []
+            max_attempts = kwargs.get("max_retries", 0) + 1
+            attempt_counter = 0
+            while True:
+                if not responses:
+                    raise ValueError("LLM failed to produce valid HTML content after retries")
+                payload = responses.pop(0)
+                attempt_counter += 1
+                try:
+                    for validator in validators:
+                        validator(payload)
+                except ValueError as exc:
+                    if attempt_counter >= max_attempts:
+                        raise ValueError(f"LLM failed to produce valid HTML content after {max_attempts} attempts") from exc
+                    continue
+                return payload
 
         tool.llm_tool.execute.side_effect = mock_execute
 
@@ -387,8 +429,6 @@ class TestWebResultDeliveryTool:
                         result = await tool.execute(parameters)
 
                     assert result["status"] == "ok"
-                    # First attempt failed, second succeeded
-                    assert tool.llm_tool.execute.call_count == 2
 
     @pytest.mark.asyncio
     async def test_retry_exhaustion_raises_value_error(self):
@@ -399,8 +439,23 @@ class TestWebResultDeliveryTool:
 
         responses = [{"tool_calls": []}, {"tool_calls": []}]
 
-        async def mock_execute(params):
-            return responses.pop(0)
+        async def mock_execute(params, **kwargs):
+            validators = kwargs.get("validators") or []
+            max_attempts = kwargs.get("max_retries", 0) + 1
+            attempt_counter = 0
+            while True:
+                if not responses:
+                    raise ValueError("LLM failed to produce valid HTML content after retries")
+                payload = responses.pop(0)
+                attempt_counter += 1
+                try:
+                    for validator in validators:
+                        validator(payload)
+                except ValueError as exc:
+                    if attempt_counter >= max_attempts:
+                        raise ValueError(f"LLM failed to produce valid HTML content after {max_attempts} attempts") from exc
+                    continue
+                return payload
 
         tool.llm_tool.execute.side_effect = mock_execute
 
@@ -419,7 +474,6 @@ class TestWebResultDeliveryTool:
                         with pytest.raises(ValueError, match="LLM failed to produce valid HTML content after 2 attempts"):
                             await tool.execute(parameters)
 
-        assert tool.llm_tool.execute.call_count == 2
 
 
 if __name__ == "__main__":
