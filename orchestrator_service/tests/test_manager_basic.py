@@ -1,8 +1,10 @@
 import asyncio
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
+
+from orchestrator_service.models import Job
 
 
 @pytest.mark.asyncio
@@ -96,7 +98,56 @@ async def test_env_vars_propagation(manager):
         env_data = json.load(f)
     for key, value in env_vars.items():
         assert env_data.get(key) == value
+    assert env_data.get("DOCFLOW_JOB_ID") == job.job_id
 
     task_file = Path(manager.jobs_dir / job.job_id / f"{job.job_id}.task")
     assert task_file.exists()
     assert task_file.read_text(encoding="utf-8") == job.task_description
+
+
+@pytest.mark.asyncio
+async def test_resolve_sandbox_file_request_remote(monkeypatch, manager):
+    from orchestrator_service import manager as manager_module
+
+    sandbox_root = PurePosixPath("/app")
+    monkeypatch.setattr(manager_module, "SANDBOX_WORKDIR", sandbox_root)
+
+    job = Job(job_id="remote-job", task_description="demo", sandbox_url="http://sandbox")
+    manager._jobs[job.job_id] = job
+
+    result = manager.resolve_sandbox_file_request(job.job_id, "/app/user_comm/s1/t1/index.html")
+    assert result["mode"] == "remote"
+    assert result["sandbox_path"] == "/app/user_comm/s1/t1/index.html"
+    assert result["filename"] == "index.html"
+
+
+@pytest.mark.asyncio
+async def test_resolve_sandbox_file_request_local(monkeypatch, manager, tmp_path):
+    from orchestrator_service import manager as manager_module
+
+    sandbox_root = tmp_path / "sandbox_local"
+    sandbox_root.mkdir()
+    target_file = sandbox_root / "user_comm" / "s42" / "t99" / "index.html"
+    target_file.parent.mkdir(parents=True, exist_ok=True)
+    target_file.write_text("local", encoding="utf-8")
+
+    monkeypatch.setattr(manager_module, "SANDBOX_WORKDIR", PurePosixPath(str(sandbox_root)))
+
+    job = Job(job_id="local-job", task_description="demo")
+    manager._jobs[job.job_id] = job
+
+    result = manager.resolve_sandbox_file_request(job.job_id, str(target_file))
+    assert result["mode"] == "local"
+    assert result["local_path"] == Path(target_file)
+    assert result["filename"] == "index.html"
+
+
+def test_resolve_sandbox_file_invalid_path(manager, monkeypatch):
+    from orchestrator_service import manager as manager_module
+
+    monkeypatch.setattr(manager_module, "SANDBOX_WORKDIR", PurePosixPath("/app"))
+    job = Job(job_id="job-1", task_description="demo")
+    manager._jobs[job.job_id] = job
+
+    with pytest.raises(ValueError):
+        manager.resolve_sandbox_file_request(job.job_id, "../etc/passwd")

@@ -1,11 +1,14 @@
 """FastAPI application for orchestrator service."""
 
 import json
+import mimetypes
 from pathlib import Path
 from typing import Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field, validator
+from agent_sandbox.core.api_error import ApiError
 
 from .manager import ExecutionManager
 from .models import Job
@@ -202,6 +205,69 @@ async def sync_trace_file(trace_id: str, force: bool = Query(False, description=
         synced=synced,
         job_status=job_status,
         is_terminal=is_terminal,
+    )
+
+
+@app.get("/sandbox/{job_id}/{requested_path:path}")
+async def get_sandbox_file(
+    job_id: str,
+    requested_path: str,
+):
+    """Proxy file download requests from sandbox workdir via orchestrator."""
+    try:
+        resolution = manager.resolve_sandbox_file_request(job_id, requested_path)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Job not found")
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="File not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    media_type, _ = mimetypes.guess_type(resolution["filename"])
+
+    if resolution["mode"] == "local":
+        return FileResponse(
+            path=str(resolution["local_path"]),
+            filename=resolution["filename"],
+            media_type=media_type or "application/octet-stream",
+        )
+
+    async def empty_stream():  # pragma: no cover - trivial
+        if False:
+            yield b""
+
+    stream_iter = manager.stream_remote_sandbox_file(
+        resolution["job"],
+        resolution["sandbox_path"],
+    )
+    try:
+        first_chunk = await stream_iter.__anext__()
+    except StopAsyncIteration:
+        await stream_iter.aclose()
+        return StreamingResponse(
+            empty_stream(),
+            media_type=media_type or "application/octet-stream",
+            headers={"Content-Disposition": f"attachment; filename=\"{resolution['filename']}\""},
+        )
+    except FileNotFoundError:
+        await stream_iter.aclose()
+        raise HTTPException(status_code=404, detail="File not found")
+    except ApiError as exc:
+        await stream_iter.aclose()
+        raise HTTPException(status_code=502, detail=f"Sandbox download failed: {exc}")
+
+    async def stream_file():
+        try:
+            yield first_chunk
+            async for chunk in stream_iter:
+                yield chunk
+        finally:
+            await stream_iter.aclose()
+
+    return StreamingResponse(
+        stream_file(),
+        media_type=media_type or "application/octet-stream",
+        headers={"Content-Disposition": f"attachment; filename=\"{resolution['filename']}\""},
     )
 
 

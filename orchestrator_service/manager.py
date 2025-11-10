@@ -3,6 +3,7 @@
 import asyncio
 import json
 import os
+import posixpath
 import shlex
 import signal
 import subprocess
@@ -441,6 +442,76 @@ class ExecutionManager:
     def _normalize_env(env: Dict[str, Any]) -> Dict[str, str]:
         return {str(key): str(value) for key, value in env.items()}
 
+    def _normalize_requested_sandbox_path(self, requested_path: str) -> PurePosixPath:
+        """Ensure the user-provided sandbox path is an absolute, normalized path under SANDBOX_WORKDIR."""
+        cleaned = (requested_path or "").strip()
+        if not cleaned:
+            raise ValueError("Path is required")
+        if not cleaned.startswith("/"):
+            cleaned = "/" + cleaned
+
+        candidate = PurePosixPath(cleaned)
+        if not candidate.is_absolute():
+            raise ValueError(f"Path must be absolute: {cleaned}")
+
+        normalized = PurePosixPath(posixpath.normpath(str(candidate)))
+        if normalized != candidate:
+            raise ValueError("Path must be normalized and cannot include traversal segments")
+
+        if not str(normalized).startswith(str(SANDBOX_WORKDIR)):
+            raise ValueError("Path must reside within the sandbox workdir")
+
+        if normalized == SANDBOX_WORKDIR:
+            raise ValueError("Path must reference a file within the sandbox workdir")
+
+        return normalized
+
+    def resolve_sandbox_file_request(self, job_id: str, requested_path: str) -> Dict[str, Any]:
+        """Resolve how to serve a sandbox file for a job."""
+
+        job = self._jobs.get(job_id)
+        if not job:
+            raise KeyError(f"Job {job_id} not found")
+
+        sandbox_path = self._normalize_requested_sandbox_path(requested_path)
+
+        if job.sandbox_url:
+            return {
+                "mode": "remote",
+                "job": job,
+                "sandbox_path": str(sandbox_path),
+                "filename": sandbox_path.name,
+            }
+
+        local_path = Path(str(sandbox_path))
+        if not local_path.exists() or not local_path.is_file():
+            raise FileNotFoundError(f"File not found: {sandbox_path}")
+
+        return {
+            "mode": "local",
+            "local_path": local_path,
+            "filename": local_path.name,
+        }
+
+    async def stream_remote_sandbox_file(self, job: Job, sandbox_path: str):
+        """Stream a remote sandbox file directly from the sandbox service."""
+
+        http_client = httpx.AsyncClient(timeout=self._remote_artifact_timeout)
+        sandbox_client = AsyncSandbox(
+            base_url=job.sandbox_url.rstrip("/"),
+            timeout=self._remote_artifact_timeout,
+            httpx_client=http_client,
+        )
+        try:
+            async for chunk in sandbox_client.file.download_file(path=sandbox_path):
+                yield chunk
+        except ApiError as exc:
+            if exc.status_code == 404:
+                raise FileNotFoundError(sandbox_path) from exc
+            raise
+        finally:
+            await http_client.aclose()
+
     async def sync_job_context(self, job_id: str, *, force: bool = False) -> bool:
         job = self._jobs.get(job_id)
         if not job:
@@ -776,6 +847,7 @@ class ExecutionManager:
         env = os.environ.copy()
         env.update(job.env_vars)
         env.setdefault("ORCHESTRATOR_JOBS_DIR", str(self.jobs_dir))
+        env["DOCFLOW_JOB_ID"] = job.job_id
         if job.sandbox_url:
             env_file_arg = await self._upload_env_file(
                 sandbox_url=job.sandbox_url,
