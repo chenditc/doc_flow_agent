@@ -120,12 +120,14 @@ class SandboxRunner(BaseRunner):
         log_path: Path,
         remote_log_path: str,
         request_timeout: float = 86400.0,
+        session_id: Optional[str] = None,
     ):
         self.sandbox_url = sandbox_url.rstrip("/")
         self.command = command
         self.log_path = log_path
         self.remote_log_path = remote_log_path
         self.request_timeout = request_timeout
+        self._preferred_session_id = session_id
         if not self.remote_log_path:
             raise ValueError("remote_log_path is required for SandboxRunner")
         self._http_client: Optional[httpx.AsyncClient] = None
@@ -141,7 +143,7 @@ class SandboxRunner(BaseRunner):
             httpx_client=self._http_client,
         )
         try:
-            desired_session_id = uuid.uuid4().hex
+            desired_session_id = self._preferred_session_id or uuid.uuid4().hex
             session_response = await self._sandbox_client.shell.create_session(id=desired_session_id)
             session_data = self._unwrap_response_data(session_response, context="create sandbox session")
             self._session_id = session_data.session_id
@@ -188,6 +190,7 @@ class SandboxRunner(BaseRunner):
                 id=self._session_id,
                 seconds=2,
             )
+            print("[SANDBOX WAIT] Response:", wait_response)
             wait_data = self._unwrap_response_data(wait_response, context="wait for sandbox process")
             status = wait_data.status
             if status in {"running", "no_change_timeout"}:
@@ -235,11 +238,15 @@ class SandboxRunner(BaseRunner):
     def _wrap_with_log_redirection(self, command: str) -> str:
         log_path = shlex.quote(self.remote_log_path)
         log_dir = shlex.quote(str(PurePosixPath(self.remote_log_path).parent))
+        tee_pipeline = (
+            "set -o pipefail; "
+            f"( {command} ) 2>&1 | tee -a {log_path}"
+        )
         return (
             f"mkdir -p {log_dir} && "
             f": > {log_path} && "
             f"chmod 600 {log_path} && "
-            f"( {command} ) >> {log_path} 2>&1"
+            f"bash -lc {shlex.quote(tee_pipeline)}"
         )
 
     @staticmethod
@@ -584,10 +591,7 @@ class ExecutionManager:
             return True
         except (OSError, httpx.HTTPError, ApiError, ValueError, TypeError) as exc:
             logger.debug(
-                "Failed to download remote file %s from sandbox %s: %s",
-                remote_path,
-                base_url,
-                exc,
+                f"Failed to download remote file {remote_path} from sandbox {base_url}: {exc}"
             )
             try:
                 temp_path.unlink(missing_ok=True)
@@ -712,6 +716,7 @@ class ExecutionManager:
                 command=command,
                 log_path=log_path,
                 remote_log_path=remote_log_path,
+                session_id=job.job_id,
             )
         return SubprocessRunner(
             command=command,
