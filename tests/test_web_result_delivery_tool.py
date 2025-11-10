@@ -71,8 +71,9 @@ class TestWebResultDeliveryTool:
                     
                     # Verify result
                     assert result["status"] == "ok"
-                    assert result["existing"] == False
                     assert result["result_url"] == "http://localhost:8000/result-delivery/test_session/test_task/"
+                    data_file = temp_project / "user_comm" / "sessions" / "test_session" / "test_task" / "files" / "result_data.json"
+                    assert result["file_included_in_html"] == [str(data_file)]
                     
                     # Verify LLM was called
                     tool.llm_tool.execute.assert_called_once()
@@ -131,6 +132,12 @@ class TestWebResultDeliveryTool:
                     assert (files_dir / "test1.txt").exists()
                     assert (files_dir / "test2.json").exists()
                     assert (files_dir / "test1.txt").read_text() == "Test file 1 content"
+                    expected_files = {
+                        str(files_dir / "result_data.json"),
+                        str(files_dir / "test1.txt"),
+                        str(files_dir / "test2.json"),
+                    }
+                    assert set(result["file_included_in_html"]) == expected_files
     
     @pytest.mark.asyncio
     async def test_result_with_images(self, tool):
@@ -176,6 +183,11 @@ class TestWebResultDeliveryTool:
                     # Verify image was copied
                     files_dir = temp_project / "user_comm" / "sessions" / "image_test" / "task_image" / "files"
                     assert (files_dir / "chart.png").exists()
+                    expected_files = {
+                        str(files_dir / "result_data.json"),
+                        str(files_dir / "chart.png"),
+                    }
+                    assert set(result["file_included_in_html"]) == expected_files
     
     @pytest.mark.asyncio
     async def test_idempotent_delivery(self, tool):
@@ -202,7 +214,7 @@ class TestWebResultDeliveryTool:
                 
                 # Should return existing result
                 assert result["status"] == "ok"
-                assert result["existing"] == True
+                assert result["file_included_in_html"] == []
                 
                 # HTML should not be modified
                 assert index_file.read_text() == "<!DOCTYPE html><html><body>Existing Result</body></html>"
@@ -237,6 +249,8 @@ class TestWebResultDeliveryTool:
 
                     expected = "http://localhost:8000/sandbox/job789/app/user_comm/sessions/sess123/task456/index.html"
                     assert result["result_url"] == expected
+                    files_dir = temp_project / "user_comm" / "sessions" / "sess123" / "task456" / "files"
+                    assert result["file_included_in_html"] == [str(files_dir / "result_data.json")]
     
     @pytest.mark.asyncio
     async def test_json_result_data(self, tool):

@@ -80,7 +80,7 @@ class WebResultDeliveryTool(BaseTool):
             return {
                 "result_url": result_url,
                 "status": "ok",
-                "existing": True
+                "file_included_in_html": self._collect_served_file_paths(files_dir)
             }
         
         # Create directory structure
@@ -92,6 +92,8 @@ class WebResultDeliveryTool(BaseTool):
 
         data_file_url = f"{file_base_url}{data_file_name}"
 
+        included_files: List[str] = [str(data_file_path)]
+
         for i in range(3):
             # Generate HTML page using LLM and get file mappings
             html_content, file_mappings = await self._generate_result_html_with_llm(
@@ -100,7 +102,8 @@ class WebResultDeliveryTool(BaseTool):
             
             # Copy files based on LLM-identified mappings
             try:
-                self._copy_files_from_mappings(file_mappings, files_dir)
+                copied_paths = self._copy_files_from_mappings(file_mappings, files_dir)
+                included_files.extend(str(path) for path in copied_paths)
                 break  # Success
             except ValueError as e:
                 print(f"[WEB_RESULT_DELIVERY] Error copying files: {e}")
@@ -122,16 +125,17 @@ class WebResultDeliveryTool(BaseTool):
         return {
             "result_url": result_url,
             "status": "ok",
-            "existing": False
+            "file_included_in_html": sorted(set(included_files))
         }
     
-    def _copy_files_from_mappings(self, file_mappings: List[Dict[str, str]], dest_dir: Path) -> None:
+    def _copy_files_from_mappings(self, file_mappings: List[Dict[str, str]], dest_dir: Path) -> List[Path]:
         """Copy files based on source-target mappings from LLM
         
         Args:
             file_mappings: List of dicts with 'source' and 'target' keys
             dest_dir: Destination directory for files
         """
+        copied: List[Path] = []
         for mapping in file_mappings:
             source_path = mapping.get('source', '')
             target_filename = mapping.get('target', '')
@@ -151,9 +155,17 @@ class WebResultDeliveryTool(BaseTool):
             try:
                 shutil.copy2(source, dest_file)
                 print(f"[WEB_RESULT_DELIVERY] Copied file: {source_path} -> {target_filename}")
+                copied.append(dest_file)
             except Exception as e:
                 raise ValueError(f"[WEB_RESULT_DELIVERY] Error copying {source_path}: {e}")
-    
+        return copied
+
+    def _collect_served_file_paths(self, files_dir: Path) -> List[str]:
+        if not files_dir.exists():
+            return []
+        files = [str(path) for path in files_dir.glob('*') if path.is_file()]
+        return sorted(files)
+
     def _get_visualization_base_url(self) -> str:
         base_url = os.getenv('VISUALIZATION_SERVER_URL', 'http://localhost:8000')
         if not base_url.startswith(('http://', 'https://')):
