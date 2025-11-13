@@ -11,6 +11,7 @@ services:
       - jobs:/app/jobs
       - log:/app/log
       - user_comm:/app/user_comm
+      - embedding_cache:/app/embedding_cache
       # Mount .env read-only so code that reads file directly (if any) can access; env vars already loaded via env_file
       - type: bind
         source: ./.env
@@ -103,3 +104,4 @@ volumes:
   jobs:
   log:
   user_comm:
+  embedding_cache:
