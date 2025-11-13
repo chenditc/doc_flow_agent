@@ -118,15 +118,33 @@ export const ContextualLLMCall: React.FC<ContextualLLMCallProps> = ({
   return (
     <div className="space-y-3">
       {/* Metadata */}
-      <div className="grid grid-cols-2 gap-4 text-sm">
-        <div>
-          <span className="font-medium text-gray-700">Model:</span>
+      <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-gray-700">
+        <div className="whitespace-nowrap">
+          <span className="font-medium">Model:</span>
           <span className="ml-2 text-gray-600">{llmCall.model || 'N/A'}</span>
         </div>
-        <div>
-          <span className="font-medium text-gray-700">Duration:</span>
+        <div className="whitespace-nowrap">
+          <span className="font-medium">Duration:</span>
           <span className="ml-2 text-gray-600">{calculateDuration(llmCall.start_time, llmCall.end_time)}</span>
         </div>
+        {llmCall.token_usage?.prompt_tokens !== undefined && (
+          <div className="whitespace-nowrap">
+            <span className="font-medium">Prompt Tokens:</span>
+            <span className="ml-2 text-gray-600">{llmCall.token_usage.prompt_tokens}</span>
+          </div>
+        )}
+        {llmCall.token_usage?.completion_tokens !== undefined && (
+          <div className="whitespace-nowrap">
+            <span className="font-medium">Completion Tokens:</span>
+            <span className="ml-2 text-gray-600">{llmCall.token_usage.completion_tokens}</span>
+          </div>
+        )}
+        {llmCall.token_usage?.total_tokens !== undefined && (
+          <div className="whitespace-nowrap">
+            <span className="font-medium">Total Tokens:</span>
+            <span className="ml-2 text-gray-600">{llmCall.token_usage.total_tokens}</span>
+          </div>
+        )}
       </div>
 
   {/* Content Toggle */}

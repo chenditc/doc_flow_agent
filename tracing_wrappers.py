@@ -74,33 +74,42 @@ class TracingToolWrapper:
 class TracingLLMTool(TracingToolWrapper):
     """LLM tool with enhanced tracing for prompt/response logging"""
 
+    def __init__(self, tool: BaseTool, tracer: ExecutionTracer):
+        super().__init__(tool, tracer)
+        register = getattr(self.tool, "register_call_logger", None)
+        if callable(register):
+            register(self._handle_llm_call_event)
+
+    def _handle_llm_call_event(self, payload: Dict[str, Any]) -> None:
+        """Receive raw LLM call metadata from the tool and forward to the tracer."""
+        if not payload:
+            return
+        try:
+            self.tracer.log_llm_call(
+                prompt=payload.get('prompt', ''),
+                response=payload.get('response', ''),
+                model=payload.get('model'),
+                tool_calls=payload.get('tool_calls'),
+                token_usage=payload.get('token_usage'),
+                all_parameters=payload.get('all_parameters'),
+                start_time=payload.get('start_time'),
+                end_time=payload.get('end_time')
+            )
+        except Exception as exc:  # pragma: no cover - logging should not break tool execution
+            print(f"[TRACING LLM] Warning: failed to log LLM call: {exc}")
+
     async def execute(self, parameters: Dict[str, Any], sop_doc_body: Optional[str] = None, **kwargs) -> Any:
         """Execute LLM tool with enhanced tracing"""
         try:
             result = await self.tool.execute(parameters, sop_doc_body=sop_doc_body, **kwargs)
 
-            # Log LLM call with prompt/response details
-            prompt = parameters.get('prompt', '')
-            model = parameters.get('model', self.tool.model)
-            
-            response_content = result.get('content', '')
-            tool_calls = result.get('tool_calls', [])
-            
-            self.tracer.log_llm_call(
-                prompt=prompt,
-                response=response_content,
-                model=model,
-                tool_calls=tool_calls,
-                all_parameters=parameters
-            )
-            
             # Also log as tool call
             self.tracer.log_tool_call(
                 tool_id=self.tool_id,
                 parameters=parameters,
                 output=result
             )
-            
+
             return result
         except Exception as e:
             self.tracer.log_tool_call(

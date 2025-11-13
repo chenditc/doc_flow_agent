@@ -22,7 +22,8 @@ import asyncio
 import os
 import copy
 import inspect
-from typing import Dict, Any, Optional, List, Callable
+from datetime import datetime, timezone
+from typing import Dict, Any, Optional, List, Callable, Tuple
 from openai import AsyncOpenAI
 
 from .base_tool import BaseTool
@@ -45,6 +46,11 @@ class LLMTool(BaseTool):
         self.model = os.getenv("OPENAI_MODEL", "openai/gpt-4o-2024-11-20")  
 
         self.small_model = os.environ.get("OPENAI_SMALL_MODEL", self.model)
+        self._call_logger: Optional[Callable[[Dict[str, Any]], None]] = None
+
+    def register_call_logger(self, logger: Optional[Callable[[Dict[str, Any]], None]]) -> None:
+        """Register a callback to receive detailed metadata for every LLM invocation."""
+        self._call_logger = logger
 
     async def execute(
         self,
@@ -112,6 +118,8 @@ class LLMTool(BaseTool):
         tools = parameters.get('tools', None)
         max_tokens = parameters.get('max_tokens', 20000)
 
+        call_start_time = self._current_time()
+
         print(f"[LLM CALL] Prompt: {prompt}...")
         if tools:
             print(f"[LLM CALL] Tools provided: {[tool.get('function', {}).get('name', 'unknown') for tool in tools]}")
@@ -129,7 +137,19 @@ class LLMTool(BaseTool):
             api_params["tools"] = tools
 
         stream = await self.client.chat.completions.create(**api_params)
-        content, tool_calls = await self._collect_streaming_chunks_with_tools(stream)
+        content, tool_calls, token_usage = await self._collect_streaming_chunks_with_tools(stream)
+        call_end_time = self._current_time()
+
+        self._emit_call_log(
+            prompt=prompt,
+            response=content,
+            model=call_model,
+            tool_calls=tool_calls,
+            token_usage=token_usage,
+            start_time=call_start_time,
+            end_time=call_end_time,
+            all_parameters=parameters
+        )
 
         if tools and not tool_calls:
             print("[LLM FALLBACK] No native tool calls returned. Attempting XML JSON fallback.")
@@ -141,15 +161,33 @@ class LLMTool(BaseTool):
             api_params_fallback["tools"] = None
             print(f"[LLM FALLBACK] New Prompt: \n-----{fallback_prompt}...")
             # Re-issue call
+            fallback_start_time = self._current_time()
             stream_fb = await self.client.chat.completions.create(**api_params_fallback)
-            content_fb, _ = await self._collect_streaming_chunks_with_tools(stream_fb)
+            content_fb, _, fb_usage = await self._collect_streaming_chunks_with_tools(stream_fb)
+            fallback_end_time = self._current_time()
             parsed_calls = self._parse_xml_wrapped_tool_json(content_fb, tools)
             if parsed_calls:
                 print(f"[LLM FALLBACK] Parsed {len(parsed_calls)} tool call(s) from XML fallback.")
                 content = content_fb
                 tool_calls = parsed_calls
+                token_usage = fb_usage
             else:
                 print("[LLM FALLBACK] Failed to parse XML fallback output.")
+                # Even if parsing failed, keep the raw content for logging visibility
+                content = content_fb
+                tool_calls = []
+                token_usage = fb_usage
+
+            self._emit_call_log(
+                prompt=fallback_prompt,
+                response=content,
+                model=call_model,
+                tool_calls=tool_calls,
+                token_usage=token_usage,
+                start_time=fallback_start_time,
+                end_time=fallback_end_time,
+                all_parameters=parameters
+            )
 
         print(f"[LLM RESPONSE] {content[:100]}...")
         if tool_calls:
@@ -157,7 +195,14 @@ class LLMTool(BaseTool):
             for tool_call in tool_calls:
                 print(f"  - Tool: {tool_call.get('name', 'unknown')}")
                 print(f"    Arguments: {tool_call.get('arguments', {})}")
-        return {"content": content, "tool_calls": tool_calls}
+        return {
+            "content": content,
+            "tool_calls": tool_calls,
+        }
+
+    def _current_time(self) -> str:
+        """Consistent UTC timestamp used for tracing metadata."""
+        return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
     # ---------------- Fallback Tool Call Support (XML-wrapped JSON) -----------------
     def _build_fallback_tool_instructions(self, tools: Any) -> str:
@@ -272,7 +317,7 @@ class LLMTool(BaseTool):
                 hasattr(chunk.choices[0].delta, 'content') and 
                 chunk.choices[0].delta.content is not None)
     
-    async def _collect_streaming_chunks_with_tools(self, stream):
+    async def _collect_streaming_chunks_with_tools(self, stream) -> Tuple[str, List[Dict[str, Any]], Optional[Dict[str, Any]]]:
         """Collect and combine streaming response chunks with optional tool call handling
         
         Args:
@@ -281,9 +326,10 @@ class LLMTool(BaseTool):
         Returns:
             Tuple of (combined content string, list of tool calls)
         """
-        content_chunks = []
-        tool_calls = []
-        tool_call_chunks = {}  # Track partial tool calls by index
+        content_chunks: List[str] = []
+        tool_calls: List[Dict[str, Any]] = []
+        tool_call_chunks: Dict[int, Dict[str, Any]] = {}  # Track partial tool calls by index
+        token_usage: Optional[Dict[str, Any]] = None
         
         async for chunk in stream:
             if not hasattr(chunk, 'choices') or len(chunk.choices) == 0:
@@ -329,6 +375,25 @@ class LLMTool(BaseTool):
                             tool_call_chunks[index]['function']['name'] += func_chunk.name
                         if hasattr(func_chunk, 'arguments') and func_chunk.arguments:
                             tool_call_chunks[index]['function']['arguments'] += func_chunk.arguments
+            # Capture token usage when the API provides it (typically final chunk)
+            chunk_usage = getattr(chunk, 'usage', None)
+            if chunk_usage:
+                if isinstance(chunk_usage, dict):
+                    candidate = {
+                        k: chunk_usage.get(k)
+                        for k in ('prompt_tokens', 'completion_tokens', 'total_tokens')
+                        if chunk_usage.get(k) is not None
+                    }
+                    if candidate:
+                        token_usage = candidate
+                else:
+                    candidate = {
+                        key: getattr(chunk_usage, key)
+                        for key in ('prompt_tokens', 'completion_tokens', 'total_tokens')
+                        if getattr(chunk_usage, key, None) is not None
+                    }
+                    if candidate:
+                        token_usage = candidate
         
         # Process completed tool calls
         for tool_call in tool_call_chunks.values():
@@ -346,7 +411,28 @@ class LLMTool(BaseTool):
                     print(f"Raw arguments: {tool_call['function']['arguments']}")
         
         # Combine all content chunks into final content
-        return ''.join(content_chunks), tool_calls
+        return ''.join(content_chunks), tool_calls, token_usage
+
+    def _emit_call_log(self, prompt: str, response: str, model: str, tool_calls: List[Dict[str, Any]],
+                       token_usage: Optional[Dict[str, Any]], start_time: str, end_time: str,
+                       all_parameters: Dict[str, Any]) -> None:
+        """Send a structured event to the registered call logger, if present."""
+        if not self._call_logger:
+            return
+        payload = {
+            "prompt": prompt,
+            "response": response,
+            "model": model,
+            "tool_calls": tool_calls,
+            "token_usage": token_usage,
+            "start_time": start_time,
+            "end_time": end_time,
+            "all_parameters": all_parameters,
+        }
+        try:
+            self._call_logger(payload)
+        except Exception as exc:  # pragma: no cover - best-effort logging
+            print(f"[LLM CALL LOG] Warning: failed to emit call log: {exc}")
     
     async def _test_connection(self) -> bool:
         """Test connection to the API endpoint"""
@@ -362,7 +448,7 @@ class LLMTool(BaseTool):
             )
             # Just collect the chunks to verify streaming works
             # We only need the content, ignore tool calls for connection testing
-            _, _ = await self._collect_streaming_chunks_with_tools(stream)
+            _, _, _ = await self._collect_streaming_chunks_with_tools(stream)
             return True
         except Exception as e:
             print(f"[LLM CONNECTION ERROR] {str(e)}")

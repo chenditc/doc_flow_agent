@@ -545,7 +545,7 @@ The value:
 5. If you rephrase the information, make sure you use the same language as the input_description.
 6. Just generate the minimum required code, Eg. If there is no requirement to be structured, use plain text. Make sure the code has minimum possibility to fail.
 7. The returned parameter should satisfy the requirement from the ## Required Request Parameter Description
-8. Use `get_json_path_value(context, 'json_path')` to extract value from context using json_path syntax, instead of directly accessing context dictionary. This will avoid key errors and make the code more robust.
+8. Use `get_json_path_value(context, 'json_path')` to extract value from context using json_path syntax, instead of directly accessing context dictionary. This will avoid key errors and make the code more robust. This function has already be imported.
 
 ## Examples
 ```python

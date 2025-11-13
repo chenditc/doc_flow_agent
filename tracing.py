@@ -466,18 +466,21 @@ class ExecutionTracer:
     
     def log_llm_call(self, prompt: str, response: str, model: str = None, 
                      token_usage: Dict[str, int] = None, tool_calls: List[Dict[str, Any]] = None,
-                     all_parameters: Dict[str, Any] = None) -> str:
+                     all_parameters: Dict[str, Any] = None,
+                     start_time: Optional[str] = None, end_time: Optional[str] = None) -> str:
         """Log an LLM interaction - simplified interface"""
         if not self.enabled:
             return ""
         
         call_id = self._generate_id()
+        call_start = start_time or self._current_time()
+        call_end = end_time or self._current_time()
         llm_call = LLMCall(
             tool_call_id=call_id,
             prompt=prompt,
             response=response,
-            start_time=self._current_time(),
-            end_time=self._current_time(),
+            start_time=call_start,
+            end_time=call_end,
             model=model,
             token_usage=token_usage,
             tool_calls=tool_calls,

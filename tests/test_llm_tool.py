@@ -1,5 +1,6 @@
 import os
 import asyncio
+from typing import Any
 from tools.llm_tool import LLMTool
 
 
@@ -75,3 +76,93 @@ def test_llm_tool_model_override(monkeypatch):
     assert captured_models[1] == "custom-model-123", (
         f"Expected override model 'custom-model-123' but got '{captured_models[1]}' - override feature missing"
     )
+
+
+def test_llm_tool_emits_token_usage_via_logger(monkeypatch):
+    """LLMTool should surface token usage through the registered call logger."""
+    monkeypatch.setenv("INTEGRATION_TEST_MODE", "MOCK")
+
+    tool = LLMTool()
+    captured_events: list[dict[str, Any]] = []
+    tool.register_call_logger(lambda payload: captured_events.append(payload))
+
+    async def fake_collect(self, stream):  # type: ignore[override]
+        return ("Hello there", [], {"prompt_tokens": 42, "completion_tokens": 8, "total_tokens": 50})
+
+    async def fake_create(**kwargs):  # type: ignore
+        class DummyStream:
+            pass
+        return DummyStream()
+
+    monkeypatch.setattr(LLMTool, "_collect_streaming_chunks_with_tools", fake_collect)
+    monkeypatch.setattr(tool.client.chat.completions, "create", fake_create)
+
+    async def run():
+        await tool.execute({"prompt": "Hi"})
+        assert captured_events, "Expected at least one logged event"
+        assert captured_events[0]["token_usage"] == {"prompt_tokens": 42, "completion_tokens": 8, "total_tokens": 50}
+
+    try:
+        asyncio.run(run())
+    except RuntimeError as e:
+        if "asyncio.run() cannot be called from a running event loop" in str(e):
+            loop = asyncio.new_event_loop()
+            try:
+                loop.run_until_complete(run())
+            finally:
+                loop.close()
+        else:
+            raise
+
+
+def test_llm_tool_logs_primary_and_fallback_attempts(monkeypatch):
+    """Ensure both the primary and XML fallback attempts are emitted when fallback is triggered."""
+    monkeypatch.setenv("INTEGRATION_TEST_MODE", "MOCK")
+
+    tool = LLMTool()
+    captured_events: list[dict[str, Any]] = []
+    tool.register_call_logger(lambda payload: captured_events.append(payload))
+
+    call_counter = {"value": 0}
+
+    async def fake_collect(self, stream):  # type: ignore[override]
+        if call_counter["value"] == 0:
+            call_counter["value"] += 1
+            return ("primary attempt", [], {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15})
+        call_counter["value"] += 1
+        return ("fallback attempt", [], {"prompt_tokens": 8, "completion_tokens": 4, "total_tokens": 12})
+
+    async def fake_create(**kwargs):  # type: ignore
+        class DummyStream:
+            pass
+        return DummyStream()
+
+    monkeypatch.setattr(LLMTool, "_collect_streaming_chunks_with_tools", fake_collect)
+    monkeypatch.setattr(tool.client.chat.completions, "create", fake_create)
+
+    tools_param = [{
+        "type": "function",
+        "function": {
+            "name": "dummy_tool",
+            "description": "test",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    }]
+
+    async def run():
+        await tool.execute({"prompt": "Hi", "tools": tools_param})
+        assert len(captured_events) == 2, "Expected both primary and fallback attempts to be logged"
+        assert captured_events[0]["response"] == "primary attempt"
+        assert "--- RETURN FORMAT INSTRUCTIONS ---" in captured_events[1]["prompt"]
+
+    try:
+        asyncio.run(run())
+    except RuntimeError as e:
+        if "asyncio.run() cannot be called from a running event loop" in str(e):
+            loop = asyncio.new_event_loop()
+            try:
+                loop.run_until_complete(run())
+            finally:
+                loop.close()
+        else:
+            raise

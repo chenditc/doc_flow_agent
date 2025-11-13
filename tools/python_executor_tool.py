@@ -59,9 +59,8 @@ class PythonExecutorTool(BaseTool):
             available_libs = self._get_available_python_libraries()
             prompt = f"""
 You are a Python code generation assistant.
-Your task is to write a single Python function named `process_step` that takes one argument: `context: {type(related_context_content).__name__}`.
+Your task is to write a single Python function named `process_step` that takes one argument: `context: {type(related_context_content).__name__}`. It will contain all the necessary data. The content of context has been attached here for you to understand the input data structure.
 This function will be executed to perform following specific task. Import necessary library if you used any.
-The context object will contain all the necessary data. The json serialized context object has been attached here for you to understand the input data structure.
 The function should return a JSON-serializable value.
 The function should contains necessary print statements to output intermediate results for debugging purpose.
 If any exception occurs during execution, do not handle it inside the function, let it propagate to the caller.
@@ -76,9 +75,9 @@ If you need to write data to files, use the /tmp directory unless explicitly spe
 </Task Description>
 {sop_guidance}
 <context object type>{type(related_context_content).__name__}</context object type>
-<Json serialized context object>
+<result of json.dumps(context)>
 {json.dumps(related_context_content, indent=2, ensure_ascii=False)}
-</Json serialized context object>
+</result of json.dumps(context)>
 """
 
             # Validator for code extraction & compilation
