@@ -5,6 +5,8 @@ import argparse
 import asyncio
 import json
 import sys
+from contextlib import suppress
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -14,6 +16,14 @@ from orchestrator_service.env_file import load_env_file
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from doc_execute_engine import DocExecuteEngine
+
+
+async def _heartbeat(job_id: str, interval_seconds: int = 20):
+    """Emit a periodic log line so sandbox connections stay warm."""
+    while True:
+        await asyncio.sleep(interval_seconds)
+        now = datetime.now(timezone.utc).isoformat()
+        print(f"[HEARTBEAT] Job {job_id} still running at {now}")
 
 
 async def run_job(job_id: str, task: str, max_tasks: int, trace_file: str | None, context_file: str | None):
@@ -31,7 +41,13 @@ async def run_job(job_id: str, task: str, max_tasks: int, trace_file: str | None
     )
 
     engine.load_context(load_if_exists=False)
-    await engine.start(task)
+    heartbeat = asyncio.create_task(_heartbeat(job_id))
+    try:
+        await engine.start(task)
+    finally:
+        heartbeat.cancel()
+        with suppress(asyncio.CancelledError):
+            await heartbeat
 
     context_path.parent.mkdir(parents=True, exist_ok=True)
     with open(context_path, 'w', encoding='utf-8') as f:
