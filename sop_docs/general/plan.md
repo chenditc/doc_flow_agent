@@ -36,7 +36,7 @@ For each sub task, explicitly mark it using the format:
 6. **Limit sub task count**: Do not plan too much detail tasks, plan 2-6 sub tasks. 
 7. **Each sub task must be necessary**: Give out reason first, then your plan. Only plan necessary task, less tasks is better.
 8. **Avoid user interaction**: Avoid user interaction when possible, only involve user feedback if you can't proceed without it.
-
+9. Do not come up input/output file path by yourself, input and output to each task will be stored and managed by the system. Just focus on what needs to be done in each step.
 ### Task Info:
 
 <COMPLEX_TASK_TO_BREAK_DOWN>
