@@ -17,6 +17,7 @@ limitations under the License.
 """
 
 import json
+import os
 import yaml
 import re
 from pathlib import Path
@@ -180,6 +181,7 @@ class SOPDocumentParser:
         self.llm_tool = llm_tool
         self.tracer = tracer
         self._vector_store: Optional['SOPDocVectorStore'] = None
+        self.embedding_cache_dir = os.getenv("EMBEDDING_CACHE_DIR", "")
         if self.tracer is None:
             # For backwards compatibility in tests, create a minimal tracer
             from tracing import ExecutionTracer
@@ -505,7 +507,7 @@ Please use the select_tool_for_task function to provide your analysis.
             results = await store.similarity_search(description, k=k)
         except Exception as exc:  # pragma: no cover - defensive log
             print(f"[SOP_VECTOR_SEARCH] Failed to search vector store: {exc}")
-            return []
+            raise exc
 
         suggestions: List[Dict[str, str]] = []
         seen: set[str] = set()
@@ -528,12 +530,15 @@ Please use the select_tool_for_task function to provide your analysis.
         try:
             from sop_doc_vector_store import SOPDocVectorStore
 
-            store = SOPDocVectorStore(docs_dir=str(self.loader.docs_dir))
+            store = SOPDocVectorStore(
+                docs_dir=str(self.loader.docs_dir),
+                embedding_cache_dir=self.embedding_cache_dir or ""
+            )
             await store.build()
             self._vector_store = store
         except Exception as exc:  # pragma: no cover - defensive log
             print(f"[SOP_VECTOR_SEARCH] Unable to initialize vector store: {exc}")
-            return None
+            raise exc
         return self._vector_store
     
     async def _validate_with_llm(self, description: str, candidates: List[tuple], all_doc_ids: List[str]) -> str:
