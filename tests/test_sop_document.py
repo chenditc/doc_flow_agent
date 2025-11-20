@@ -149,7 +149,7 @@ This document has no parameters sections.
         doc = self.loader.load_sop_document("basic")
         
         self.assertEqual(doc.doc_id, "basic")
-        self.assertEqual(doc.description, "Basic test document。输出：The result")
+        self.assertEqual(doc.description, "Basic test document。")
         self.assertEqual(doc.aliases, ["basic", "test"])
         self.assertEqual(doc.tool["tool_id"], "LLM")
         self.assertEqual(doc.tool["parameters"]["prompt"], "This is a basic test prompt: {task}")
@@ -163,7 +163,7 @@ This document has no parameters sections.
         doc = self.loader.load_sop_document("tools/complex")
         
         self.assertEqual(doc.doc_id, "tools/complex")
-        self.assertEqual(doc.description, "Complex test document。输出：Command execution result")
+        self.assertEqual(doc.description, "Complex test document。")
         self.assertEqual(doc.aliases, ["complex", "advanced"])
         self.assertEqual(doc.tool["tool_id"], "CLI")
         self.assertEqual(doc.input_json_path["script"], "$.script")
@@ -279,12 +279,18 @@ class TestSOPDocumentParser(unittest.TestCase):
         (self.docs_dir / "tools").mkdir()
         
         self.parser = SOPDocumentParser(str(self.docs_dir))
+        async def _no_vector_search(_self, description: str, k: int = 5):
+            return []
+        self._vector_patch = patch.object(SOPDocumentParser, "_get_vector_search_candidates", new=_no_vector_search)
+        self._vector_patch.start()
         
         # Create test documents
         self._create_test_documents()
     
     def tearDown(self):
         """Clean up test fixtures"""
+        if hasattr(self, "_vector_patch"):
+            self._vector_patch.stop()
         shutil.rmtree(self.test_dir)
     
     def _create_test_documents(self):
@@ -560,7 +566,10 @@ requires_planning_metadata: true
         call_payload = mock_llm_tool.execute.call_args[0][0]
         enum_values = call_payload["tools"][0]["function"]["parameters"]["properties"]["selected_tool_doc"]["enum"]
         self.assertEqual(enum_values[0], "custom/doc")
-        self.assertIn("custom/doc: Custom doc description", call_payload["prompt"])
+        prompt_text = call_payload["prompt"]
+        self.assertIn("<vector_candidates>", prompt_text)
+        self.assertIn("<doc_id>custom/doc</doc_id>", prompt_text)
+        self.assertIn("<description>Custom doc description</description>", prompt_text)
 
     def test_vector_search_deduplicates_existing_docs(self):
         """Ensure vector search entries aren't duplicated when already a tool."""
@@ -690,14 +699,18 @@ requires_planning_metadata: true
                 }
             }]
         }
-        
+
+        async def no_vector_candidates(self_instance, description: str, k: int = 5):
+            return []
+
         # Temporarily patch the LLMTool class
         with patch('tools.llm_tool.LLMTool', return_value=mock_llm_tool):
             async def run_test():
                 return await self.parser.parse_sop_doc_id_from_description("some task")
-            
-            with self.assertRaises(ValueError) as context:
-                asyncio.run(run_test())
+
+            with patch.object(SOPDocumentParser, "_get_vector_search_candidates", new=no_vector_candidates):
+                with self.assertRaises(ValueError) as context:
+                    asyncio.run(run_test())
             
             self.assertIn("Invalid tool selection: tools/invalid_tool", str(context.exception))
             self.assertIn("valid options are:", str(context.exception))

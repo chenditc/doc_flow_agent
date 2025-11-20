@@ -103,21 +103,14 @@ class SOPDocumentLoader:
         # Replace tool parameters with matching markdown sections
         tool_data = doc_data.get('tool', {})
         if 'parameters' in tool_data:
+            print(f"Replace parameter in doc: {doc_path}")
             tool_data = self._replace_tool_parameters_with_sections(tool_data, parameters)
         
 
-        combined_description = doc_data.get('description', '')
-        if not combined_description.endswith("。"):
-            combined_description += "。"
-        if doc_data.get('output_description', ''):
-            combined_description += "输出：" + doc_data.get('output_description', '')
-        if doc_data.get('input_description', {}):
-            input_descs = "; ".join([f"{k}: {v}" for k, v in doc_data.get('input_description', {}).items()])
-            combined_description += " 输入：" + input_descs
 
         return SOPDocument(
             doc_id=doc_data.get('doc_id', doc_id),
-            description=combined_description,
+            description=doc_data.get('description', ''),
             aliases=doc_data.get('aliases', []),
             tool=tool_data,
             input_json_path=doc_data.get('input_json_path', {}),
@@ -219,15 +212,20 @@ class SOPDocumentParser:
             pattern = self._build_identifier_pattern(doc_id.lower())
             if re.search(pattern, description_lower):
                 candidates.append((doc_id, "full_path"))
+                print(f"[SOP_PARSER] Found candidate by full path match: {doc_id}")
         
         # 2. Try match file name without extension with word boundaries.
         for doc_id in all_doc_ids:
             filename = Path(doc_id).name
-            
+            # Skip filenames that contain only alphanumeric characters (too generic)
+            if re.match(r'^[a-zA-Z0-9]+$', filename):
+                continue
+
             # Use boundary matching that works for mixed-language text (ASCII and CJK)
             pattern = self._build_identifier_pattern(filename.lower())
             if re.search(pattern, description_lower):
                 candidates.append((doc_id, "filename"))
+                print(f"[SOP_PARSER] Found candidate by filename match: {doc_id}")
 
         # Log candidate documents to tracing system
         candidate_doc_ids = [candidate[0] for candidate in candidates]
@@ -287,13 +285,12 @@ class SOPDocumentParser:
                 # Load the SOP document to get description
                 sop_doc = self.loader.load_sop_document(doc_id)
                 
-                # Use the SOP description directly so each document remains the single source of truth
-                use_case = sop_doc.description
                 
                 available_tools.append({
                     "doc_id": doc_id,
                     "description": sop_doc.description,
-                    "use_case": use_case
+                    "input_description": sop_doc.input_description,
+                    "output_description": sop_doc.output_description,
                 })
             except Exception as e:
                 print(f"[TOOL_DISCOVERY] Warning: Could not load tool SOP {doc_id}: {e}")
@@ -334,6 +331,32 @@ class SOPDocumentParser:
                 lines.append(f"  <tool_description>{description}</tool_description>")
                 lines.append("</tool>")
         return "\n".join(lines)
+
+    def _sanitize_xml_tag_segment(self, value: str) -> str:
+        sanitized = re.sub(r"[^a-zA-Z0-9_-]", "_", value.strip())
+        return sanitized or "field"
+
+    def _format_tool_prompt_entry(self, tool: Dict[str, Any]) -> str:
+        doc_id = escape(tool.get("doc_id", ""))
+        description = escape((tool.get("description") or "").strip())
+        lines = [
+            "  <tool>",
+            f"    <doc_id>{doc_id}</doc_id>",
+        ]
+        if description:
+            lines.append(f"    <description>{description}</description>")
+
+        inputs = tool.get("input_description") or {}
+        for key, desc in inputs.items():
+            tag_name = f"input:{self._sanitize_xml_tag_segment(str(key))}"
+            lines.append(f"    <{tag_name}>{escape(str(desc))}</{tag_name}>")
+        output_desc = tool.get("output_description")
+        if output_desc:
+            tag_name = f"output:{self._sanitize_xml_tag_segment('description')}"
+            lines.append(f"    <{tag_name}>{escape(str(output_desc))}</{tag_name}>")
+
+        lines.append("  </tool>")
+        return "\n".join(lines)
     
     async def get_planning_metadata(
         self,
@@ -353,6 +376,7 @@ class SOPDocumentParser:
         vector_candidates: List[Dict[str, str]] = []
         if include_vector_candidates and description:
             vector_candidates = await self._get_vector_search_candidates(description, k=vector_k)
+            vector_candidates = [vc for vc in vector_candidates if vc["doc_id"] not in {tool["doc_id"] for tool in available_tools}]
 
         valid_doc_ids = self._build_valid_doc_id_list(available_tools, vector_candidates)
         available_tools_markdown = self._format_doc_list_markdown(
@@ -432,11 +456,13 @@ class SOPDocumentParser:
 
 You can complete almost anything using python + llm tool. Any task can be completed by using code to automate and use llm to think.
 
-Available tools:
+<available_tools>
 """
-        
-        for tool in available_tools + vector_candidates:
-            prompt += f"- {tool['doc_id']}: {tool['description']}\n\n"
+        for tool in available_tools:
+            prompt += self._format_tool_prompt_entry(tool) + "\n"
+        for candidate in vector_candidates:
+            prompt += self._format_tool_prompt_entry(candidate) + "\n"
+        prompt += "</available_tools>\n"
         
         # Add previous executed tasks information if available
         previous_tasks_section = ""
@@ -450,11 +476,9 @@ Available tools:
         
         prompt += f"""
 Guidelines:
-- If the task already contain enough information to complete or we can provide good guess for missing information, then try to see if there is suitable tool to complete it in one go. Otherwise, the information can only be obtain from user, select 'tools/web_user_communicate' to ask for more information.
 - If the task can be completed in one step using a single tool, set can_complete_with_tool to true and select the appropriate tool
 - If the task If the task can be completed but it is complex and needs to be broken down into multiple steps, set can_complete_with_tool to false and select 'general/plan' 
 - Consider the complexity, scope, and whether all necessary information is available.
-- If you select 'tools/web_user_communicate', you MUST provide a message_to_user that clearly explains what information is missing and asks the user to provide it.
 - Consider the information available from previously executed tasks when determining if enough information is available.
 {previous_tasks_section}
 <task to analyze>
