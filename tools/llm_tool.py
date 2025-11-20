@@ -116,7 +116,7 @@ class LLMTool(BaseTool):
         self.validate_parameters(parameters, ['prompt'])
         prompt = parameters.get('prompt', '')
         tools = parameters.get('tools', None)
-        max_tokens = parameters.get('max_tokens', 20000)
+        max_tokens = parameters.get('max_tokens', 10000)
 
         call_start_time = self._current_time()
 

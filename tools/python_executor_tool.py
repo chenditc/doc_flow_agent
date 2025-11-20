@@ -64,6 +64,7 @@ This function will be executed to perform following specific task. Import necess
 The function should return a JSON-serializable value.
 The function should contains necessary print statements to output intermediate results for debugging purpose.
 If any exception occurs during execution, do not handle it inside the function, let it propagate to the caller.
+DO NOT return a large amount of data. If you need to deliver a large amount of data (html/image/long text), write to a file in /tmp and return the file path. For small amount of data (<10k character), you can directly return them.
 If you need to write data to files, use the /tmp directory unless explicitly specifies in the task description.
 
 <available library>
