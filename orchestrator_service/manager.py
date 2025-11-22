@@ -24,6 +24,10 @@ from .settings import JOBS_DIR, TRACES_DIR, MAX_PARALLEL_JOBS, JOB_SHUTDOWN_TIME
 SANDBOX_WORKDIR = PurePosixPath(os.getenv("SANDBOX_WORKDIR", "/app"))
 SANDBOX_TRACES_DIR = SANDBOX_WORKDIR / "traces"
 SANDBOX_JOBS_DIR = SANDBOX_WORKDIR / "jobs"
+SANDBOX_ALLOWED_ROOTS = (
+    SANDBOX_WORKDIR,
+    PurePosixPath("/tmp"),
+)
 REMOTE_ARTIFACT_TIMEOUT = float(os.getenv("REMOTE_ARTIFACT_TIMEOUT", "60.0"))
 
 
@@ -143,6 +147,7 @@ class SandboxRunner(BaseRunner):
             httpx_client=self._http_client,
         )
         try:
+            print("[SANDBOX RUNNER] Creating session...", self._preferred_session_id)
             desired_session_id = self._preferred_session_id or uuid.uuid4().hex
             session_response = await self._sandbox_client.shell.create_session(id=desired_session_id)
             session_data = self._unwrap_response_data(session_response, context="create sandbox session")
@@ -212,7 +217,7 @@ class SandboxRunner(BaseRunner):
         if not self._sandbox_client:
             return
         try:
-            stream = await self._sandbox_client.file.download_file(path=self.remote_log_path)
+            stream = self._sandbox_client.file.download_file(path=self.remote_log_path)
         except (httpx.HTTPError, ApiError, ValueError, TypeError):
             return
         temp_path = self.log_path.parent / f"{self.log_path.name}.tmp"
@@ -468,11 +473,18 @@ class ExecutionManager:
         if normalized != candidate:
             raise ValueError("Path must be normalized and cannot include traversal segments")
 
-        if not str(normalized).startswith(str(SANDBOX_WORKDIR)):
-            raise ValueError("Path must reside within the sandbox workdir")
+        for allowed_root in SANDBOX_ALLOWED_ROOTS:
+            allowed_str = str(allowed_root)
+            if allowed_str == "/" or not allowed_str:
+                continue
+            is_under_root = str(normalized).startswith(allowed_str.rstrip("/") + "/")
+            if is_under_root:
+                break
+        else:
+            raise ValueError("Path must reside within an allowed sandbox directory")
 
-        if normalized == SANDBOX_WORKDIR:
-            raise ValueError("Path must reference a file within the sandbox workdir")
+        if normalized in SANDBOX_ALLOWED_ROOTS:
+            raise ValueError("Path must reference a file within the sandbox directory")
 
         return normalized
 
@@ -651,6 +663,9 @@ class ExecutionManager:
         task_description: str,
     ) -> str:
         remote_path = self._build_remote_task_path(job_id)
+        logger.info(
+            f"Uploading sandbox task file job_id={job_id} url={sandbox_url} path={remote_path}"
+        )
         http_client = httpx.AsyncClient(timeout=self._remote_artifact_timeout)
         sandbox_client = AsyncSandbox(
             base_url=sandbox_url.rstrip("/"),
@@ -662,6 +677,7 @@ class ExecutionManager:
                 file=(f"{job_id}.task", task_description.encode("utf-8"), "text/plain"),
                 path=remote_path,
             )
+            print("Upload response:", upload_response)
         finally:
             await http_client.aclose()
         if upload_response.success is False:
@@ -670,7 +686,14 @@ class ExecutionManager:
         upload_data = upload_response.data
         if not upload_data or not upload_data.success:
             raise RuntimeError("Sandbox task upload returned no data")
-        return upload_data.file_path or remote_path
+        resolved_path = upload_data.file_path or remote_path
+        logger.info(
+            "Uploaded sandbox task file job_id=%s remote_path=%s resolved_path=%s",
+            job_id,
+            remote_path,
+            resolved_path,
+        )
+        return resolved_path
 
     async def _upload_env_file(
         self,
@@ -682,6 +705,12 @@ class ExecutionManager:
         remote_path = self._build_remote_env_path(job_id)
         normalized_env = self._normalize_env(env)
         payload = json.dumps(normalized_env, ensure_ascii=False).encode("utf-8")
+        logger.info(
+            "Uploading sandbox env file job_id=%s url=%s path=%s",
+            job_id,
+            sandbox_url,
+            remote_path,
+        )
         http_client = httpx.AsyncClient(timeout=self._remote_artifact_timeout)
         sandbox_client = AsyncSandbox(
             base_url=sandbox_url.rstrip("/"),
@@ -701,7 +730,14 @@ class ExecutionManager:
         upload_data = upload_response.data
         if not upload_data or not upload_data.success:
             raise RuntimeError("Sandbox env upload returned no data")
-        return upload_data.file_path or remote_path
+        resolved_path = upload_data.file_path or remote_path
+        logger.info(
+            "Uploaded sandbox env file job_id=%s remote_path=%s resolved_path=%s",
+            job_id,
+            remote_path,
+            resolved_path,
+        )
+        return resolved_path
 
     def _create_runner(
         self,
@@ -882,6 +918,7 @@ class ExecutionManager:
         self._runners[job.job_id] = runner
         runner_result: Optional[RunnerResult] = None
         try:
+            print(f"Starting job {job.job_id} using runner {type(runner).__name__}")
             start_info = await runner.start()
             job.pid = start_info.pid
             job.sandbox_session_id = start_info.sandbox_session_id

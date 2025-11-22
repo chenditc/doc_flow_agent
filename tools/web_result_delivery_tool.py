@@ -17,9 +17,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
+import csv
 import json
 import os
+import re
 import shutil
+import uuid
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 
@@ -30,6 +33,10 @@ from .llm_tool import LLMTool
 from .delivery_payload import (
     DeliveryPayload,
     DeliveryPayloadError,
+    DeliveryAsset,
+    MarkdownBlock,
+    TableBlock,
+    TextBlock,
     normalize_result_data,
 )
 
@@ -101,6 +108,8 @@ class WebResultDeliveryTool(BaseTool):
         payload_file_path = files_dir / payload_file_name
         self._write_result_data_file(result_data, data_file_path)
         delivery_payload = self._build_delivery_payload(result_data, session_id, task_id)
+        generated_assets_dir = session_dir / "generated_assets"
+        self._ensure_downloadable_blocks(delivery_payload, generated_assets_dir)
         self._write_delivery_payload_file(delivery_payload, payload_file_path)
 
         payload_file_url = f"{file_base_url}{payload_file_name}"
@@ -270,6 +279,122 @@ class WebResultDeliveryTool(BaseTool):
             json.dump(payload_dict, f, ensure_ascii=False, indent=2)
         print(f"[WEB_RESULT_DELIVERY] Saved delivery payload to {file_path}")
 
+    def _ensure_downloadable_blocks(self, payload: DeliveryPayload, generated_dir: Path) -> None:
+        for block in payload.blocks:
+            if isinstance(block, TableBlock):
+                if block.csv_asset_id:
+                    continue
+                has_data = bool(block.columns) or bool(block.rows)
+                if not has_data:
+                    continue
+                asset = self._create_csv_asset(payload, block, generated_dir)
+                block.csv_asset_id = asset.id
+            elif isinstance(block, MarkdownBlock):
+                if block.asset_id or not block.content:
+                    continue
+                asset = self._create_text_asset(
+                    payload=payload,
+                    block=block,
+                    generated_dir=generated_dir,
+                    extension=".md",
+                    content=block.content,
+                    mime_type="text/markdown",
+                )
+                block.asset_id = asset.id
+            elif isinstance(block, TextBlock):
+                if block.asset_id or not block.content:
+                    continue
+                extension, mime_type = self._pick_text_block_extension(block)
+                asset = self._create_text_asset(
+                    payload=payload,
+                    block=block,
+                    generated_dir=generated_dir,
+                    extension=extension,
+                    content=block.content,
+                    mime_type=mime_type,
+                )
+                block.asset_id = asset.id
+
+    def _create_text_asset(
+        self,
+        *,
+        payload: DeliveryPayload,
+        block: TextBlock | MarkdownBlock,
+        generated_dir: Path,
+        extension: str,
+        content: str,
+        mime_type: Optional[str] = None,
+    ) -> DeliveryAsset:
+        generated_dir.mkdir(parents=True, exist_ok=True)
+        filename = self._build_asset_filename(block, "content", extension)
+        file_path = generated_dir / filename
+        with open(file_path, 'w', encoding='utf-8') as handle:
+            handle.write(content or '')
+        asset = DeliveryAsset(
+            source_path=str(file_path),
+            filename=filename,
+            asset_type="file",
+            mime_type=mime_type,
+            description=block.description or block.title or f"{block.type} content",
+            id=uuid.uuid4().hex,
+        )
+        payload.assets.append(asset)
+        return asset
+
+    def _create_csv_asset(
+        self,
+        payload: DeliveryPayload,
+        block: TableBlock,
+        generated_dir: Path,
+    ) -> DeliveryAsset:
+        generated_dir.mkdir(parents=True, exist_ok=True)
+        filename = self._build_asset_filename(block, "table", ".csv")
+        file_path = generated_dir / filename
+        with open(file_path, 'w', newline='', encoding='utf-8') as handle:
+            writer = csv.writer(handle)
+            if block.columns:
+                writer.writerow(block.columns)
+            for row in block.rows or []:
+                writer.writerow([self._stringify_csv_cell(value) for value in row])
+        asset = DeliveryAsset(
+            source_path=str(file_path),
+            filename=filename,
+            asset_type="csv",
+            mime_type="text/csv",
+            description=block.description or block.title or "Table data",
+            id=uuid.uuid4().hex,
+        )
+        payload.assets.append(asset)
+        return asset
+
+    def _build_asset_filename(self, block: Any, fallback: str, extension: str) -> str:
+        slug = self._slugify(block.title or block.type, fallback)
+        unique = uuid.uuid4().hex[:8]
+        if not extension.startswith('.'):
+            extension = f".{extension}"
+        return f"{slug}-{unique}{extension}"
+
+    def _slugify(self, value: Optional[str], fallback: str) -> str:
+        base = (value or fallback or "block").lower()
+        slug = re.sub(r'[^a-z0-9]+', '-', base).strip('-')
+        return slug or fallback or "block"
+
+    def _stringify_csv_cell(self, value: Any) -> str:
+        if value is None:
+            return ""
+        return str(value)
+
+    def _pick_text_block_extension(self, block: TextBlock) -> tuple[str, Optional[str]]:
+        fmt = (block.format or '').lower()
+        block_type = (block.type or '').lower()
+        if fmt == "json" or block_type == "json":
+            return ".json", "application/json"
+        if fmt == "markdown" or block_type == "markdown":
+            return ".md", "text/markdown"
+        if fmt == "code":
+            return ".txt", "text/plain"
+        return ".txt", "text/plain"
+
     def _copy_payload_assets(self, payload: DeliveryPayload, dest_dir: Path) -> List[Path]:
         copied: List[Path] = []
         for asset in payload.assets:
@@ -386,11 +511,14 @@ class WebResultDeliveryTool(BaseTool):
     table {{
       border-collapse: collapse;
       width: 100%;
+      table-layout: fixed;
     }}
     th, td {{
       border: 1px solid var(--border);
       padding: 0.4rem 0.6rem;
       text-align: left;
+      word-break: break-word;
+      white-space: normal;
     }}
     th {{
       background: #eef4ff;
