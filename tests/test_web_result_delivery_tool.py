@@ -19,6 +19,35 @@ sys.path.insert(0, str(project_root))
 from tools.web_result_delivery_tool import WebResultDeliveryTool
 
 
+def build_payload(
+    session_id: str,
+    task_id: str,
+    *,
+    blocks: list[dict] | None = None,
+    assets: list[dict] | None = None,
+    title: str = "Task Result",
+    summary: str | None = None,
+) -> dict:
+    return {
+        "version": "1.0",
+        "meta": {
+            "title": title,
+            "session_id": session_id,
+            "task_id": task_id,
+        },
+        "summary": summary,
+        "blocks": blocks or [
+            {
+                "type": "text",
+                "title": "Summary",
+                "content": "Task completed",
+                "format": "plain",
+            }
+        ],
+        "assets": assets or [],
+    }
+
+
 class TestWebResultDeliveryTool:
     """Test cases for WebResultDeliveryTool"""
     
@@ -60,8 +89,20 @@ class TestWebResultDeliveryTool:
             
             with patch('tools.web_result_delivery_tool.__file__', str(temp_project / 'tools' / 'web_result_delivery_tool.py')):
                 with patch('utils.user_notify.notify_user'):
+                    payload = build_payload(
+                        "test_session",
+                        "test_task",
+                        blocks=[
+                            {
+                                "type": "text",
+                                "title": "Status",
+                                "content": "Task completed successfully",
+                                "format": "plain",
+                            }
+                        ],
+                    )
                     parameters = {
-                        "result_data": "Task completed successfully",
+                        "result_data": payload,
                         "session_id": "test_session",
                         "task_id": "test_task"
                     }
@@ -72,8 +113,11 @@ class TestWebResultDeliveryTool:
                     # Verify result
                     assert result["status"] == "ok"
                     assert result["result_url"] == "http://localhost:8000/result-delivery/test_session/test_task/"
-                    data_file = temp_project / "user_comm" / "sessions" / "test_session" / "test_task" / "files" / "result_data.json"
-                    assert result["file_included_in_html"] == [str(data_file)]
+                    assert result["pretty_result_url"] == "http://localhost:8000/result-delivery/test_session/test_task/pretty.html"
+                    files_dir = temp_project / "user_comm" / "sessions" / "test_session" / "test_task" / "files"
+                    data_file = files_dir / "result_data.json"
+                    payload_file = files_dir / "delivery_payload.json"
+                    assert result["file_included_in_html"] == sorted({str(data_file), str(payload_file)})
                     
                     # Verify LLM was called
                     tool.llm_tool.execute.assert_called_once()
@@ -81,6 +125,8 @@ class TestWebResultDeliveryTool:
                     # Verify HTML file was created
                     session_dir = temp_project / "user_comm" / "sessions" / "test_session" / "test_task"
                     assert (session_dir / "index.html").exists()
+                    assert (session_dir / "pretty.html").exists()
+                    assert "Pretty format" in (session_dir / "index.html").read_text()
     
     @pytest.mark.asyncio
     async def test_result_with_files(self, tool):
@@ -113,11 +159,36 @@ class TestWebResultDeliveryTool:
             
             with patch('tools.web_result_delivery_tool.__file__', str(temp_project / 'tools' / 'web_result_delivery_tool.py')):
                 with patch('utils.user_notify.notify_user'):
+                    payload = build_payload(
+                        "file_test",
+                        "task_files",
+                        blocks=[
+                            {
+                                "type": "text",
+                                "title": "Summary",
+                                "content": "Results with files",
+                                "format": "plain",
+                            },
+                            {"type": "file", "title": "File 1", "asset_id": "file_1"},
+                            {"type": "file", "title": "File 2", "asset_id": "file_2"},
+                        ],
+                        assets=[
+                            {
+                                "id": "file_1",
+                                "source_path": str(test_file1),
+                                "filename": "test1.txt",
+                                "asset_type": "file",
+                            },
+                            {
+                                "id": "file_2",
+                                "source_path": str(test_file2),
+                                "filename": "test2.json",
+                                "asset_type": "file",
+                            },
+                        ],
+                    )
                     parameters = {
-                        "result_data": {
-                            "message": "Results with files",
-                            "files": [str(test_file1), str(test_file2)]
-                        },
+                        "result_data": payload,
                         "session_id": "file_test",
                         "task_id": "task_files"
                     }
@@ -126,6 +197,7 @@ class TestWebResultDeliveryTool:
                         result = await tool.execute(parameters)
                     
                     assert result["status"] == "ok"
+                    assert result["pretty_result_url"] == "http://localhost:8000/result-delivery/file_test/task_files/pretty.html"
                     
                     # Verify files were copied
                     files_dir = temp_project / "user_comm" / "sessions" / "file_test" / "task_files" / "files"
@@ -134,6 +206,7 @@ class TestWebResultDeliveryTool:
                     assert (files_dir / "test1.txt").read_text() == "Test file 1 content"
                     expected_files = {
                         str(files_dir / "result_data.json"),
+                        str(files_dir / "delivery_payload.json"),
                         str(files_dir / "test1.txt"),
                         str(files_dir / "test2.json"),
                     }
@@ -166,11 +239,34 @@ class TestWebResultDeliveryTool:
             
             with patch('tools.web_result_delivery_tool.__file__', str(temp_project / 'tools' / 'web_result_delivery_tool.py')):
                 with patch('utils.user_notify.notify_user'):
+                    payload = build_payload(
+                        "image_test",
+                        "task_image",
+                        blocks=[
+                            {
+                                "type": "text",
+                                "title": "Summary",
+                                "content": "Chart generated",
+                                "format": "plain",
+                            },
+                            {
+                                "type": "image",
+                                "title": "Chart",
+                                "asset_id": "img_1",
+                                "alt_text": "Chart",
+                            },
+                        ],
+                        assets=[
+                            {
+                                "id": "img_1",
+                                "source_path": str(test_image),
+                                "filename": "chart.png",
+                                "asset_type": "image",
+                            }
+                        ],
+                    )
                     parameters = {
-                        "result_data": {
-                            "message": "Chart generated",
-                            "image_path": str(test_image)
-                        },
+                        "result_data": payload,
                         "session_id": "image_test",
                         "task_id": "task_image"
                     }
@@ -179,12 +275,14 @@ class TestWebResultDeliveryTool:
                         result = await tool.execute(parameters)
                     
                     assert result["status"] == "ok"
+                    assert result["pretty_result_url"] == "http://localhost:8000/result-delivery/image_test/task_image/pretty.html"
                     
                     # Verify image was copied
                     files_dir = temp_project / "user_comm" / "sessions" / "image_test" / "task_image" / "files"
                     assert (files_dir / "chart.png").exists()
                     expected_files = {
                         str(files_dir / "result_data.json"),
+                        str(files_dir / "delivery_payload.json"),
                         str(files_dir / "chart.png"),
                     }
                     assert set(result["file_included_in_html"]) == expected_files
@@ -204,7 +302,18 @@ class TestWebResultDeliveryTool:
             
             with patch('tools.web_result_delivery_tool.__file__', str(temp_project / 'tools' / 'web_result_delivery_tool.py')):
                 parameters = {
-                    "result_data": "New result",
+                    "result_data": build_payload(
+                        "existing_result",
+                        "task1",
+                        blocks=[
+                            {
+                                "type": "text",
+                                "title": "Existing",
+                                "content": "New result",
+                                "format": "plain",
+                            }
+                        ],
+                    ),
                     "session_id": "existing_result",
                     "task_id": "task1"
                 }
@@ -215,6 +324,7 @@ class TestWebResultDeliveryTool:
                 # Should return existing result
                 assert result["status"] == "ok"
                 assert result["file_included_in_html"] == []
+                assert result["pretty_result_url"] == "http://localhost:8000/result-delivery/existing_result/task1/pretty.html"
                 
                 # HTML should not be modified
                 assert index_file.read_text() == "<!DOCTYPE html><html><body>Existing Result</body></html>"
@@ -239,7 +349,18 @@ class TestWebResultDeliveryTool:
             with patch('tools.web_result_delivery_tool.__file__', str(temp_project / 'tools' / 'web_result_delivery_tool.py')):
                 with patch('utils.user_notify.notify_user'):
                     parameters = {
-                        "result_data": "sandbox",
+                        "result_data": build_payload(
+                            "sess123",
+                            "task456",
+                            blocks=[
+                                {
+                                    "type": "text",
+                                    "title": "Sandbox",
+                                    "content": "sandbox",
+                                    "format": "plain",
+                                }
+                            ],
+                        ),
                         "session_id": "sess123",
                         "task_id": "task456",
                         "job_id": "job789"
@@ -249,8 +370,12 @@ class TestWebResultDeliveryTool:
 
                     expected = "http://localhost:8000/sandbox/job789/app/user_comm/sessions/sess123/task456/index.html"
                     assert result["result_url"] == expected
+                    assert result["pretty_result_url"] == "http://localhost:8000/sandbox/job789/app/user_comm/sessions/sess123/task456/pretty.html"
                     files_dir = temp_project / "user_comm" / "sessions" / "sess123" / "task456" / "files"
-                    assert result["file_included_in_html"] == [str(files_dir / "result_data.json")]
+                    assert result["file_included_in_html"] == sorted({
+                        str(files_dir / "result_data.json"),
+                        str(files_dir / "delivery_payload.json"),
+                    })
     
     @pytest.mark.asyncio
     async def test_json_result_data(self, tool):
@@ -274,8 +399,21 @@ class TestWebResultDeliveryTool:
             
             with patch('tools.web_result_delivery_tool.__file__', str(temp_project / 'tools' / 'web_result_delivery_tool.py')):
                 with patch('utils.user_notify.notify_user'):
+                    raw_content = json.dumps({"status": "success", "count": 42, "items": ["a", "b", "c"]})
+                    payload = build_payload(
+                        "json_test",
+                        "task_json",
+                        blocks=[
+                            {
+                                "type": "json",
+                                "title": "Raw Data",
+                                "content": raw_content,
+                                "format": "json",
+                            }
+                        ],
+                    )
                     parameters = {
-                        "result_data": {"status": "success", "count": 42, "items": ["a", "b", "c"]},
+                        "result_data": payload,
                         "session_id": "json_test",
                         "task_id": "task_json"
                     }
@@ -288,8 +426,8 @@ class TestWebResultDeliveryTool:
                     # Verify LLM received JSON string
                     call_args = tool.llm_tool.execute.call_args
                     prompt = call_args[0][0]["prompt"]
-                    assert '"status": "success"' in prompt
-                    assert '"count": 42' in prompt
+                    assert '"Raw Data"' in prompt
+                    assert "status" in prompt
     
     @pytest.mark.asyncio
     async def test_llm_error_propagation(self, tool):
@@ -304,7 +442,18 @@ class TestWebResultDeliveryTool:
             with patch('tools.web_result_delivery_tool.__file__', str(temp_project / 'tools' / 'web_result_delivery_tool.py')):
                 with patch('utils.user_notify.notify_user'):
                     parameters = {
-                        "result_data": "Test data",
+                        "result_data": build_payload(
+                            "error_test",
+                            "task_error",
+                            blocks=[
+                                {
+                                    "type": "text",
+                                    "title": "Error",
+                                    "content": "Test data",
+                                    "format": "plain",
+                                }
+                            ],
+                        ),
                         "session_id": "error_test",
                         "task_id": "task_error"
                     }
@@ -378,17 +527,30 @@ class TestWebResultDeliveryTool:
             
             with patch('tools.web_result_delivery_tool.__file__', str(temp_project / 'tools' / 'web_result_delivery_tool.py')):
                 with patch('utils.user_notify.notify_user'):
+                    payload = build_payload(
+                        "missing_file_test",
+                        "task_missing",
+                        blocks=[
+                            {"type": "text", "title": "Result", "content": "Result", "format": "plain"},
+                            {"type": "file", "title": "Missing", "asset_id": "file_1"},
+                        ],
+                        assets=[
+                            {
+                                "id": "file_1",
+                                "source_path": "/nonexistent/file.txt",
+                                "filename": "file.txt",
+                                "asset_type": "file",
+                            }
+                        ],
+                    )
                     parameters = {
-                        "result_data": {
-                            "message": "Result",
-                            "files": ["/nonexistent/file.txt", ""]
-                        },
+                        "result_data": payload,
                         "session_id": "missing_file_test",
                         "task_id": "task_missing"
                     }
                     
                     with patch.dict(os.environ, {'VISUALIZATION_SERVER_URL': 'http://localhost:8000'}):
-                        with pytest.raises(ValueError, match="File not found"):
+                        with pytest.raises(ValueError, match="Failed to normalize result data"):
                             await tool.execute(parameters)
 
     @pytest.mark.asyncio
@@ -434,7 +596,18 @@ class TestWebResultDeliveryTool:
             with patch('tools.web_result_delivery_tool.__file__', str(temp_project / 'tools' / 'web_result_delivery_tool.py')):
                 with patch('utils.user_notify.notify_user'):
                     parameters = {
-                        "result_data": "Retry test",
+                        "result_data": build_payload(
+                            "retry_session",
+                            "retry_task",
+                            blocks=[
+                                {
+                                    "type": "text",
+                                    "title": "Retry",
+                                    "content": "Retry test",
+                                    "format": "plain",
+                                }
+                            ],
+                        ),
                         "session_id": "retry_session",
                         "task_id": "retry_task"
                     }
@@ -479,7 +652,18 @@ class TestWebResultDeliveryTool:
             with patch('tools.web_result_delivery_tool.__file__', str(temp_project / 'tools' / 'web_result_delivery_tool.py')):
                 with patch('utils.user_notify.notify_user'):
                     parameters = {
-                        "result_data": "Failure test",
+                        "result_data": build_payload(
+                            "retry_fail_session",
+                            "retry_fail_task",
+                            blocks=[
+                                {
+                                    "type": "text",
+                                    "title": "Retry",
+                                    "content": "Failure test",
+                                    "format": "plain",
+                                }
+                            ],
+                        ),
                         "session_id": "retry_fail_session",
                         "task_id": "retry_fail_task"
                     }

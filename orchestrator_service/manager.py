@@ -169,6 +169,9 @@ class SandboxRunner(BaseRunner):
         try:
             exit_status = await self._wait_for_completion()
             await self._download_remote_log()
+        except:
+            # Try to get whatever log we can on failure
+            await self._download_remote_log()
         finally:
             await self._close_client()
         return RunnerResult(exit_code=exit_status)
@@ -188,7 +191,7 @@ class SandboxRunner(BaseRunner):
         while True:
             wait_response = await self._sandbox_client.shell.wait_for_process(
                 id=self._session_id,
-                seconds=2,
+                seconds=20,
             )
             print("[SANDBOX WAIT] Response:", wait_response)
             wait_data = self._unwrap_response_data(wait_response, context="wait for sandbox process")
@@ -360,13 +363,13 @@ class SandboxRunner(BaseRunner):
     @staticmethod
     def _unwrap_response_data(response: Any, *, context: str):
         if response is None:
-            raise RuntimeError(f"Sandbox {context} returned no response object")
+            raise RuntimeError(f"Sandbox 【{context}】 returned no response object")
         if getattr(response, "success", None) is False:
             message = getattr(response, "message", "unknown error")
-            raise RuntimeError(f"Sandbox {context} failed: {message}")
+            raise RuntimeError(f"Sandbox 【{context}】 failed: {message}")
         data = getattr(response, "data", None)
         if data is None:
-            raise RuntimeError(f"Sandbox {context} returned empty data")
+            raise RuntimeError(f"Sandbox 【{context}】 returned empty data")
         return data
 
 
