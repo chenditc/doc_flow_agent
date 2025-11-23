@@ -289,31 +289,6 @@ class WebResultDeliveryTool(BaseTool):
                     continue
                 asset = self._create_csv_asset(payload, block, generated_dir)
                 block.csv_asset_id = asset.id
-            elif isinstance(block, MarkdownBlock):
-                if block.asset_id or not block.content:
-                    continue
-                asset = self._create_text_asset(
-                    payload=payload,
-                    block=block,
-                    generated_dir=generated_dir,
-                    extension=".md",
-                    content=block.content,
-                    mime_type="text/markdown",
-                )
-                block.asset_id = asset.id
-            elif isinstance(block, TextBlock):
-                if block.asset_id or not block.content:
-                    continue
-                extension, mime_type = self._pick_text_block_extension(block)
-                asset = self._create_text_asset(
-                    payload=payload,
-                    block=block,
-                    generated_dir=generated_dir,
-                    extension=extension,
-                    content=block.content,
-                    mime_type=mime_type,
-                )
-                block.asset_id = asset.id
 
     def _create_text_asset(
         self,
@@ -420,6 +395,7 @@ class WebResultDeliveryTool(BaseTool):
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/json-formatter-js@2.3.4/dist/json-formatter.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/gridjs@6.2.0/dist/theme/mermaid.min.css">
   <style>
     :root {{
       font-family: 'Roboto', sans-serif;
@@ -520,6 +496,12 @@ class WebResultDeliveryTool(BaseTool):
       word-break: break-word;
       white-space: normal;
     }}
+    .table-wrapper {{
+      width: 100%;
+      overflow: auto;
+      resize: horizontal;
+      padding-bottom: 0.25rem;
+    }}
     th {{
       background: #eef4ff;
       font-weight: 600;
@@ -566,6 +548,95 @@ class WebResultDeliveryTool(BaseTool):
     .table-csv-preview {{
       margin-bottom: 0.75rem;
     }}
+    .data-grid {{
+      margin-bottom: 0.75rem;
+      border-radius: 12px;
+      overflow: hidden;
+    }}
+    .truncated-cell {{
+      display: inline-block;
+      max-width: 280px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      cursor: pointer;
+      border-bottom: 1px dashed rgba(19, 41, 75, 0.4);
+    }}
+    .truncated-cell:hover {{
+      border-bottom-color: #0f62fe;
+      color: #0f62fe;
+    }}
+    .gridjs-container {{
+      border-radius: 12px;
+      border: 1px solid var(--border) !important;
+      box-shadow: 0 4px 10px rgba(15, 98, 254, 0.05);
+      font-size: 0.95rem;
+    }}
+    .gridjs-td {{
+      padding: 5px !important;
+      white-space: nowrap;
+      min-width: 58px;
+    }}
+    .gridjs-th {{
+      padding: 5px !important;
+      white-space: normal;
+      min-width: 58px;
+    }}
+    .gridjs-pagination .gridjs-pages button {{
+      border-radius: 999px !important;
+    }}
+    .gridjs-th-content {{
+      font-weight: 600;
+      color: #13294b;
+      white-space: normal;
+      word-break: break-word;
+      line-height: 1.2;
+    }}
+    .modal-overlay {{
+      position: fixed;
+      inset: 0;
+      background: rgba(4, 11, 28, 0.6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+      z-index: 1000;
+    }}
+    .modal-overlay.hidden {{
+      display: none;
+    }}
+    .modal-content {{
+      background: #fff;
+      border-radius: 12px;
+      max-width: 640px;
+      width: 100%;
+      max-height: 80vh;
+      overflow: auto;
+      padding: 1.25rem;
+      box-shadow: 0 12px 40px rgba(4, 11, 28, 0.25);
+      position: relative;
+    }}
+    .modal-close {{
+      position: absolute;
+      top: 0.65rem;
+      right: 0.65rem;
+      border: none;
+      background: transparent;
+      font-size: 1.5rem;
+      cursor: pointer;
+      color: #5f6c80;
+    }}
+    .modal-close:hover {{
+      color: #0f62fe;
+    }}
+    .modal-body {{
+      margin-top: 0.5rem;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: 'Roboto', sans-serif;
+      font-size: 0.95rem;
+      color: #1f2933;
+    }}
     @media (max-width: 600px) {{
       .app-header {{
         flex-direction: column;
@@ -601,19 +672,66 @@ class WebResultDeliveryTool(BaseTool):
       <div id="attachment-list"></div>
     </section>
   </main>
+  <div id="cell-modal" class="modal-overlay hidden" role="dialog" aria-modal="true">
+    <div class="modal-content">
+      <button id="cell-modal-close" class="modal-close" aria-label="Close">&times;</button>
+      <h3>Cell content</h3>
+      <div id="cell-modal-body" class="modal-body"></div>
+    </div>
+  </div>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.3/dist/purify.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/json-formatter-js@2.3.4/dist/json-formatter.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gridjs@6.2.0/dist/gridjs.umd.js"></script>
   <script>
     const PAYLOAD_URL = '{payload_relative_path}';
     const FILE_BASE_PATH = 'files/';
     const FILE_BASE_URL = new URL(FILE_BASE_PATH, window.location.href).href;
     const assetContentCache = new Map();
+    const MAX_CELL_LENGTH = 40;
+    const TRUNCATED_CELL_CLASS = 'truncated-cell';
+
+    const cellModal = {{
+      overlay: document.getElementById('cell-modal'),
+      body: document.getElementById('cell-modal-body'),
+      closeButton: document.getElementById('cell-modal-close'),
+    }};
 
     document.addEventListener('DOMContentLoaded', () => {{
       fetchPayload();
     }});
+
+    document.addEventListener('click', (event) => {{
+      const truncated = event.target.closest(`.${{TRUNCATED_CELL_CLASS}}`);
+      if (truncated) {{
+        const full = truncated.getAttribute('data-full') || '';
+        openCellModal(full);
+      }}
+    }});
+
+    document.addEventListener('keydown', (event) => {{
+      if (event.key === 'Escape') {{
+        closeCellModal();
+        return;
+      }}
+      if ((event.key === 'Enter' || event.key === ' ') && event.target instanceof HTMLElement && event.target.classList.contains(TRUNCATED_CELL_CLASS)) {{
+        event.preventDefault();
+        const full = event.target.getAttribute('data-full') || '';
+        openCellModal(full);
+      }}
+    }});
+
+    if (cellModal.overlay) {{
+      cellModal.overlay.addEventListener('click', (event) => {{
+        if (event.target === cellModal.overlay) {{
+          closeCellModal();
+        }}
+      }});
+    }}
+    if (cellModal.closeButton) {{
+      cellModal.closeButton.addEventListener('click', () => closeCellModal());
+    }}
 
     function createActionButton(label, iconName = 'task_alt') {{
       const button = document.createElement('button');
@@ -636,6 +754,81 @@ class WebResultDeliveryTool(BaseTool):
     function setButtonLabel(button, label) {{
       const target = button._labelNode || button;
       target.textContent = label;
+    }}
+
+    function escapeHtml(value) {{
+      return (value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }}
+
+    function formatGridCell(value) {{
+      if (typeof value !== 'string') {{
+        return value ?? '';
+      }}
+      const text = value;
+      if (text.length <= MAX_CELL_LENGTH) {{
+        return text;
+      }}
+      const truncated = `${{text.slice(0, MAX_CELL_LENGTH)}}…`;
+      if (window.gridjs && window.gridjs.html) {{
+        return window.gridjs.html(`<span class="${{TRUNCATED_CELL_CLASS}}" data-full="${{escapeHtml(text)}}" tabindex="0" role="button" aria-label="View full cell content">${{escapeHtml(truncated)}}</span>`);
+      }}
+      return truncated;
+    }}
+
+    function buildGridColumns(headers) {{
+      if (!Array.isArray(headers)) {{
+        return [];
+      }}
+      return headers.map((header, index) => ({{
+        name: header || `Column ${{index + 1}}`,
+        formatter: (value) => formatGridCell(value),
+      }}));
+    }}
+
+
+    function openCellModal(content) {{
+      if (!cellModal.overlay || !cellModal.body) {{
+        return;
+      }}
+      cellModal.body.textContent = content || '';
+      cellModal.overlay.classList.remove('hidden');
+    }}
+
+    function closeCellModal() {{
+      if (!cellModal.overlay) {{
+        return;
+      }}
+      cellModal.overlay.classList.add('hidden');
+    }}
+
+    function normalizeCellValue(value) {{
+      if (value === undefined || value === null) {{
+        return '';
+      }}
+      if (typeof value === 'object') {{
+        try {{
+          return JSON.stringify(value);
+        }} catch (_) {{
+          return String(value);
+        }}
+      }}
+      return String(value);
+    }}
+
+    function mountGrid(target, config, fallbackText = 'Interactive table unavailable (Grid.js missing).') {{
+      if (!window.gridjs || !window.gridjs.Grid) {{
+        target.textContent = fallbackText;
+        target.style.color = '#5f6c80';
+        return null;
+      }}
+      const grid = new window.gridjs.Grid(config);
+      grid.render(target);
+      return grid;
     }}
 
     function fileUrl(filename) {{
@@ -906,47 +1099,55 @@ class WebResultDeliveryTool(BaseTool):
 
     async function renderTable(block, container, assetMap) {{
       const hasColumns = Array.isArray(block.columns) && block.columns.length > 0;
+      const inlineRows = Array.isArray(block.rows) ? block.rows : [];
       const csvAsset = block.csv_asset_id ? assetMap[block.csv_asset_id] : null;
+
       if (block.csv_asset_id && !csvAsset) {{
         const warning = document.createElement('p');
         warning.textContent = 'CSV asset not found.';
         warning.style.color = '#d93025';
         container.appendChild(warning);
       }}
+
       if (csvAsset) {{
         const previewContainer = document.createElement('div');
         previewContainer.className = 'table-csv-preview';
         container.appendChild(previewContainer);
         await renderCsvPreview(previewContainer, csvAsset);
       }}
-      if (hasColumns) {{
-        const table = document.createElement('table');
-        const thead = document.createElement('thead');
-        const headerRow = document.createElement('tr');
-        block.columns.forEach(column => {{
-          const th = document.createElement('th');
-          th.textContent = column;
-          headerRow.appendChild(th);
-        }});
-        thead.appendChild(headerRow);
-        table.appendChild(thead);
 
-        const tbody = document.createElement('tbody');
-        (block.rows || []).forEach(row => {{
-          const tr = document.createElement('tr');
-          row.forEach(cell => {{
-            const td = document.createElement('td');
-            td.textContent = cell ?? '';
-            tr.appendChild(td);
-          }});
-          tbody.appendChild(tr);
-        }});
-        table.appendChild(tbody);
-        container.appendChild(table);
+      if (hasColumns) {{
+        if (inlineRows.length) {{
+          const gridContainer = document.createElement('div');
+          gridContainer.className = 'data-grid';
+          container.appendChild(gridContainer);
+          const pagination = inlineRows.length > 20 ? {{ enabled: true, limit: 20 }} : false;
+          const paginationConfig = pagination || true;
+          const gridColumns = buildGridColumns(block.columns);
+          const gridData = inlineRows.map(row => block.columns.map((_, idx) => normalizeCellValue(row[idx])));
+          mountGrid(gridContainer, {{
+            columns: gridColumns,
+            data: gridData,
+            search: true,
+            sort: true,
+            resizable: true,
+            pagination: paginationConfig,
+            fixedHeader: true,
+            height: '400px',
+            autoWidth: true,
+          }}, 'Table preview unavailable.');
+        }} else {{
+          const note = document.createElement('p');
+          note.className = 'table-widget-note';
+          note.textContent = 'No inline table rows available.';
+          container.appendChild(note);
+        }}
       }}
+
       if (!csvAsset && !hasColumns) {{
         container.textContent = 'Table data unavailable.';
       }}
+
       if (csvAsset) {{
         const buttonWrap = document.createElement('div');
         addDownloadButton(buttonWrap, 'Download CSV', fileUrl(csvAsset.filename));
@@ -1114,39 +1315,49 @@ class WebResultDeliveryTool(BaseTool):
         }}
         const csvText = await response.text();
         const parsed = window.Papa.parse(csvText, {{ skipEmptyLines: true }});
-        const rows = Array.isArray(parsed.data) ? parsed.data.filter(row => row.some(cell => cell !== null && cell !== undefined && String(cell).trim() !== '')) : [];
+        const rows = Array.isArray(parsed.data)
+          ? parsed.data.filter(row => Array.isArray(row) && row.some(cell => cell !== null && cell !== undefined && String(cell).trim() !== ''))
+          : [];
         if (!rows.length) {{
           status.textContent = 'CSV file is empty.';
           return;
         }}
         const MAX_ROWS = 200;
         const previewRows = rows.slice(0, MAX_ROWS);
-        const columnCount = previewRows.reduce((max, row) => Math.max(max, row.length), 0);
-        const table = document.createElement('table');
-        const thead = document.createElement('thead');
-        const headerRow = document.createElement('tr');
-        const headerValues = previewRows[0] ?? [];
-        for (let i = 0; i < columnCount; i++) {{
-          const th = document.createElement('th');
-          th.textContent = headerValues[i] ?? `Column ${{i + 1}}`;
-          headerRow.appendChild(th);
+        const headerValues = Array.isArray(previewRows[0]) ? previewRows[0] : [];
+        const columnCount = headerValues.length || previewRows.reduce((max, row) => Math.max(max, row.length), 0);
+        if (!columnCount) {{
+          status.textContent = 'CSV file does not contain tabular data.';
+          return;
         }}
-        thead.appendChild(headerRow);
-        table.appendChild(thead);
-        const tbody = document.createElement('tbody');
-        previewRows.slice(1).forEach(row => {{
-          const tr = document.createElement('tr');
+        const columns = [];
+        for (let i = 0; i < columnCount; i++) {{
+          columns.push(headerValues[i] ?? `Column ${{i + 1}}`);
+        }}
+        const dataRows = previewRows.slice(1).map(row => {{
+          const normalized = [];
           for (let i = 0; i < columnCount; i++) {{
-            const td = document.createElement('td');
-            const value = row[i];
-            td.textContent = value === undefined || value === null ? '' : String(value);
-            tr.appendChild(td);
+            normalized.push(normalizeCellValue(row[i]));
           }}
-          tbody.appendChild(tr);
+          return normalized;
         }});
-        table.appendChild(tbody);
         target.innerHTML = '';
-        target.appendChild(table);
+        const gridContainer = document.createElement('div');
+        gridContainer.className = 'data-grid';
+        target.appendChild(gridContainer);
+        const pagination = dataRows.length > 20 ? {{ enabled: true, limit: 20 }} : false;
+        const paginationConfig = pagination || true;
+        const gridColumns = buildGridColumns(columns);
+        mountGrid(gridContainer, {{
+          columns: gridColumns,
+          data: dataRows,
+          search: true,
+          sort: true,
+          pagination: paginationConfig,
+          fixedHeader: true,
+          height: '400px',
+          resizable: true,
+        }}, 'CSV preview unavailable.');
         const note = document.createElement('p');
         note.className = 'table-widget-note';
         if (rows.length > MAX_ROWS) {{
