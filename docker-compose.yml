@@ -105,6 +105,7 @@ services:
       - sandbox_traces:/app/traces
       - sandbox_jobs:/app/jobs
       - sandbox_log:/app/log
+      - sandbox_user_data:/user_data/
     # The base image starts the sandbox server; no command override here
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/v1/sandbox"]
@@ -116,13 +117,10 @@ services:
   init-embedding-cache:
     image: alpine:3.20
     command: >
-      sh -c "mkdir -p /app/embedding_cache && chmod -R 777 /app/embedding_cache" && chmod -R 777 /app/user_comm && chmod -R 777 /app/traces && chmod -R 777 /app/jobs && chmod -R 777 /app/log
+      sh -e -x -c "mkdir -p /app/embedding_cache && chmod -R 777 /app/embedding_cache && chmod -R 777 /user_data"
     volumes:
       - embedding_cache:/app/embedding_cache
-      - traces:/app/traces
-      - jobs:/app/jobs
-      - log:/app/log
-      - user_comm:/app/user_comm
+      - sandbox_user_data:/user_data/
     restart: "no"
 
 volumes:
@@ -134,4 +132,5 @@ volumes:
   sandbox_jobs:
   sandbox_log:
   sandbox_user_comm:
+  sandbox_user_data:
   embedding_cache:
