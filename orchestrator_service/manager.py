@@ -457,6 +457,12 @@ class ExecutionManager:
     def _normalize_env(env: Dict[str, Any]) -> Dict[str, str]:
         return {str(key): str(value) for key, value in env.items()}
 
+    def _generate_job_id(self) -> str:
+        """Create a sortable job id with a timestamp prefix."""
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        random_suffix = uuid.uuid4().hex[:8]
+        return f"{timestamp}-{random_suffix}"
+
     def _normalize_requested_sandbox_path(self, requested_path: str) -> PurePosixPath:
         """Ensure the user-provided sandbox path is an absolute, normalized path under SANDBOX_WORKDIR."""
         cleaned = (requested_path or "").strip()
@@ -771,7 +777,7 @@ class ExecutionManager:
         env_vars: Optional[Dict[str, str]] = None,
         sandbox_url: Optional[str] = None,
     ) -> Job:
-        job_id = uuid.uuid4().hex[:16]
+        job_id = self._generate_job_id()
         job_env = dict(env_vars or {})
         resolved_sandbox_url = self._resolve_sandbox_url(sandbox_url)
         job = Job(
@@ -810,7 +816,7 @@ class ExecutionManager:
         sandbox_url: Optional[str] = None,
     ) -> Job:
         """Async version for proper test usage."""
-        job_id = uuid.uuid4().hex[:16]
+        job_id = self._generate_job_id()
         job_env = dict(env_vars or {})
         resolved_sandbox_url = self._resolve_sandbox_url(sandbox_url)
         job = Job(
