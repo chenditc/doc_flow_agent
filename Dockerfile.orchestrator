@@ -13,6 +13,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# Setup china mirror for debian packages,  /etc/apt/sources.list  not exists
+RUN sed -i 's/deb.debian.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list.d/debian.sources \
+	&& sed -i 's/security.debian.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list.d/debian.sources \
+	&& sed -i 's/ports.debian.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list.d/debian.sources \
+	&& sed -i 's/old-releases.debian.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list.d/debian.sources
+
 # System deps (curl for healthcheck, build tools if needed)
 RUN apt-get update && apt-get install -y --no-install-recommends \
 	build-essential curl && \
@@ -29,7 +35,7 @@ COPY . .
 EXPOSE 8001
 
 # Create mount points for runtime data (volumes in compose)
-RUN mkdir -p traces jobs log
+RUN mkdir -p traces jobs schedules log
 VOLUME ["/app/traces", "/app/jobs", "/app/log"]
 
 # Healthcheck queries the FastAPI endpoint once server is up

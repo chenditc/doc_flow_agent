@@ -89,7 +89,7 @@ class SOPDocVectorStore:
                 )
                 description = (sop_doc.description or "").strip()
                 if description:
-                    text = f"{description}"
+                    text = f"{doc_id}: {description}"
                 else:
                     metadata["used_doc_id_fallback"] = True
 

@@ -25,10 +25,18 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# Setup china mirror for debian packages,  /etc/apt/sources.list  not exists
+RUN sed -i 's/deb.debian.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list.d/debian.sources \
+	&& sed -i 's/security.debian.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list.d/debian.sources \
+	&& sed -i 's/ports.debian.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list.d/debian.sources \
+	&& sed -i 's/old-releases.debian.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list.d/debian.sources
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
 	build-essential curl ripgrep && \
 	rm -rf /var/lib/apt/lists/*
 
+# Setup china mirror for pip
+RUN pip config set global.index-url http://mirrors.aliyun.com/pypi/simple && pip config set global.trusted-host mirrors.aliyun.com
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
