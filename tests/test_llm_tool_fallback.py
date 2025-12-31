@@ -393,13 +393,13 @@ def process_step(context: dict):
       "parameters": {
         "type": "object",
         "properties": {
-          "python_code": {
+          "code": {
             "type": "string",
             "description": "Complete Python function definition for function `process_step` that performs the requested task"
           }
         },
         "required": [
-          "python_code"
+          "code"
         ]
       }
     }
@@ -417,9 +417,9 @@ def process_step(context: dict):
 
     assert result.get("tool_calls"), "Expected at least one tool call (native or fallback parsed) in REAL mode long prompt test"
     assert result["tool_calls"][0]["name"] == "generate_python_code"
-    assert result["tool_calls"][0]["arguments"]["python_code"].startswith("def process_step"), "Parsed python_code argument missing or incorrect"
+    assert result["tool_calls"][0]["arguments"]["code"].startswith("def process_step"), "Parsed code argument missing or incorrect"
     # Compile to ensure valid code
-    code_str = result["tool_calls"][0]["arguments"]["python_code"]
+    code_str = result["tool_calls"][0]["arguments"]["code"]
     try:
         compiled = compile(code_str, "<string>", "exec")
     except SyntaxError as e:

@@ -174,7 +174,10 @@ class SOPDocumentParser:
         self.llm_tool = llm_tool
         self.tracer = tracer
         self._vector_store: Optional['SOPDocVectorStore'] = None
-        self.embedding_cache_dir = os.getenv("EMBEDDING_CACHE_DIR", "")
+        # Default to a local on-disk cache directory so embeddings are reused across runs.
+        # Can be overridden with EMBEDDING_CACHE_DIR.
+        default_cache_dir = str((Path(__file__).resolve().parent / ".cache" / "embeddings").resolve())
+        self.embedding_cache_dir = os.getenv("EMBEDDING_CACHE_DIR", default_cache_dir)
         if self.tracer is None:
             # For backwards compatibility in tests, create a minimal tracer
             from tracing import ExecutionTracer
@@ -414,7 +417,9 @@ class SOPDocumentParser:
         # Use injected LLM tool if available, otherwise create a new one
         llm_tool = self.llm_tool if self.llm_tool is not None else LLMTool()
         
-        metadata = await self.get_planning_metadata(description)
+        # Include vector-search candidates to replicate real discovery flow.
+        # Embeddings are cached on disk via EMBEDDING_CACHE_DIR / SOPDocVectorStore defaults.
+        metadata = await self.get_planning_metadata(description, include_vector_candidates=True)
         available_tools = metadata["available_tools"]
         vector_candidates = metadata["vector_candidates"]
         valid_docs = metadata["valid_doc_ids"]

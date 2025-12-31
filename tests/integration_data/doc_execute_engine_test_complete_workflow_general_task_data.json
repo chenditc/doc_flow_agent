@@ -74,6 +74,102 @@
     {
       "tool_id": "LLM",
       "parameters": {
+        "__note": "Alias: select_tool_for_task (prompt/hash drift)",
+        "__alias_of_parameters_hash": "6c958ede9159aff7"
+      },
+      "output": {
+        "content": "",
+        "tool_calls": [
+          {
+            "id": "call_R5yA4AVApFDaryWVT998TNEQ",
+            "name": "select_tool_for_task",
+            "arguments": {
+              "can_complete_with_tool": true,
+              "reasoning": "The task is fully specified and requires producing an exact, fixed string. No additional information is needed. For exact-match output, using the python tool is appropriate and deterministic in a single step.",
+              "selected_tool_doc": "tools/python"
+            }
+          }
+        ]
+      },
+      "timestamp": "2025-12-28T22:45:13.000000",
+      "execution_time_ms": 0.0,
+      "parameters_hash": "1eb609e50a016e60"
+    },
+    {
+      "tool_id": "LLM",
+      "parameters": {
+        "__note": "Alias: select_tool_for_task without vector candidates",
+        "__alias_of_parameters_hash": "6c958ede9159aff7"
+      },
+      "output": {
+        "content": "",
+        "tool_calls": [
+          {
+            "id": "call_R5yA4AVApFDaryWVT998TNEQ",
+            "name": "select_tool_for_task",
+            "arguments": {
+              "can_complete_with_tool": true,
+              "reasoning": "The task is fully specified and requires producing an exact, fixed string. No additional information is needed. For exact-match output, using the python tool is appropriate and deterministic in a single step.",
+              "selected_tool_doc": "tools/python"
+            }
+          }
+        ]
+      },
+      "timestamp": "2025-12-29T16:45:00.000000",
+      "execution_time_ms": 0.0,
+      "parameters_hash": "8fd46ca80f666b55"
+    },
+    {
+      "tool_id": "LLM",
+      "parameters": {
+        "__note": "Alias: select_tool_for_task (vector candidates re-enabled)",
+        "__alias_of_parameters_hash": "6c958ede9159aff7"
+      },
+      "output": {
+        "content": "",
+        "tool_calls": [
+          {
+            "id": "call_R5yA4AVApFDaryWVT998TNEQ",
+            "name": "select_tool_for_task",
+            "arguments": {
+              "can_complete_with_tool": true,
+              "reasoning": "The task is fully specified and requires producing an exact, fixed string. No additional information is needed. For exact-match output, using the python tool is appropriate and deterministic in a single step.",
+              "selected_tool_doc": "tools/python"
+            }
+          }
+        ]
+      },
+      "timestamp": "2025-12-29T19:52:00.000000",
+      "execution_time_ms": 0.0,
+      "parameters_hash": "2a75130eb17bc53c"
+    },
+    {
+      "tool_id": "LLM",
+      "parameters": {
+        "__note": "Alias: select_tool_for_task (ada-002 vector candidates ordering)",
+        "__alias_of_parameters_hash": "6c958ede9159aff7"
+      },
+      "output": {
+        "content": "",
+        "tool_calls": [
+          {
+            "id": "call_R5yA4AVApFDaryWVT998TNEQ",
+            "name": "select_tool_for_task",
+            "arguments": {
+              "can_complete_with_tool": true,
+              "reasoning": "The task is fully specified and requires producing an exact, fixed string. No additional information is needed. For exact-match output, using the python tool is appropriate and deterministic in a single step.",
+              "selected_tool_doc": "tools/python"
+            }
+          }
+        ]
+      },
+      "timestamp": "2025-12-29T21:45:00.000000",
+      "execution_time_ms": 0.0,
+      "parameters_hash": "f6acd3719440548e"
+    },
+    {
+      "tool_id": "LLM",
+      "parameters": {
         "prompt": "## Task: Generate Parameter Extraction Code\nGenerate Python code to extract and reformat parameter for the request parameter from candidate fields. User has raise a request and we need to extract and reformat the parameter from the candidate fields in the context. Avoid using f-string when need to fill in variables, use string replacement or concatenation instead.\n\n## User Original Request\nGenerate a simple greeting message: 'Hello, welcome to our platform!' - keep it exactly like this\n\n## Required Request Parameter Description\nA dict contains all related information which might be needed for python code.\n\n## Candidate Fields from Context\nContext object is a dictionary, here we represent them using json_path syntax:\n<json path: $.['current_task'] type: <class 'str'>>\nGenerate a simple greeting message: 'Hello, welcome to our platform!' - keep it exactly like this\n</json path: $.['current_task'] type: <class 'str'>>\n<json path: current_task type: <class 'str'>>\nGenerate a simple greeting message: 'Hello, welcome to our platform!' - keep it exactly like this\n</json path: current_task type: <class 'str'>>\n\n## Instructions\n1. Generate a Python function that takes 'context' as input variable and returns the code for extracting the request parameter\n2. The code can be:\n   - Hard-coded information, when the parameter needs some rephrasing: `return \"Some fixed string\"` or it's so simple (<50 words) that it can be hard-coded.\n   - Simple extraction, when the parameter is directly available: `return context['key']`\n   - Complex extraction with transformations, regex, string operations, etc, when the parameter needs some transformation.\n3. Think if there is info available in context before generating the code. If info is not enough or still have ambiguitiy, use `return \"<NOT_FOUND_IN_CANDIDATES>\"`. The generated code should just be a getter / parser.\n4. The parameter should only be \"extracted\" or \"rephrased\", not inferred. This means different people should get the same parameter value if they have the same context, if there is uncertainty, do not rephrase it.\n5. If there is no perfect match, return a piece of code which return \"<NOT_FOUND_IN_CANDIDATES>\".\n6. If you rephrase the information, make sure you use the same language as the input_description.\n7. Just generate the minimum required code, Eg. If there is no requirement to be structured, use plain text. Make sure the code has minimum possibility to fail.\n8. The returned parameter should satisfy the requirement from the ## Required Request Parameter Description\n\n## Examples\n```python\n# The information is directly available in context, just need to do simple extraction\ndef extract_func(context):\n    return context['some_key'][0]['nested_key']\n```\n\n```python\n# The information is available in context, but needs some transformation\ndef extract_func(context): \n    import re\n    # Extract content between <title> tags\n    return re.match(r'<title>(.*?)</title>', context.get('html', '')).group(1)\n```\n\n```python\ndef extract_func(context): \n    # The information is available in context, but doesn't have extact format, so we rephrase it.\n    # Rephrase xxx from xxx\n    return \"Rephrased content based on context\" \n```\n\n```python\ndef extract_func(context): \n    # The information is already present in context, and it's simple enough to return directly\n    return \"cat ./some.log | grep 'error' | wc -l\" \n```\n\n```python\ndef extract_func(context):\n    # The information is not available in context, return a placeholder also explain why\n    return \"<NOT_FOUND_IN_CANDIDATES>Cannot find xxx in xxx / Cannot parse xxx\"\n```\n\n## Return Format\n<THINK_PROCESS>\n...\n</THINK_PROCESS>\n<GENERATED_CODE>\n```python\ndef extract_func(context):\n    return \"The extracted parameter value\"\n```\n</GENERATED_CODE>\n",
         "__sop_doc_body": null
       },
@@ -84,6 +180,20 @@
       "timestamp": "2025-10-05T22:29:27.514397",
       "execution_time_ms": 18850.251828320324,
       "parameters_hash": "3a7f1d45a8e48bc1"
+    },
+    {
+      "tool_id": "LLM",
+      "parameters": {
+        "__note": "Alias: parameter extraction code gen (retry/validator keys drift)",
+        "__alias_of_parameters_hash": "3a7f1d45a8e48bc1"
+      },
+      "output": {
+        "content": "<THINK_PROCESS>\n- The required parameter is a dict with information needed for the Python code.\n- The context contains a 'current_task' string that includes the exact greeting message enclosed in single quotes.\n- The safest, non-inferential approach is to extract the quoted message exactly as it appears (including quotes) and return it in a dict.\n- If the 'current_task' is missing or the quoted message cannot be found, return \"<NOT_FOUND_IN_CANDIDATES>\" per instructions.\n</THINK_PROCESS>\n<GENERATED_CODE>\n```python\ndef extract_func(context):\n    import re\n    task = context.get('current_task')\n    if not isinstance(task, str) or not task:\n        return \"<NOT_FOUND_IN_CANDIDATES>Missing or invalid 'current_task'\"\n    match = re.search(r\"'([^']+)'\", task)\n    if not match:\n        return \"<NOT_FOUND_IN_CANDIDATES>Cannot locate quoted message in 'current_task'\"\n    # Include quotes to keep it exactly as in the task\n    message_with_quotes = match.group(0)\n    return {\"message\": message_with_quotes}\n```\n</GENERATED_CODE>",
+        "tool_calls": []
+      },
+      "timestamp": "2025-12-28T22:47:12.000000",
+      "execution_time_ms": 0.0,
+      "parameters_hash": "78b29d9df70c96fb"
     },
     {
       "tool_id": "LLM",
@@ -99,13 +209,13 @@
               "parameters": {
                 "type": "object",
                 "properties": {
-                  "python_code": {
+                  "code": {
                     "type": "string",
                     "description": "Complete Python function definition for process_step(context: dict) that performs the requested task"
                   }
                 },
                 "required": [
-                  "python_code"
+                  "code"
                 ]
               }
             }
@@ -120,14 +230,14 @@
             "id": "call_H48uDQ6SE1MOgOaLLkzqTWev",
             "name": "generate_python_code",
             "arguments": {
-              "python_code": "def process_step(context: dict):\n    \"\"\"\n    Returns a simple greeting message exactly as specified.\n\n    Args:\n        context (dict): Input context (unused for this task).\n\n    Returns:\n        str: The greeting message exactly as required.\n    \"\"\"\n    return \"Hello, welcome to our platform!\""
+              "code": "def process_step(context: dict):\n    \"\"\"\n    Returns a simple greeting message exactly as specified.\n\n    Args:\n        context (dict): Input context (unused for this task).\n\n    Returns:\n        str: The greeting message exactly as required.\n    \"\"\"\n    return \"Hello, welcome to our platform!\""
             }
           }
         ]
       },
       "timestamp": "2025-10-05T22:29:34.693972",
       "execution_time_ms": 7123.611352406442,
-      "parameters_hash": "4ca3b5ce4c6ce913"
+      "parameters_hash": "4da6499d55be9612"
     },
     {
       "tool_id": "LLM",
@@ -172,6 +282,28 @@
       "timestamp": "2025-10-05T22:29:41.917504",
       "execution_time_ms": 7197.268542833626,
       "parameters_hash": "f738888a1724af82"
+    },
+    {
+      "tool_id": "LLM",
+      "parameters": {
+        "__note": "Alias: output path generation (prompt/hash drift)",
+        "__alias_of_parameters_hash": "f738888a1724af82"
+      },
+      "output": {
+        "content": "",
+        "tool_calls": [
+          {
+            "id": "call_MddBCD1XKqELB9ObczBAIePv",
+            "name": "generate_output_path",
+            "arguments": {
+              "output_path": "$.simple_greeting_message_hello_welcome_to_our_platform"
+            }
+          }
+        ]
+      },
+      "timestamp": "2025-12-28T22:48:20.000000",
+      "execution_time_ms": 0.0,
+      "parameters_hash": "53bf34ae333fcb38"
     },
     {
       "tool_id": "LLM",
@@ -242,6 +374,33 @@
       "timestamp": "2025-10-05T22:29:51.481528",
       "execution_time_ms": 9550.19676219672,
       "parameters_hash": "ab73b2a4a530b1ea"
+    },
+    {
+      "tool_id": "LLM",
+      "parameters": {
+        "__note": "Alias: subtree completion evaluation (model/prompt drift)",
+        "__alias_of_parameters_hash": "ab73b2a4a530b1ea"
+      },
+      "output": {
+        "content": "",
+        "tool_calls": [
+          {
+            "id": "call_qfqckQwiOE3NGJxRjug1oWfm",
+            "name": "evaluate_and_summarize_subtree",
+            "arguments": {
+              "deliverable_output_path": [
+                "$.simple_greeting_message_hello_welcome_to_our_platform.return_value"
+              ],
+              "requirements_met": true,
+              "summary": "Hello, welcome to our platform!",
+              "think_process": "The root task requires generating the exact greeting string. The produced output includes a return_value that exactly matches \"Hello, welcome to our platform!\" with correct casing and punctuation. Therefore, the requirement is fully satisfied; no additional tasks are needed."
+            }
+          }
+        ]
+      },
+      "timestamp": "2025-12-28T22:49:18.000000",
+      "execution_time_ms": 0.0,
+      "parameters_hash": "f95c2dba1711212a"
     },
     {
       "tool_id": "PYTHON_EXECUTOR",

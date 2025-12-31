@@ -1191,7 +1191,16 @@ class ExecutionTracer:
                 return obj
         
         session_dict = convert_enums(session_dict)
-        
+
+        # Ensure the output directory exists (tests may use temp dirs that are created lazily).
+        try:
+            from pathlib import Path
+
+            Path(self.current_session_file).parent.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            # Best-effort: if directory creation fails we'll surface the original open() error.
+            pass
+
         with open(self.current_session_file, 'w', encoding='utf-8') as f:
             json.dump(session_dict, f, ensure_ascii=False, indent=2)
         

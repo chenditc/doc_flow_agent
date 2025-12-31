@@ -17,13 +17,13 @@
               "parameters": {
                 "type": "object",
                 "properties": {
-                  "python_code": {
+                  "code": {
                     "type": "string",
                     "description": "Complete Python function definition for process_step(context: dict) that performs the requested task"
                   }
                 },
                 "required": [
-                  "python_code"
+                  "code"
                 ]
               }
             }
@@ -38,14 +38,14 @@
             "id": "call_vgWSdxOZWhcI3zgfXXQraQPo",
             "name": "generate_python_code",
             "arguments": {
-              "python_code": "def process_step(context: dict):\n    \"\"\"Calculate the sum of numbers 'a' and 'b' from context and return it as {'sum': value}.\"\"\"\n    a = context.get('a')\n    b = context.get('b')\n    return {'sum': a + b}"
+              "code": "def process_step(context: dict):\n    \"\"\"Calculate the sum of numbers 'a' and 'b' from context and return it as {'sum': value}.\"\"\"\n    a = context.get('a')\n    b = context.get('b')\n    return {'sum': a + b}"
             }
           }
         ]
       },
       "timestamp": "2025-10-04T22:06:45.485335",
       "execution_time_ms": 15008.922759443521,
-      "parameters_hash": "b6c273a21eeb0bef"
+      "parameters_hash": "4a09abdd405142c6"
     }
   ],
   "metadata": {

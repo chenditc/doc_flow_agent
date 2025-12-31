@@ -210,10 +210,12 @@ class TestVizServerIntegration:
             # The latest trace should be in the list of available traces
             assert data['trace_id'] in traces
             
-            # Since traces are sorted by name (which includes timestamp),
-            # the latest should be the last when sorted
-            sorted_traces = sorted(traces)
-            assert data['trace_id'] == sorted_traces[-1]
+            # Latest is determined by file modification time (not filename sorting).
+            from visualization.server.viz_server import TRACES_DIR
+            trace_files = list(TRACES_DIR.glob("*.json"))
+            if trace_files:
+                expected_latest = max(trace_files, key=lambda f: f.stat().st_mtime).stem
+                assert data["trace_id"] == expected_latest
 
     def test_get_real_trace_if_exists(self, real_trace_client):
         """Test getting a real trace file if any exist"""

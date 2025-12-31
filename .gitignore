@@ -36,7 +36,10 @@ htmlcov/
 .nox/
 .coverage
 .coverage.*
-.cache
+.cache/*
+!.cache/
+!.cache/embeddings/
+!.cache/embeddings/**
 nosetests.xml
 coverage.xml
 *.cover

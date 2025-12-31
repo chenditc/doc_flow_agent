@@ -17,13 +17,13 @@
               "parameters": {
                 "type": "object",
                 "properties": {
-                  "python_code": {
+                  "code": {
                     "type": "string",
                     "description": "Complete Python function definition for process_step(context: dict) that performs the requested task"
                   }
                 },
                 "required": [
-                  "python_code"
+                  "code"
                 ]
               }
             }
@@ -38,14 +38,14 @@
             "id": "call_mgefuRRE8v1h4MJLrz4BBtVu",
             "name": "generate_python_code",
             "arguments": {
-              "python_code": "def process_step(context: dict):\n    \"\"\"\n    Combine first_name and last_name from context with a space between them,\n    return as dict with key 'full_name'.\n    \"\"\"\n    if not isinstance(context, dict):\n        raise TypeError(\"context must be a dict\")\n\n    first = context.get(\"first_name\", \"\")\n    last = context.get(\"last_name\", \"\")\n\n    # Convert to strings and trim whitespace\n    first_str = \"\" if first is None else str(first).strip()\n    last_str = \"\" if last is None else str(last).strip()\n\n    full_name = f\"{first_str} {last_str}\".strip()\n    return {\"full_name\": full_name}\n"
+              "code": "def process_step(context: dict):\n    \"\"\"\n    Combine first_name and last_name from context with a space between them,\n    return as dict with key 'full_name'.\n    \"\"\"\n    if not isinstance(context, dict):\n        raise TypeError(\"context must be a dict\")\n\n    first = context.get(\"first_name\", \"\")\n    last = context.get(\"last_name\", \"\")\n\n    # Convert to strings and trim whitespace\n    first_str = \"\" if first is None else str(first).strip()\n    last_str = \"\" if last is None else str(last).strip()\n\n    full_name = f\"{first_str} {last_str}\".strip()\n    return {\"full_name\": full_name}\n"
             }
           }
         ]
       },
       "timestamp": "2025-10-04T22:07:00.717474",
       "execution_time_ms": 15191.34849589318,
-      "parameters_hash": "a0ec6d16b84a48fb"
+      "parameters_hash": "bec73b79f62a63a7"
     }
   ],
   "metadata": {

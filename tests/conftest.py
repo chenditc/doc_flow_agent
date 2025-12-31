@@ -1,6 +1,7 @@
 """
 Pytest configuration file for doc_flow_agent tests
 """
+import os
 import shutil
 import sys
 import pytest
@@ -44,6 +45,14 @@ def setup_test_environment():
     # Ensure user_comm directories exist
     user_comm_dir = project_root / "user_comm" / "sessions"
     user_comm_dir.mkdir(parents=True, exist_ok=True)
+
+    # Use the real embedding model + on-disk cache.
+    # The cache directory is intended to be committed so tests stay fast/offline
+    # as long as SOP docs (and common queries) do not change.
+    cache_dir = (project_root / ".cache" / "embeddings").resolve()
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    os.environ.setdefault("EMBEDDING_CACHE_DIR", str(cache_dir))
+    os.environ.setdefault("EMBEDDING_MODEL", "text-embedding-ada-002")
     
     yield
     

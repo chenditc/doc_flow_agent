@@ -12,7 +12,7 @@ import logging
 import subprocess
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Union
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from fastapi import APIRouter, HTTPException, Header
 from datetime import datetime
 
@@ -57,7 +57,7 @@ class TreeNode(BaseModel):
     children: Optional[List['TreeNode']] = None
 
 # Enable forward references
-TreeNode.update_forward_refs()
+TreeNode.model_rebuild()
 
 
 class SopDocMeta(BaseModel):
@@ -72,7 +72,8 @@ class SopDocMeta(BaseModel):
     output_description: Optional[str] = None
     result_validation_rule: Optional[str] = None
 
-    @validator('tool')
+    @field_validator('tool')
+    @classmethod
     def validate_tool(cls, v):
         if 'tool_id' not in v:
             raise ValueError("tool must contain 'tool_id' field")

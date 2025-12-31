@@ -21,6 +21,102 @@
     {
       "tool_id": "LLM",
       "parameters": {
+        "__note": "Added for tool-selection fallback (prompt/hash drift)",
+        "__alias_selected_tool_doc": "tools/python"
+      },
+      "output": {
+        "content": "",
+        "tool_calls": [
+          {
+            "id": "call_alias_select_tool_for_basic_document_execution",
+            "name": "select_tool_for_task",
+            "arguments": {
+              "can_complete_with_tool": true,
+              "reasoning": "The task is straightforward: write a small Python script that prints 'Hello World'. No additional information is needed, and the python tool can deterministically generate and run the code in one step.",
+              "selected_tool_doc": "tools/python"
+            }
+          }
+        ]
+      },
+      "timestamp": "2025-12-28T22:53:03.000000",
+      "execution_time_ms": 0.0,
+      "parameters_hash": "4ed2de316c012a36"
+    },
+    {
+      "tool_id": "LLM",
+      "parameters": {
+        "__note": "Alias: select_tool_for_task without vector candidates",
+        "__alias_of_parameters_hash": "4ed2de316c012a36"
+      },
+      "output": {
+        "content": "",
+        "tool_calls": [
+          {
+            "id": "call_alias_select_tool_for_basic_document_execution",
+            "name": "select_tool_for_task",
+            "arguments": {
+              "can_complete_with_tool": true,
+              "reasoning": "The task is straightforward: write a small Python script that prints 'Hello World'. No additional information is needed, and the python tool can deterministically generate and run the code in one step.",
+              "selected_tool_doc": "tools/python"
+            }
+          }
+        ]
+      },
+      "timestamp": "2025-12-29T16:47:33.000000",
+      "execution_time_ms": 0.0,
+      "parameters_hash": "66f79015b8a64e3a"
+    },
+    {
+      "tool_id": "LLM",
+      "parameters": {
+        "__note": "Alias: select_tool_for_task (vector candidates re-enabled)",
+        "__alias_of_parameters_hash": "4ed2de316c012a36"
+      },
+      "output": {
+        "content": "",
+        "tool_calls": [
+          {
+            "id": "call_alias_select_tool_for_basic_document_execution",
+            "name": "select_tool_for_task",
+            "arguments": {
+              "can_complete_with_tool": true,
+              "reasoning": "The task is straightforward: write a small Python script that prints 'Hello World'. No additional information is needed, and the python tool can deterministically generate and run the code in one step.",
+              "selected_tool_doc": "tools/python"
+            }
+          }
+        ]
+      },
+      "timestamp": "2025-12-29T19:52:00.000000",
+      "execution_time_ms": 0.0,
+      "parameters_hash": "cab766725a303354"
+    },
+    {
+      "tool_id": "LLM",
+      "parameters": {
+        "__note": "Alias: select_tool_for_task (ada-002 vector candidates ordering)",
+        "__alias_of_parameters_hash": "4ed2de316c012a36"
+      },
+      "output": {
+        "content": "",
+        "tool_calls": [
+          {
+            "id": "call_alias_select_tool_for_basic_document_execution",
+            "name": "select_tool_for_task",
+            "arguments": {
+              "can_complete_with_tool": true,
+              "reasoning": "The task is straightforward: write a small Python script that prints 'Hello World'. No additional information is needed, and the python tool can deterministically generate and run the code in one step.",
+              "selected_tool_doc": "tools/python"
+            }
+          }
+        ]
+      },
+      "timestamp": "2025-12-29T21:45:00.000000",
+      "execution_time_ms": 0.0,
+      "parameters_hash": "24773c388acf7bb4"
+    },
+    {
+      "tool_id": "LLM",
+      "parameters": {
         "prompt": "## Task: Generate Parameter Extraction Code\nGenerate Python code to extract and reformat parameter for the request parameter from candidate fields. User has raise a request and we need to extract and reformat the parameter from the candidate fields in the context. Avoid using f-string when need to fill in variables, use string replacement or concatenation instead.\n\n## User Original Request\nWrite a simple Python script that prints 'Hello World'\n\n## Required Request Parameter Description\nA dict contains all related information which might be needed for python code.\n\n## Candidate Fields from Context\nContext object is a dictionary, here we represent them using json_path syntax:\n<json path: $.['current_task'] type: <class 'str'>>\nWrite a simple Python script that prints 'Hello World'\n</json path: $.['current_task'] type: <class 'str'>>\n<json path: current_task type: <class 'str'>>\nWrite a simple Python script that prints 'Hello World'\n</json path: current_task type: <class 'str'>>\n\n## Instructions\n1. Generate a Python function that takes 'context' as input variable and returns the code for extracting the request parameter\n2. The code can be:\n   - Hard-coded information, when the parameter needs some rephrasing: `return \"Some fixed string\"` or it's so simple (<50 words) that it can be hard-coded.\n   - Simple extraction, when the parameter is directly available: `return context['key']`\n   - Complex extraction with transformations, regex, string operations, etc, when the parameter needs some transformation.\n3. Think if there is info available in context before generating the code. If info is not enough or still have ambiguitiy, use `return \"<NOT_FOUND_IN_CANDIDATES>\"`. The generated code should just be a getter / parser.\n4. The parameter should only be \"extracted\" or \"rephrased\", not inferred. This means different people should get the same parameter value if they have the same context, if there is uncertainty, do not rephrase it.\n5. If there is no perfect match, return a piece of code which return \"<NOT_FOUND_IN_CANDIDATES>\".\n6. If you rephrase the information, make sure you use the same language as the input_description.\n7. Just generate the minimum required code, Eg. If there is no requirement to be structured, use plain text. Make sure the code has minimum possibility to fail.\n8. The returned parameter should satisfy the requirement from the ## Required Request Parameter Description\n\n## Examples\n```python\n# The information is directly available in context, just need to do simple extraction\ndef extract_func(context):\n    return context['some_key'][0]['nested_key']\n```\n\n```python\n# The information is available in context, but needs some transformation\ndef extract_func(context): \n    import re\n    # Extract content between <title> tags\n    return re.match(r'<title>(.*?)</title>', context.get('html', '')).group(1)\n```\n\n```python\ndef extract_func(context): \n    # The information is available in context, but doesn't have extact format, so we rephrase it.\n    # Rephrase xxx from xxx\n    return \"Rephrased content based on context\" \n```\n\n```python\ndef extract_func(context): \n    # The information is already present in context, and it's simple enough to return directly\n    return \"cat ./some.log | grep 'error' | wc -l\" \n```\n\n```python\ndef extract_func(context):\n    # The information is not available in context, return a placeholder also explain why\n    return \"<NOT_FOUND_IN_CANDIDATES>Cannot find xxx in xxx / Cannot parse xxx\"\n```\n\n## Return Format\n<THINK_PROCESS>\n...\n</THINK_PROCESS>\n<GENERATED_CODE>\n```python\ndef extract_func(context):\n    return \"The extracted parameter value\"\n```\n</GENERATED_CODE>\n",
         "__sop_doc_body": null
       },
@@ -31,6 +127,20 @@
       "timestamp": "2025-10-05T22:30:25.104723",
       "execution_time_ms": 16726.93887259811,
       "parameters_hash": "99a75ca0f4678687"
+    },
+    {
+      "tool_id": "LLM",
+      "parameters": {
+        "__note": "Alias: parameter extraction code gen (retry/validator keys drift)",
+        "__alias_of_parameters_hash": "99a75ca0f4678687"
+      },
+      "output": {
+        "content": "<THINK_PROCESS>\n- The required parameter is a dict containing information needed for Python code.\n- The context provides a directly usable field: 'current_task' with the user's instruction.\n- We'll extract 'current_task' (checking common key variants as seen in candidates) and return it in a dict.\n- If not found, return \"<NOT_FOUND_IN_CANDIDATES>\".\n</THINK_PROCESS>\n<GENERATED_CODE>\n```python\ndef extract_func(context):\n    try:\n        if isinstance(context, dict):\n            if 'current_task' in context and isinstance(context.get('current_task'), str):\n                return {'current_task': context.get('current_task')}\n            if \"['current_task']\" in context and isinstance(context.get(\"['current_task']\"), str):\n                return {'current_task': context.get(\"['current_task']\")}\n        return \"<NOT_FOUND_IN_CANDIDATES>\"\n    except Exception:\n        return \"<NOT_FOUND_IN_CANDIDATES>\"\n```\n</GENERATED_CODE>",
+        "tool_calls": []
+      },
+      "timestamp": "2025-12-28T22:55:12.000000",
+      "execution_time_ms": 0.0,
+      "parameters_hash": "166e3b67d2634f7e"
     },
     {
       "tool_id": "LLM",
@@ -46,13 +156,13 @@
               "parameters": {
                 "type": "object",
                 "properties": {
-                  "python_code": {
+                  "code": {
                     "type": "string",
                     "description": "Complete Python function definition for process_step(context: dict) that performs the requested task"
                   }
                 },
                 "required": [
-                  "python_code"
+                  "code"
                 ]
               }
             }
@@ -67,14 +177,14 @@
             "id": "call_VaJqJUuRfCH8aONHAz3DTfOD",
             "name": "generate_python_code",
             "arguments": {
-              "python_code": "def process_step(context: dict):\n    \"\"\"\n    Prints 'Hello World' and returns it as a JSON-serializable string.\n\n    Args:\n        context (dict): Input context (unused for this simple task).\n\n    Returns:\n        str: The message 'Hello World'.\n    \"\"\"\n    message = \"Hello World\"\n    print(message)\n    return message\n"
+              "code": "def process_step(context: dict):\n    \"\"\"\n    Prints 'Hello World' and returns it as a JSON-serializable string.\n\n    Args:\n        context (dict): Input context (unused for this simple task).\n\n    Returns:\n        str: The message 'Hello World'.\n    \"\"\"\n    message = \"Hello World\"\n    print(message)\n    return message\n"
             }
           }
         ]
       },
       "timestamp": "2025-10-05T22:30:36.704195",
       "execution_time_ms": 11545.671466737986,
-      "parameters_hash": "57ceea56fbc47805"
+      "parameters_hash": "0999693f6402334b"
     },
     {
       "tool_id": "LLM",
@@ -119,6 +229,28 @@
       "timestamp": "2025-10-05T22:30:44.369484",
       "execution_time_ms": 7643.208206631243,
       "parameters_hash": "3174660cb97ab05a"
+    },
+    {
+      "tool_id": "LLM",
+      "parameters": {
+        "__note": "Alias: output path generation (prompt/hash drift)",
+        "__alias_of_parameters_hash": "3174660cb97ab05a"
+      },
+      "output": {
+        "content": "",
+        "tool_calls": [
+          {
+            "id": "call_8gpBzRzUIMu3rs8bdz0PviDh",
+            "name": "generate_output_path",
+            "arguments": {
+              "output_path": "$.write_a_simple_python_script_that_prints_hello_world"
+            }
+          }
+        ]
+      },
+      "timestamp": "2025-12-28T22:56:13.000000",
+      "execution_time_ms": 0.0,
+      "parameters_hash": "1f4de14fe78259c6"
     },
     {
       "tool_id": "LLM",
@@ -189,6 +321,33 @@
       "timestamp": "2025-10-05T22:30:58.643447",
       "execution_time_ms": 14249.627139419317,
       "parameters_hash": "490d8dca7f696fac"
+    },
+    {
+      "tool_id": "LLM",
+      "parameters": {
+        "__note": "Alias: subtree completion evaluation (model/prompt drift)",
+        "__alias_of_parameters_hash": "490d8dca7f696fac"
+      },
+      "output": {
+        "content": "",
+        "tool_calls": [
+          {
+            "id": "call_K4OCLrXr6uPUT6NnmfgBkaFx",
+            "name": "evaluate_and_summarize_subtree",
+            "arguments": {
+              "deliverable_output_path": [
+                "$.write_a_simple_python_script_that_prints_hello_world.python_code"
+              ],
+              "requirements_met": true,
+              "summary": "A Python snippet is provided that, when executed, prints 'Hello World'. This satisfies the requirement to write a simple Python script that prints 'Hello World'.",
+              "think_process": "The task requires a simple Python script that prints 'Hello World'. The provided code defines a function that prints 'Hello World' and returns the string, and the captured stdout confirms the print occurred. Given the evaluation rule (only mark unmet if a requirement is totally missed), this fulfills the requirement. If desired for maximal simplicity, the script could be reduced to a single line: print('Hello World'), but this is not necessary to meet the requirement."
+            }
+          }
+        ]
+      },
+      "timestamp": "2025-12-28T22:58:07.000000",
+      "execution_time_ms": 0.0,
+      "parameters_hash": "24fc6400b65d9ab3"
     },
     {
       "tool_id": "PYTHON_EXECUTOR",

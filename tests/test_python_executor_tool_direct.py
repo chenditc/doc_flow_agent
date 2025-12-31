@@ -26,10 +26,10 @@ class TestPythonExecutorToolDirect(unittest.TestCase):
         
         self.assertEqual(schema["type"], "function")
         self.assertEqual(schema["function"]["name"], "generate_python_code")
-        self.assertIn("python_code", schema["function"]["parameters"]["properties"])
+        self.assertIn("code", schema["function"]["parameters"]["properties"])
         self.assertEqual(
             schema["function"]["parameters"]["required"], 
-            ["python_code"]
+            ["code"]
         )
 
     def test_extract_python_code_from_tool_call_response(self):
@@ -38,7 +38,7 @@ class TestPythonExecutorToolDirect(unittest.TestCase):
             "tool_calls": [{
                 "name": "generate_python_code",
                 "arguments": {
-                    "python_code": "def process_step(context):\n    return context['a'] + context['b']"
+                    "code": "def process_step(context):\n    return context['a'] + context['b']"
                 }
             }]
         }
@@ -47,26 +47,26 @@ class TestPythonExecutorToolDirect(unittest.TestCase):
         self.assertIn("def process_step(context)", code)
         self.assertIn("return context['a'] + context['b']", code)
 
-    def test_extract_python_code_from_string_response(self):
-        """Test extracting Python code from string response (legacy)"""
+    def test_extract_python_code_from_string_response_raises(self):
+        """String responses are not supported (must be tool call)."""
         response = "def process_step(context):\n    return context['x'] * 2"
-        
-        code = self.tool._extract_python_code_from_response(response)
-        self.assertEqual(code, response)
+        with self.assertRaises(ValueError):
+            self.tool._extract_python_code_from_response(response)
 
     def test_extract_python_code_no_tool_calls(self):
         """Test extracting Python code when no tool calls present"""
         response = {"some_key": "some_value"}
         
-        code = self.tool._extract_python_code_from_response(response)
-        self.assertEqual(code, str(response))
+        with self.assertRaises(ValueError) as context:
+            self.tool._extract_python_code_from_response(response)
+        self.assertIn("No tool call in LLM response", str(context.exception))
 
     def test_extract_python_code_wrong_tool_call(self):
         """Test error when wrong tool call name is used"""
         response = {
             "tool_calls": [{
                 "name": "wrong_tool",
-                "arguments": {"python_code": "some code"}
+                "arguments": {"code": "some code"}
             }]
         }
         
@@ -76,7 +76,7 @@ class TestPythonExecutorToolDirect(unittest.TestCase):
         self.assertIn("Unexpected tool call: wrong_tool", str(context.exception))
 
     def test_extract_python_code_no_code_in_args(self):
-        """Test error when no python_code in arguments"""
+        """Test error when no code in arguments"""
         response = {
             "tool_calls": [{
                 "name": "generate_python_code",
@@ -102,12 +102,12 @@ class TestPythonExecutorToolDirect(unittest.TestCase):
             run_id = "12345678-1234-5678-1234-567812345678"
             
             # Mock LLM response with tool call
-            async def mock_llm_execute(params):
+            async def mock_llm_execute(params, **kwargs):
                 return {
                     "tool_calls": [{
                         "name": "generate_python_code",
                         "arguments": {
-                            "python_code": "def process_step(context):\n    return {'result': context['a'] + context['b']}"
+                            "code": "def process_step(context):\n    return {'result': context['a'] + context['b']}"
                         }
                     }]
                 }
@@ -182,7 +182,7 @@ class TestPythonExecutorToolDirect(unittest.TestCase):
                     "tool_calls": [{
                         "name": "generate_python_code",
                         "arguments": {
-                            "python_code": "def process_step(context)\n    return context['a']"  # Missing colon
+                            "code": "def process_step(context)\n    return context['a']"  # Missing colon
                         }
                     }]
                 },
@@ -190,14 +190,32 @@ class TestPythonExecutorToolDirect(unittest.TestCase):
                     "tool_calls": [{
                         "name": "generate_python_code",
                         "arguments": {
-                            "python_code": "def process_step(context):\n    return {'result': context['a'] + context['b']}"
+                            "code": "def process_step(context):\n    return {'result': context['a'] + context['b']}"
                         }
                     }]
                 }
             ]
 
-            async def mock_llm_execute(params):
-                return responses.pop(0)
+            attempts = {"count": 0}
+
+            # Simulate LLMTool retry loop driven by validators/max_retries
+            async def mock_llm_execute(params, **kwargs):
+                max_retries = int(kwargs.get("max_retries", 0) or 0)
+                validators = kwargs.get("validators", []) or []
+                last_exc = None
+
+                for _ in range(max_retries + 1):
+                    attempts["count"] += 1
+                    resp = responses.pop(0)
+                    try:
+                        for v in validators:
+                            v(resp)
+                        return resp
+                    except Exception as e:  # noqa: BLE001 - test harness
+                        last_exc = e
+                        continue
+
+                raise last_exc  # type: ignore[misc]
 
             self.mock_llm_tool.execute = mock_llm_execute
 
@@ -223,6 +241,7 @@ class TestPythonExecutorToolDirect(unittest.TestCase):
             self.assertEqual(result["return_value"], {"result": 3})
             self.assertIsNone(result["exception"])
             self.assertIn("def process_step(context):", result["python_code"])
+            self.assertGreaterEqual(attempts["count"], 2)
 
             # Ensure subprocess executed only once despite retry
             self.assertEqual(mock_subprocess_run.call_count, 1)
@@ -250,16 +269,42 @@ class TestPythonExecutorToolDirect(unittest.TestCase):
 
             call_counter = {"count": 0}
 
-            async def mock_llm_execute(params):
-                call_counter["count"] += 1
-                return {
+            responses = [
+                {
                     "tool_calls": [{
                         "name": "generate_python_code",
                         "arguments": {
-                            "python_code": "def process_step(context)\n    return context['a']"  # Missing colon keeps failing
+                            "code": "def process_step(context)\n    return context['a']"  # Missing colon keeps failing
                         }
                     }]
-                }
+                },
+                {
+                    "tool_calls": [{
+                        "name": "generate_python_code",
+                        "arguments": {
+                            "code": "def process_step(context)\n    return context['a']"  # Still invalid
+                        }
+                    }]
+                },
+            ]
+
+            async def mock_llm_execute(params, **kwargs):
+                max_retries = int(kwargs.get("max_retries", 0) or 0)
+                validators = kwargs.get("validators", []) or []
+                last_exc = None
+
+                for _ in range(max_retries + 1):
+                    call_counter["count"] += 1
+                    resp = responses.pop(0)
+                    try:
+                        for v in validators:
+                            v(resp)
+                        return resp
+                    except Exception as e:  # noqa: BLE001 - test harness
+                        last_exc = e
+                        continue
+
+                raise last_exc  # type: ignore[misc]
 
             self.mock_llm_tool.execute = mock_llm_execute
 
@@ -287,11 +332,11 @@ class TestPythonExecutorToolDirect(unittest.TestCase):
             mock_uuid.return_value = uuid.UUID("12345678-1234-5678-1234-567812345678")
             
             # Mock LLM response
-            async def mock_llm_execute(params):
+            async def mock_llm_execute(params, **kwargs):
                 return {
                     "tool_calls": [{
                         "name": "generate_python_code", 
-                        "arguments": {"python_code": "def process_step(context):\n    return 'test'"}
+                        "arguments": {"code": "def process_step(context):\n    return 'test'"}
                     }]
                 }
             
@@ -329,44 +374,17 @@ class TestPythonExecutorToolDirect(unittest.TestCase):
         asyncio.run(run_test())
 
     def test_execute_with_legacy_string_response(self):
-        """Test execution with legacy string response from LLM"""
+        """Legacy string responses are rejected (must be tool call)."""
         async def run_test():
             # Mock LLM to return string instead of tool call
-            async def mock_llm_execute(params):
+            async def mock_llm_execute(params, **kwargs):
                 return "def process_step(context):\n    return 'legacy'"
 
             self.mock_llm_tool.execute = mock_llm_execute
-
-            with patch("subprocess.run") as mock_subprocess_run, \
-                 patch("uuid.uuid4") as mock_uuid, \
-                 patch("os.remove") as mock_remove, \
-                 patch("builtins.open", new_callable=mock_open) as mock_open_func, \
-                 patch("os.path.exists", return_value=True) as mock_exists:
-
-                # Setup mocks
-                mock_uuid.return_value = uuid.UUID("12345678-1234-5678-1234-567812345678")
-                mock_process = MagicMock()
-                mock_process.stdout = "stdout"
-                mock_process.stderr = "stderr"
-                mock_subprocess_run.return_value = mock_process
-
-                result_data = {"return_value": "legacy", "exception": None}
-                mock_open_func.side_effect = [
-                    mock_open().return_value,  # context file write
-                    mock_open().return_value,  # code file write
-                    mock_open(read_data=json.dumps(result_data)).return_value,  # result file read
-                ]
-
-                # Execute
-                params = {
-                    "task_description": "Legacy test",
-                    "related_context_content": {},
-                }
-                result = await self.tool.execute(params)
-
-                # Verify it still works with legacy response
-                self.assertEqual(result["return_value"], "legacy")
-                self.assertEqual(result["python_code"], "def process_step(context):\n    return 'legacy'")
+            with self.assertRaises(ValueError):
+                await self.tool.execute(
+                    {"task_description": "Legacy test", "related_context_content": {}}
+                )
 
         asyncio.run(run_test())
 

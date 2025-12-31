@@ -3,6 +3,7 @@
 
 import asyncio
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
 from langchain_community.vectorstores import InMemoryVectorStore
@@ -52,7 +53,11 @@ class SOPDocVectorStore:
         embedding_model: Optional[str] = None,
     ) -> None:
         self.loader = SOPDocumentLoader(docs_dir)
-        self.embedding_cache_dir = embedding_cache_dir
+        # Always use remote embeddings; persist them locally so subsequent runs are fast.
+        # Cache directory is intentionally under `.cache/` (may be committed for test stability).
+        self.embedding_cache_dir = embedding_cache_dir or str(
+            (Path(__file__).resolve().parent / ".cache" / "embeddings").resolve()
+        )
         self.embedding_model = embedding_model
         self._embedding = _SOPDocEmbeddings(
             cache_dir=self.embedding_cache_dir,

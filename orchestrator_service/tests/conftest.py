@@ -31,6 +31,17 @@ def temp_env(monkeypatch):
 @pytest_asyncio.fixture
 async def manager(temp_env):
     jobs_dir, traces_dir = temp_env
-    return ExecutionManager(max_parallel=2, jobs_dir=jobs_dir, traces_dir=traces_dir)
+    mgr = ExecutionManager(max_parallel=2, jobs_dir=jobs_dir, traces_dir=traces_dir)
+    try:
+        yield mgr
+    finally:
+        # Ensure background job tasks don't leak between tests (pytest-asyncio strict mode).
+        # Only manage real asyncio Tasks; do not poll on `_jobs` because some tests
+        # register synthetic Job objects without runners/tasks.
+        pending = [t for t in getattr(mgr, "_tasks", {}).values() if not t.done()]
+        for t in pending:
+            t.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
 
