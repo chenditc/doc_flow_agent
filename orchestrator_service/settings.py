@@ -5,6 +5,7 @@ from pathlib import Path
 # Directory settings
 JOBS_DIR = Path("jobs")
 TRACES_DIR = Path("traces")
+SCHEDULES_DIR = Path("schedules")
 
 # Execution settings
 MAX_PARALLEL_JOBS = 2

@@ -1,0 +1,36 @@
+---
+description: Make code changes easier to review
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+## Make changes easy to review
+
+When proposing or implementing code changes in this repo, optimize for **reviewability**.
+
+### Core principles
+- **Small and single-purpose**: one PR = one problem. Avoid mixing bugfix + refactor + formatting + cleanup.
+- **Additive first**: prefer adding new code paths over rewriting existing ones; delete old paths in a follow-up.
+- **Self-contained**: prefer a new module or adapter with a small API over edits across many files.
+- **Reuse existing utilities**: build on existing functions/helpers instead of creating parallel implementations.
+- **Local reasoning**: make changes easy to understand by reading a small, nearby region of code.
+
+### Change strategy (default)
+- **Separate refactor from behavior change**
+  - Refactor-only PR: no behavior change; keep diffs mechanical and tests unchanged.
+  - Behavior PR: minimal diff; avoid renames/moves/reformatting in the same PR.
+- **Reduce diff noise**
+  - Don’t include unrelated formatting/import sorting/renames/file moves.
+  - If a rename/move is needed, do it in a dedicated PR first.
+
+### PR/commit hygiene
+- **Logical commits**: "add module + tests" → "wire integration" → "remove old path".
+- **Clear intent**: PR description must include what/why, scope boundaries (non-goals), risk, rollout/rollback.
+
+### Testing expectations
+- Add or update tests closest to the behavior change.
+- Prefer small, focused unit tests; use table-driven cases for tricky edge cases.
+- If adding a helper, include tests or clear invariants so correctness is obvious to reviewers.
+
+
