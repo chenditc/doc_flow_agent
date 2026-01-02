@@ -10,6 +10,7 @@ import type {
   ValidationResponse,
   SopDocUpdateRequest,
   CopyRequest,
+  VectorSearchResponse,
 } from '../types/sopDocs';
 
 export class SopDocsService {
@@ -35,6 +36,13 @@ export class SopDocsService {
    */
   async search(query: string): Promise<SearchResponse> {
     return apiClient.get<SearchResponse>(`/api/sop-docs/search?q=${encodeURIComponent(query)}`);
+  }
+
+  /**
+   * Vector-store similarity search over SOP docs.
+   */
+  async vectorSearch(query: string, k: number = 5): Promise<VectorSearchResponse> {
+    return apiClient.post<VectorSearchResponse>('/api/sop-docs/vector-search', { query, k });
   }
 
   /**

@@ -52,6 +52,25 @@ export interface SearchResponse {
   total: number;
 }
 
+export interface VectorSearchRequest {
+  query: string;
+  k?: number;
+}
+
+export interface VectorSearchResultItem {
+  doc_id: string;
+  score: number;
+  embedded_text: string;
+  tool_id?: string | null;
+  used_doc_id_fallback: boolean;
+}
+
+export interface VectorSearchResponse {
+  query: string;
+  results: VectorSearchResultItem[];
+  total: number;
+}
+
 export interface ValidationIssue {
   field: string;
   severity: 'error' | 'warning';

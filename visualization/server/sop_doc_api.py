@@ -131,6 +131,31 @@ class SearchResponse(BaseModel):
     total: int
 
 
+class VectorSearchRequest(BaseModel):
+    """Request payload for SOP vector store similarity search."""
+
+    query: str
+    k: int = 5
+
+
+class VectorSearchResultItem(BaseModel):
+    """Single vector-store search match."""
+
+    doc_id: str
+    score: float
+    embedded_text: str
+    tool_id: Optional[str] = None
+    used_doc_id_fallback: bool
+
+
+class VectorSearchResponse(BaseModel):
+    """Vector-store search response."""
+
+    query: str
+    results: List[VectorSearchResultItem]
+    total: int
+
+
 class SopDocMetaSummary(BaseModel):
     """Lightweight metadata summary for building client-side indices"""
     path: str  # path without .md extension
@@ -1033,6 +1058,54 @@ async def search_documents(q: str):
     except Exception as e:
         logger.error(f"Unexpected error during search for '{q}': {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="An unexpected error occurred during search.")
+
+
+@router.post("/vector-search", response_model=VectorSearchResponse)
+async def vector_search(request: VectorSearchRequest):
+    """
+    Similarity search over SOP docs using the same vector store used by doc_execute_engine.
+    """
+    query = (request.query or "").strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="Query cannot be empty")
+
+    # Clamp to a reasonable range for UI use.
+    k = max(1, min(20, int(request.k)))
+
+    # If there are no SOP docs, return empty results.
+    if not SOP_DOCS_DIR.exists() or not any(SOP_DOCS_DIR.rglob("*.md")):
+        return VectorSearchResponse(query=query, results=[], total=0)
+
+    try:
+        from sop_doc_vector_store import SOPDocVectorStore
+
+        store = SOPDocVectorStore(
+            docs_dir=str(SOP_DOCS_DIR),
+            embedding_cache_dir=os.getenv("EMBEDDING_CACHE_DIR", ""),
+            embedding_model=os.getenv("EMBEDDING_MODEL") or None,
+        )
+        await store.build()
+        results = await store.similarity_search(query, k=k)
+
+        items: List[VectorSearchResultItem] = []
+        for result in results:
+            metadata = getattr(result, "metadata", {}) or {}
+            items.append(
+                VectorSearchResultItem(
+                    doc_id=getattr(result, "doc_id", "") or "",
+                    score=float(getattr(result, "score", 0.0)),
+                    embedded_text=getattr(result, "description", "") or "",
+                    tool_id=getattr(result, "tool_id", None),
+                    used_doc_id_fallback=bool(metadata.get("used_doc_id_fallback")),
+                )
+            )
+
+        return VectorSearchResponse(query=query, results=items, total=len(items))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error during vector search for '{query}': {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.delete("/doc/{doc_path:path}")

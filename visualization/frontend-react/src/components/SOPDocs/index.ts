@@ -6,5 +6,6 @@ export { SopDocsPage } from './SopDocsPage';
 export { SopDocTree } from './SopDocTree';
 export { SopDocEditor } from './SopDocEditor';
 export { SearchBar } from './SearchBar';
+export { VectorSearchPanel } from './VectorSearchPanel';
 export { MetadataForm } from './MetadataForm';
 export { MarkdownEditor } from './MarkdownEditor';

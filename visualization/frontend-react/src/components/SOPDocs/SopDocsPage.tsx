@@ -10,6 +10,7 @@ import type { TreeNode, SopDoc, SearchResponse, SopDocMetaSummary } from '../../
 import { SopDocTree } from './SopDocTree';
 import { SopDocEditor } from './SopDocEditor';
 import { SearchBar } from './SearchBar';
+import { VectorSearchPanel } from './VectorSearchPanel';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import './SopDocsPage.css';
 
@@ -25,6 +26,7 @@ export const SopDocsPage: React.FC = () => {
   const [treeLoading, setTreeLoading] = useState(false);
   const [docLoading, setDocLoading] = useState(false);
   const [allMeta, setAllMeta] = useState<SopDocMetaSummary[] | null>(null);
+  const [searchMode, setSearchMode] = useState<'keyword' | 'vector'>('keyword');
 
   // Load tree and metadata on mount
   useEffect(() => {
@@ -104,6 +106,14 @@ export const SopDocsPage: React.FC = () => {
 
   const handleClearSearch = () => {
     setSearchResults(null);
+  };
+
+  const handleSetSearchMode = (mode: 'keyword' | 'vector') => {
+    setSearchMode(mode);
+    if (mode === 'vector') {
+      // Ensure the tree is not filtered by keyword search results.
+      setSearchResults(null);
+    }
   };
 
   const handleSave = async (doc: SopDoc) => {
@@ -231,13 +241,34 @@ export const SopDocsPage: React.FC = () => {
             ↻
           </button>
         </div>
+
+        <div className="sop-docs-search-mode-toggle">
+          <button
+            className={`sop-docs-search-mode-btn ${searchMode === 'keyword' ? 'active' : ''}`}
+            onClick={() => handleSetSearchMode('keyword')}
+            type="button"
+          >
+            Keyword search
+          </button>
+          <button
+            className={`sop-docs-search-mode-btn ${searchMode === 'vector' ? 'active' : ''}`}
+            onClick={() => handleSetSearchMode('vector')}
+            type="button"
+          >
+            Vector search
+          </button>
+        </div>
         
-        <SearchBar
-          onSearch={handleSearch}
-          onClear={handleClearSearch}
-          searchResults={searchResults}
-          onSelectResult={handleSelectDoc}
-        />
+        {searchMode === 'keyword' ? (
+          <SearchBar
+            onSearch={handleSearch}
+            onClear={handleClearSearch}
+            searchResults={searchResults}
+            onSelectResult={handleSelectDoc}
+          />
+        ) : (
+          <VectorSearchPanel onSelectDoc={handleSelectDoc} />
+        )}
 
         <SopDocTree
           tree={tree}
