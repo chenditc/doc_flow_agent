@@ -1,7 +1,7 @@
 {
   "test_name": "doc_execute_engine_test_llm_tool_direct",
-  "mode": "real",
-  "timestamp": "2025-12-28T21:51:35.719923",
+  "mode": "mock_then_real",
+  "timestamp": "2026-01-04T21:37:43.515315",
   "tool_calls": [
     {
       "tool_id": "LLM",
@@ -13,8 +13,8 @@
         "content": "def add_numbers(a, b):\n    return a + b",
         "tool_calls": []
       },
-      "timestamp": "2025-12-28T21:51:35.719377",
-      "execution_time_ms": 3466.287429095246,
+      "timestamp": "2026-01-04T21:37:43.515015",
+      "execution_time_ms": 0.0009399373084306717,
       "parameters_hash": "27e91c44276c7140"
     }
   ],
@@ -24,5 +24,5 @@
       "LLM"
     ]
   },
-  "saved_at": "2025-12-28T21:51:35.719993"
+  "saved_at": "2026-01-04T21:37:43.515363"
 }

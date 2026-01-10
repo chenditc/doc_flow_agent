@@ -210,7 +210,7 @@ async def debug_state():
             "connections": conn_summary,
             "pending_broadcasts": pending,
             "file_observer_alive": observer_alive,
-            "loop_debug": getattr(loop, "get_debug", lambda: False)(),
+            "loop_debug": loop.get_debug(),
             "tasks_count": len(tasks),
         }
     except Exception as e:

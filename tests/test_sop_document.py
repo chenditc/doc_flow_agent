@@ -289,13 +289,11 @@ class TestSOPDocumentParser(unittest.TestCase):
     
     def tearDown(self):
         """Clean up test fixtures"""
-        vector_patch = getattr(self, "_vector_patch", None)
-        if vector_patch:
-            try:
-                vector_patch.stop()
-            except RuntimeError:
-                # Patch may have been stopped early by a test that exercises real vector search.
-                pass
+        try:
+            self._vector_patch.stop()
+        except RuntimeError:
+            # Patch may have been stopped early by a test that exercises real vector search.
+            pass
         shutil.rmtree(self.test_dir)
     
     def _create_test_documents(self):
@@ -540,8 +538,7 @@ requires_planning_metadata: true
 
         # This test exercises the real vector-search path, so disable the default
         # test-wide patch that forces vector search to return [].
-        if getattr(self, "_vector_patch", None):
-            self._vector_patch.stop()
+        self._vector_patch.stop()
 
         project_root = Path(__file__).resolve().parents[1]
         docs_dir = project_root / "sop_docs"
@@ -571,12 +568,14 @@ requires_planning_metadata: true
         # Use a query string that is guaranteed to be present in the committed embedding cache
         # (it matches one SOP doc's embedded text), so this test can run offline.
         query = "blog/generate_outline: Generate blog outline structure"
-        metadata = asyncio.run(parser.get_planning_metadata(query, include_vector_candidates=True))
+        with patch.dict(os.environ, {"SOP_VECTOR_SEARCH_QUERY_REWRITE_MODE": "off"}):
+            metadata = asyncio.run(parser.get_planning_metadata(query, include_vector_candidates=True))
         self.assertGreater(len(metadata["vector_candidates"]), 0)
         self.assertEqual(metadata["vector_candidates"][0]["doc_id"], "blog/generate_outline")
 
         async def run_test():
-            return await parser._select_tool_for_task(query)
+            with patch.dict(os.environ, {"SOP_VECTOR_SEARCH_QUERY_REWRITE_MODE": "off"}):
+                return await parser._select_tool_for_task(query)
 
         result = asyncio.run(run_test())
 
@@ -586,6 +585,153 @@ requires_planning_metadata: true
         prompt_text = call_payload["prompt"]
         self.assertIn("<available_tools>", prompt_text)
         self.assertIn(f"<doc_id>{enum_values[0]}</doc_id>", prompt_text)
+
+    def test_vector_search_auto_triggers_rewrite_when_score_low(self):
+        """Auto mode should rewrite and re-search when the best score is below threshold."""
+        from dataclasses import dataclass
+
+        # We need the real _get_vector_search_candidates implementation.
+        self._vector_patch.stop()
+
+        @dataclass
+        class FakeResult:
+            doc_id: str
+            description: str
+            score: float
+            metadata: dict
+
+        description = "Open https://example.com/user/123 and click the blue button"
+        rewritten_query = "browser click button"
+
+        first = [FakeResult(doc_id="raw/doc", description="raw/doc: Raw", score=0.2, metadata={})]
+        second = [FakeResult(doc_id="rewritten/doc", description="rewritten/doc: Rewritten", score=0.9, metadata={})]
+
+        fake_store = MagicMock()
+
+        async def search_side_effect(query: str, k: int = 5):
+            if query == description:
+                return first
+            if query == rewritten_query:
+                return second
+            return []
+
+        fake_store.similarity_search = AsyncMock(side_effect=search_side_effect)
+
+        mock_llm_tool = AsyncMock()
+        mock_llm_tool.small_model = "mock-small"
+        mock_llm_tool.execute = AsyncMock(
+            return_value={
+                "content": "ok",
+                "tool_calls": [{"name": "rewrite_sop_vector_query", "arguments": {"query": rewritten_query}}],
+            }
+        )
+
+        parser = SOPDocumentParser(docs_dir=str(self.docs_dir), llm_tool=mock_llm_tool)
+
+        with patch.dict(
+            os.environ,
+            {
+                "SOP_VECTOR_SEARCH_QUERY_REWRITE_MODE": "auto",
+                "SOP_VECTOR_SEARCH_QUERY_REWRITE_THRESHOLD": "0.5",
+            },
+        ), patch.object(parser, "_ensure_vector_store", new=AsyncMock(return_value=fake_store)):
+            candidates = asyncio.run(parser._get_vector_search_candidates(description, k=5))
+
+        mock_llm_tool.execute.assert_awaited_once()
+        self.assertEqual(fake_store.similarity_search.await_count, 2)
+        self.assertEqual(fake_store.similarity_search.await_args_list[0].args[0], description)
+        self.assertEqual(fake_store.similarity_search.await_args_list[1].args[0], rewritten_query)
+        self.assertGreater(len(candidates), 0)
+        self.assertEqual(candidates[0]["doc_id"], "rewritten/doc")
+
+    def test_vector_search_auto_skips_rewrite_when_score_high(self):
+        """Auto mode should not rewrite when the best score is above threshold."""
+        from dataclasses import dataclass
+
+        self._vector_patch.stop()
+
+        @dataclass
+        class FakeResult:
+            doc_id: str
+            description: str
+            score: float
+            metadata: dict
+
+        description = "List all blog outline SOPs"
+        first = [FakeResult(doc_id="raw/doc", description="raw/doc: Raw", score=0.8, metadata={})]
+
+        fake_store = MagicMock()
+        fake_store.similarity_search = AsyncMock(return_value=first)
+
+        mock_llm_tool = AsyncMock()
+        mock_llm_tool.small_model = "mock-small"
+        mock_llm_tool.execute = AsyncMock()
+
+        parser = SOPDocumentParser(docs_dir=str(self.docs_dir), llm_tool=mock_llm_tool)
+
+        with patch.dict(
+            os.environ,
+            {
+                "SOP_VECTOR_SEARCH_QUERY_REWRITE_MODE": "auto",
+                "SOP_VECTOR_SEARCH_QUERY_REWRITE_THRESHOLD": "0.5",
+            },
+        ), patch.object(parser, "_ensure_vector_store", new=AsyncMock(return_value=fake_store)):
+            candidates = asyncio.run(parser._get_vector_search_candidates(description, k=5))
+
+        mock_llm_tool.execute.assert_not_called()
+        self.assertEqual(fake_store.similarity_search.await_count, 1)
+        self.assertGreater(len(candidates), 0)
+        self.assertEqual(candidates[0]["doc_id"], "raw/doc")
+
+    def test_vector_search_mode_always_forces_rewrite(self):
+        """Always mode should rewrite even when the best score is high."""
+        from dataclasses import dataclass
+
+        self._vector_patch.stop()
+
+        @dataclass
+        class FakeResult:
+            doc_id: str
+            description: str
+            score: float
+            metadata: dict
+
+        description = "Open https://example.com and login as Alice"
+        rewritten_query = "browser login"
+
+        first = [FakeResult(doc_id="raw/doc", description="raw/doc: Raw", score=0.9, metadata={})]
+        second = [FakeResult(doc_id="rewritten/doc", description="rewritten/doc: Rewritten", score=0.95, metadata={})]
+
+        fake_store = MagicMock()
+
+        async def search_side_effect(query: str, k: int = 5):
+            if query == description:
+                return first
+            if query == rewritten_query:
+                return second
+            return []
+
+        fake_store.similarity_search = AsyncMock(side_effect=search_side_effect)
+
+        mock_llm_tool = AsyncMock()
+        mock_llm_tool.small_model = "mock-small"
+        mock_llm_tool.execute = AsyncMock(
+            return_value={
+                "content": "ok",
+                "tool_calls": [{"name": "rewrite_sop_vector_query", "arguments": {"query": rewritten_query}}],
+            }
+        )
+
+        parser = SOPDocumentParser(docs_dir=str(self.docs_dir), llm_tool=mock_llm_tool)
+
+        with patch.dict(os.environ, {"SOP_VECTOR_SEARCH_QUERY_REWRITE_MODE": "always"}), patch.object(
+            parser, "_ensure_vector_store", new=AsyncMock(return_value=fake_store)
+        ):
+            candidates = asyncio.run(parser._get_vector_search_candidates(description, k=5))
+
+        mock_llm_tool.execute.assert_awaited_once()
+        self.assertEqual(fake_store.similarity_search.await_count, 2)
+        self.assertEqual(candidates[0]["doc_id"], "rewritten/doc")
 
     def test_vector_search_deduplicates_existing_docs(self):
         """Ensure vector search entries aren't duplicated when already a tool."""

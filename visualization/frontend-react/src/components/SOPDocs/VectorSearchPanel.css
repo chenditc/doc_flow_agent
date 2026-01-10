@@ -89,6 +89,20 @@
   margin-bottom: 8px;
 }
 
+.vector-search-results-query {
+  margin-top: 4px;
+  font-weight: 500;
+  color: #555;
+  word-break: break-word;
+}
+
+.vector-search-results-query-secondary {
+  margin-top: 2px;
+  font-weight: 500;
+  color: #777;
+  word-break: break-word;
+}
+
 .vector-search-empty {
   color: #888;
   font-size: 13px;
@@ -151,6 +165,14 @@
   border: 1px solid #e0e0e0;
   color: #555;
   background: #f5f5f5;
+}
+
+.vector-search-pill-rewritten {
+  border-color: #bbdefb;
+  background: #e3f2fd;
+  color: #1565c0;
+  white-space: normal;
+  word-break: break-word;
 }
 
 .vector-search-result-preview {

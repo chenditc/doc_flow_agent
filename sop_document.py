@@ -532,21 +532,28 @@ Please use the select_tool_for_task function to provide your analysis.
         store = await self._ensure_vector_store()
         if store is None:
             return []
-        try:
-            results = await store.similarity_search(description, k=k)
-        except Exception as exc:  # pragma: no cover - defensive log
-            print(f"[SOP_VECTOR_SEARCH] Failed to search vector store: {exc}")
-            raise exc
+        from utils.sop_vector_search import vector_search_with_optional_rewrite
+
+        results, _used_query_by_doc_id = await vector_search_with_optional_rewrite(
+            store=store,
+            query=description,
+            k=k,
+            llm_tool=self.llm_tool,
+        )
 
         suggestions: List[Dict[str, str]] = []
         seen: set[str] = set()
         for result in results:
-            doc_id = getattr(result, "doc_id", "")
+            doc_id = result.doc_id
             if not doc_id or doc_id in seen:
                 continue
+            metadata = result.metadata or {}
+            canonical_description = (metadata.get("sop_description") or "").strip()
             suggestions.append({
                 "doc_id": doc_id,
-                "description": result.description,
+                # Keep the legacy shape (doc_id + description) for prompt stability,
+                # but if the best match came from an alias entry, prefer the canonical SOP description.
+                "description": f"{doc_id}: {canonical_description}" if canonical_description else result.description,
             })
             seen.add(doc_id)
         return suggestions

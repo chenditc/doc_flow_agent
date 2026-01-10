@@ -10,6 +10,7 @@ import hashlib
 import shutil
 import logging
 import subprocess
+import time
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Union
 from pydantic import BaseModel, Field, field_validator
@@ -146,6 +147,7 @@ class VectorSearchResultItem(BaseModel):
     embedded_text: str
     tool_id: Optional[str] = None
     used_doc_id_fallback: bool
+    used_query: str
 
 
 class VectorSearchResponse(BaseModel):
@@ -1065,6 +1067,8 @@ async def vector_search(request: VectorSearchRequest):
     """
     Similarity search over SOP docs using the same vector store used by doc_execute_engine.
     """
+    debug = os.getenv("SOP_DOC_API_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}
+    t0 = time.perf_counter()
     query = (request.query or "").strip()
     if not query:
         raise HTTPException(status_code=400, detail="Query cannot be empty")
@@ -1074,36 +1078,76 @@ async def vector_search(request: VectorSearchRequest):
 
     # If there are no SOP docs, return empty results.
     if not SOP_DOCS_DIR.exists() or not any(SOP_DOCS_DIR.rglob("*.md")):
-        return VectorSearchResponse(query=query, results=[], total=0)
+        return VectorSearchResponse(
+            query=query,
+            results=[],
+            total=0,
+        )
 
     try:
         from sop_doc_vector_store import SOPDocVectorStore
+        from utils.sop_vector_search import vector_search_with_optional_rewrite
 
         store = SOPDocVectorStore(
             docs_dir=str(SOP_DOCS_DIR),
             embedding_cache_dir=os.getenv("EMBEDDING_CACHE_DIR", ""),
             embedding_model=os.getenv("EMBEDDING_MODEL") or None,
         )
+        if debug:
+            logger.info("[SOP_DOC_API] Building vector store for vector-search...")
         await store.build()
-        results = await store.similarity_search(query, k=k)
+        if debug:
+            logger.info("[SOP_DOC_API] Vector store built in %.3fs", time.perf_counter() - t0)
+        results, used_query_by_doc_id = await vector_search_with_optional_rewrite(
+            store=store,
+            query=query,
+            k=k,
+            llm_tool=None,
+        )
+        if debug:
+            logger.info("[SOP_DOC_API] similarity_search done in %.3fs", time.perf_counter() - t0)
 
         items: List[VectorSearchResultItem] = []
         for result in results:
-            metadata = getattr(result, "metadata", {}) or {}
+            metadata = result.metadata or {}
+            doc_id = result.doc_id or ""
             items.append(
                 VectorSearchResultItem(
-                    doc_id=getattr(result, "doc_id", "") or "",
-                    score=float(getattr(result, "score", 0.0)),
-                    embedded_text=getattr(result, "description", "") or "",
-                    tool_id=getattr(result, "tool_id", None),
+                    doc_id=doc_id,
+                    score=float(result.score),
+                    embedded_text=result.description or "",
+                    tool_id=result.tool_id,
                     used_doc_id_fallback=bool(metadata.get("used_doc_id_fallback")),
+                    used_query=used_query_by_doc_id.get(doc_id, query),
                 )
             )
 
-        return VectorSearchResponse(query=query, results=items, total=len(items))
+        return VectorSearchResponse(
+            query=query,
+            results=items,
+            total=len(items),
+        )
     except HTTPException:
         raise
     except Exception as e:
+        # Improve UX for common provider connectivity failures (embeddings call).
+        try:  # pragma: no cover - best-effort classification
+            import openai  # type: ignore
+
+            if isinstance(e, openai.APIConnectionError):
+                raise HTTPException(
+                    status_code=503,
+                    detail=(
+                        "Embedding provider connection error. "
+                        "Check OPENAI_API_BASE/OPENAI_API_KEY, proxy/DNS/network egress, and try again. "
+                        "For more detail, check server logs for embedding error context."
+                    ),
+                )
+        except HTTPException:
+            raise
+        except Exception:
+            # If classification fails, fall through to generic handling.
+            pass
         logger.error(f"Unexpected error during vector search for '{query}': {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 

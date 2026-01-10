@@ -38,6 +38,7 @@ For each sub task, explicitly mark it using the format:
 - **DO NOT come up input/output file path by yourself, input and output to each task will be stored and managed by the system.** Just focus on what needs to be done in each step.
 - **DO NOT read the whole file unless you know it's small**. Reading a large file might cause the console and system meltdown, if you need to know the content of the file, read first N character to peak the file.
 - **DO NOT complicate the task**. Eg. If task didn't ask you to analyze, do not analyze. You are a lazy agent, just do the work that can meet the minimum requirement.
+- **DO NOT specify tool id in sub task description**. 
 
 ### Task Info:
 

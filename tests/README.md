@@ -4,6 +4,25 @@ Contains unit tests for doc flow agent components.
 
 ## Running Tests
 
+## Embedding cache (SOP vector search)
+
+Some unit tests (SOP vector search) rely on the on-disk embedding cache in `.cache/embeddings/<model>.json`.
+
+- The default model for tests is `text-embedding-ada-002` (set in `tests/conftest.py`).
+- Cache misses call the real embeddings endpoint and append to the JSON via `utils/embedding_utils.py`.
+
+### Regenerating the cache
+
+If `.cache/embeddings/text-embedding-ada-002.json` is missing/outdated, regenerate it by running pytest with a higher timeout and `OPENAI_API_KEY` set:
+
+```bash
+export OPENAI_API_KEY=...
+# optional: export OPENAI_API_BASE=...
+python -m pytest --timeout=0
+```
+
+This will recreate/update `.cache/embeddings/text-embedding-ada-002.json` automatically during the run.
+
 ### Run all tests:
 ```bash
 source .venv/bin/activate

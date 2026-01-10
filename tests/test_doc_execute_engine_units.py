@@ -623,6 +623,117 @@ class TestDocExecuteEngineUnits(unittest.TestCase):
         self.assertIn("<tool_id>custom/doc</tool_id>", called_params["prompt"])
         mock_parse_new_tasks.assert_not_awaited()
 
+    @patch.object(DocExecuteEngine, "_attempt_subtree_compaction", new_callable=AsyncMock)
+    def test_execute_task_renders_implicit_task_description_without_input_json_path(self, mock_compaction):
+        engine = DocExecuteEngine(enable_tracing=False)
+        engine.context = {}
+
+        task = Task(
+            task_id="implicit_task_description",
+            description="Test task description",
+            sop_doc_id="dummy/implicit_task_description",
+            tool={
+                "tool_id": "LLM",
+                "parameters": {"prompt": "Do: {task_description}"},
+            },
+            input_json_path={},
+            output_json_path="$.out",
+            output_description="Output",
+            skip_new_task_generation=True,
+        )
+
+        engine.sop_loader.load_sop_document = MagicMock(return_value=MagicMock(body=""))
+        engine.tools["LLM"].execute = AsyncMock(return_value={"content": "ok"})
+        mock_compaction.return_value = False
+
+        asyncio.run(engine.execute_task(task))
+
+        called_params = engine.tools["LLM"].execute.await_args.args[0]
+        self.assertEqual(called_params["prompt"], "Do: Test task description")
+
+    @patch.object(DocExecuteEngine, "_attempt_subtree_compaction", new_callable=AsyncMock)
+    def test_execute_task_renders_implicit_current_task_without_input_json_path(self, mock_compaction):
+        # Case A: uses engine.context["current_task"]
+        engine = DocExecuteEngine(enable_tracing=False)
+        engine.context = {"current_task": "CTX_VALUE"}
+
+        task = Task(
+            task_id="implicit_current_task_ctx",
+            description="Task description fallback",
+            sop_doc_id="dummy/implicit_current_task_ctx",
+            tool={
+                "tool_id": "LLM",
+                "parameters": {"prompt": "Do: {current_task}"},
+            },
+            input_json_path={},
+            output_json_path="$.out",
+            output_description="Output",
+            skip_new_task_generation=True,
+        )
+
+        engine.sop_loader.load_sop_document = MagicMock(return_value=MagicMock(body=""))
+        engine.tools["LLM"].execute = AsyncMock(return_value={"content": "ok"})
+        mock_compaction.return_value = False
+
+        asyncio.run(engine.execute_task(task))
+
+        called_params = engine.tools["LLM"].execute.await_args.args[0]
+        self.assertEqual(called_params["prompt"], "Do: CTX_VALUE")
+
+        # Case B: fallback to task.description when context is missing
+        engine2 = DocExecuteEngine(enable_tracing=False)
+        engine2.context = {}
+
+        task2 = Task(
+            task_id="implicit_current_task_fallback",
+            description="Fallback description",
+            sop_doc_id="dummy/implicit_current_task_fallback",
+            tool={
+                "tool_id": "LLM",
+                "parameters": {"prompt": "Do: {current_task}"},
+            },
+            input_json_path={},
+            output_json_path="$.out",
+            output_description="Output",
+            skip_new_task_generation=True,
+        )
+
+        engine2.sop_loader.load_sop_document = MagicMock(return_value=MagicMock(body=""))
+        engine2.tools["LLM"].execute = AsyncMock(return_value={"content": "ok"})
+
+        asyncio.run(engine2.execute_task(task2))
+
+        called_params2 = engine2.tools["LLM"].execute.await_args.args[0]
+        self.assertEqual(called_params2["prompt"], "Do: Fallback description")
+
+    @patch.object(DocExecuteEngine, "_attempt_subtree_compaction", new_callable=AsyncMock)
+    def test_explicit_input_json_path_overrides_implicit_values(self, mock_compaction):
+        engine = DocExecuteEngine(enable_tracing=False)
+        engine.context = {"custom": "OVERRIDE"}
+
+        task = Task(
+            task_id="override_implicit_task_description",
+            description="Original description",
+            sop_doc_id="dummy/override_implicit_task_description",
+            tool={
+                "tool_id": "LLM",
+                "parameters": {"prompt": "Do: {task_description}"},
+            },
+            input_json_path={"task_description": "$.custom"},
+            output_json_path="$.out",
+            output_description="Output",
+            skip_new_task_generation=True,
+        )
+
+        engine.sop_loader.load_sop_document = MagicMock(return_value=MagicMock(body=""))
+        engine.tools["LLM"].execute = AsyncMock(return_value={"content": "ok"})
+        mock_compaction.return_value = False
+
+        asyncio.run(engine.execute_task(task))
+
+        called_params = engine.tools["LLM"].execute.await_args.args[0]
+        self.assertEqual(called_params["prompt"], "Do: OVERRIDE")
+
 
 if __name__ == '__main__':
     unittest.main()

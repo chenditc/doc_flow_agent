@@ -1,85 +1,159 @@
 {
   "test_name": "doc_execute_engine_test_execute_task_cli_tool",
-  "mode": "real",
-  "timestamp": "2025-12-28T21:50:31.392329",
+  "mode": "mock_then_real",
+  "timestamp": "2026-01-04T21:27:42.246636",
   "tool_calls": [
-    {
-      "tool_id": "LLM",
-      "parameters": {
-        "prompt": "\nAnalyze the output of the following text and extract any new task descriptions that need to be executed by agent. New task description is wrapped by <new task to execute> tag or other xml tag with similar meaning. If there is no such tag, do not consider it as new task to extract.\n\n**Important notes:**\n1. Only extract tasks that clearly and necessarily need to be executed next to achieve the intended deliverable, do not speculate.\n2. Task descriptions should be clear and specific. Make sure the task is understandable without any additional context. Keep reference documentation path as it is.\n3. If a reference doc is mentioned, include it in the task description.\n4. There can be overlap between task descriptions. Make sure each description is comprehensive and non-duplicative.\n5. Please use the original task description's language as your response language.\n6. If there is duplicate task with \"Task list waiting for execute\", skip the duplicated task and do not add it in tasks array.\n7. Do not add additional task requirement detailed if not explicitly specified.\n\nHere is the text that needs analysis:\n\n<Task output content to analyze>\n<stdout>\ntotal 2097372\ndrwxr-xr-x  22 root     root       4096  8\u6708  3  2023 .\ndrwxr-xr-x  22 root     root       4096  8\u6708  3  2023 ..\nlrwxrwxrwx   1 root     root          7  2\u6708 22  2023 bin -> usr/bin\ndrwxr-xr-x   4 root     root       4096 12\u6708 20 06:30 boot\ndrwxrwxr-x   2 root     root       4096  2\u6708 22  2023 cdrom\ndrwxr-xr-x  51 chenditc root       4096 12\u6708 12 16:13 data\ndrwxr-xr-x  19 root     root       4760 12\u6708 22 09:24 dev\ndrwxr-xr-x   2 root     root       4096  3\u6708  9  2023 di_nas\ndrwxr-xr-x 161 root     root      12288 12\u6708 22 09:35 etc\ndrwxr-xr-x   3 root     root       4096  2\u6708 22  2023 home\nlrwxrwxrwx   1 root     root          7  2\u6708 22  2023 lib -> usr/lib\nlrwxrwxrwx   1 root     root          9  2\u6708 22  2023 lib32 -> usr/lib32\nlrwxrwxrwx   1 root     root          9  2\u6708 22  2023 lib64 -> usr/lib64\nlrwxrwxrwx   1 root     root         10  2\u6708 22  2023 libx32 -> usr/libx32\ndrwx------   2 root     root      16384  2\u6708 22  2023 lost+found\ndrwxr-xr-x   3 root     root       4096  5\u6708 21  2023 media\ndrwxr-xr-x   4 root     root       4096  8\u6708 28  2023 mnt\ndrwxr-xr-x  10 root     root       4096  2\u6708 23  2025 opt\ndr-xr-xr-x 960 root     root          0 12\u6708 22 09:24 proc\ndrwx------   9 root     root       4096 12\u6708 17 17:35 root\ndrwxr-xr-x  47 root     root       1380 12\u6708 28 21:11 run\nlrwxrwxrwx   1 root     root          8  2\u6708 22  2023 sbin -> usr/sbin\ndrwxr-xr-x  15 root     root       4096  2\u6708 23  2023 snap\ndrwxr-xr-x   2 root     root       4096  8\u6708  9  2022 srv\n-rw-------   1 root     root 2147483648  2\u6708 22  2023 swapfile\ndr-xr-xr-x  13 root     root          0 12\u6708 22 09:24 sys\ndrwxrwxrwt  43 root     root     126976 12\u6708 28 21:50 tmp\ndrwxr-xr-x  14 root     root       4096  8\u6708  9  2022 usr\ndrwxr-xr-x  15 root     root       4096  6\u6708 23  2023 var\n\n</stdout>\n<stderr>\n\n</stderr>\n<returncode>\n0\n</returncode>\n<executed_command>\nls -la /\n</executed_command>\n<success>\nTrue\n</success>\n</Task output content to analyze>\n\n<Task list waiting for execute>\nNo tasks waiting in queue\n</Task list waiting for execute>\n",
-        "tools": [
-          {
-            "type": "function",
-            "function": {
-              "name": "extract_new_tasks",
-              "description": "Extract new task descriptions that need to be executed by the agent",
-              "parameters": {
-                "type": "object",
-                "properties": {
-                  "think_process": {
-                    "type": "string",
-                    "description": "The process of analyze if there is new task for to do, and if there is any task duplicate with task list waiting for execute."
-                  },
-                  "tasks": {
-                    "type": "array",
-                    "description": "List of new task descriptions that need to be executed, each task should be a valid json string, be careful when you escape newline and quotes \". Empty array if no new tasks found.",
-                    "items": {
-                      "type": "string",
-                      "description": "A single task description string"
-                    }
-                  }
-                },
-                "required": [
-                  "tasks"
-                ]
-              }
-            }
-          }
-        ],
-        "model": "gpt-5-mini",
-        "__sop_doc_body": null
-      },
-      "output": {
-        "content": "",
-        "tool_calls": [
-          {
-            "id": "call_i6g80yjITok4WHOFym2B9sVx",
-            "name": "extract_new_tasks",
-            "arguments": {
-              "tasks": [],
-              "think_process": "Scanned the provided Task output content for any XML-like tags such as <new task to execute> or similar that wrap explicit new task descriptions. The ls -la output and surrounding metadata contain no such tags or any explicit new task descriptions. Per instructions, do not extract speculative tasks. Therefore return an empty tasks array."
-            }
-          }
-        ]
-      },
-      "timestamp": "2025-12-28T21:50:25.188366",
-      "execution_time_ms": 3810.7798079727218,
-      "parameters_hash": "52d1e2ee6cd0e06f"
-    },
     {
       "tool_id": "CLI",
       "parameters": {
+        "task_description": "List root directory contents using command: ls -la /",
+        "current_task": "List root directory contents using command: ls -la /",
         "command": "ls -la /",
         "__sop_doc_body": "\n\n\n\n"
       },
       "output": {
-        "stdout": "total 2097372\ndrwxr-xr-x  22 root     root       4096  8\u6708  3  2023 .\ndrwxr-xr-x  22 root     root       4096  8\u6708  3  2023 ..\nlrwxrwxrwx   1 root     root          7  2\u6708 22  2023 bin -> usr/bin\ndrwxr-xr-x   4 root     root       4096 12\u6708 20 06:30 boot\ndrwxrwxr-x   2 root     root       4096  2\u6708 22  2023 cdrom\ndrwxr-xr-x  51 chenditc root       4096 12\u6708 12 16:13 data\ndrwxr-xr-x  19 root     root       4760 12\u6708 22 09:24 dev\ndrwxr-xr-x   2 root     root       4096  3\u6708  9  2023 di_nas\ndrwxr-xr-x 161 root     root      12288 12\u6708 22 09:35 etc\ndrwxr-xr-x   3 root     root       4096  2\u6708 22  2023 home\nlrwxrwxrwx   1 root     root          7  2\u6708 22  2023 lib -> usr/lib\nlrwxrwxrwx   1 root     root          9  2\u6708 22  2023 lib32 -> usr/lib32\nlrwxrwxrwx   1 root     root          9  2\u6708 22  2023 lib64 -> usr/lib64\nlrwxrwxrwx   1 root     root         10  2\u6708 22  2023 libx32 -> usr/libx32\ndrwx------   2 root     root      16384  2\u6708 22  2023 lost+found\ndrwxr-xr-x   3 root     root       4096  5\u6708 21  2023 media\ndrwxr-xr-x   4 root     root       4096  8\u6708 28  2023 mnt\ndrwxr-xr-x  10 root     root       4096  2\u6708 23  2025 opt\ndr-xr-xr-x 960 root     root          0 12\u6708 22 09:24 proc\ndrwx------   9 root     root       4096 12\u6708 17 17:35 root\ndrwxr-xr-x  47 root     root       1380 12\u6708 28 21:11 run\nlrwxrwxrwx   1 root     root          8  2\u6708 22  2023 sbin -> usr/sbin\ndrwxr-xr-x  15 root     root       4096  2\u6708 23  2023 snap\ndrwxr-xr-x   2 root     root       4096  8\u6708  9  2022 srv\n-rw-------   1 root     root 2147483648  2\u6708 22  2023 swapfile\ndr-xr-xr-x  13 root     root          0 12\u6708 22 09:24 sys\ndrwxrwxrwt  43 root     root     126976 12\u6708 28 21:50 tmp\ndrwxr-xr-x  14 root     root       4096  8\u6708  9  2022 usr\ndrwxr-xr-x  15 root     root       4096  6\u6708 23  2023 var\n",
+        "stdout": "total 2097372\ndrwxr-xr-x  22 root     root       4096  8月  3  2023 .\ndrwxr-xr-x  22 root     root       4096  8月  3  2023 ..\nlrwxrwxrwx   1 root     root          7  2月 22  2023 bin -> usr/bin\ndrwxr-xr-x   4 root     root       4096 12月 20 06:30 boot\ndrwxrwxr-x   2 root     root       4096  2月 22  2023 cdrom\ndrwxr-xr-x  51 chenditc root       4096 12月 12 16:13 data\ndrwxr-xr-x  19 root     root       4760 12月 22 09:24 dev\ndrwxr-xr-x   2 root     root       4096  3月  9  2023 di_nas\ndrwxr-xr-x 161 root     root      12288 12月 22 09:35 etc\ndrwxr-xr-x   3 root     root       4096  2月 22  2023 home\nlrwxrwxrwx   1 root     root          7  2月 22  2023 lib -> usr/lib\nlrwxrwxrwx   1 root     root          9  2月 22  2023 lib32 -> usr/lib32\nlrwxrwxrwx   1 root     root          9  2月 22  2023 lib64 -> usr/lib64\nlrwxrwxrwx   1 root     root         10  2月 22  2023 libx32 -> usr/libx32\ndrwx------   2 root     root      16384  2月 22  2023 lost+found\ndrwxr-xr-x   3 root     root       4096  5月 21  2023 media\ndrwxr-xr-x   4 root     root       4096  8月 28  2023 mnt\ndrwxr-xr-x  10 root     root       4096  2月 23  2025 opt\ndr-xr-xr-x 960 root     root          0 12月 22 09:24 proc\ndrwx------   9 root     root       4096 12月 17 17:35 root\ndrwxr-xr-x  47 root     root       1380 12月 28 21:11 run\nlrwxrwxrwx   1 root     root          8  2月 22  2023 sbin -> usr/sbin\ndrwxr-xr-x  15 root     root       4096  2月 23  2023 snap\ndrwxr-xr-x   2 root     root       4096  8月  9  2022 srv\n-rw-------   1 root     root 2147483648  2月 22  2023 swapfile\ndr-xr-xr-x  13 root     root          0 12月 22 09:24 sys\ndrwxrwxrwt  43 root     root     126976 12月 28 21:50 tmp\ndrwxr-xr-x  14 root     root       4096  8月  9  2022 usr\ndrwxr-xr-x  15 root     root       4096  6月 23  2023 var\n",
         "stderr": "",
         "returncode": 0,
         "executed_command": "ls -la /",
         "success": true
       },
-      "timestamp": "2025-12-28T21:50:21.375945",
-      "execution_time_ms": 4.392946953885257,
-      "parameters_hash": "dad8ffc351ef020c"
+      "timestamp": "2026-01-04T21:26:02.241007",
+      "execution_time_ms": 0.0011099036782979965,
+      "parameters_hash": "5bd3315e738e459a"
+    },
+    {
+      "tool_id": "LLM",
+      "parameters": {
+        "__sop_doc_body": null,
+        "model": "gemini-2.5-flash",
+        "prompt": "\nAnalyze the output of the following text and extract any new task descriptions that need to be executed by agent. New task description is wrapped by <new task to execute> tag or other xml tag with similar meaning. If there is no such tag, do not consider it as new task to extract.\n\n**Important notes:**\n1. Only extract tasks that clearly and necessarily need to be executed next to achieve the intended deliverable, do not speculate.\n2. Task descriptions should be clear and specific. Make sure the task is understandable without any additional context. Keep reference documentation path as it is.\n3. If a reference doc is mentioned, include it in the task description.\n4. There can be overlap between task descriptions. Make sure each description is comprehensive and non-duplicative.\n5. Please use the original task description's language as your response language.\n6. If there is duplicate task with \"Task list waiting for execute\", skip the duplicated task and do not add it in tasks array.\n7. Do not add additional task requirement detailed if not explicitly specified.\n\nHere is the text that needs analysis:\n\n<Task output content to analyze>\n<stdout>\ntotal 2097372\ndrwxr-xr-x  22 root     root       4096  8月  3  2023 .\ndrwxr-xr-x  22 root     root       4096  8月  3  2023 ..\nlrwxrwxrwx   1 root     root          7  2月 22  2023 bin -> usr/bin\ndrwxr-xr-x   4 root     root       4096 12月 20 06:30 boot\ndrwxrwxr-x   2 root     root       4096  2月 22  2023 cdrom\ndrwxr-xr-x  51 chenditc root       4096 12月 12 16:13 data\ndrwxr-xr-x  19 root     root       4760 12月 22 09:24 dev\ndrwxr-xr-x   2 root     root       4096  3月  9  2023 di_nas\ndrwxr-xr-x 161 root     root      12288 12月 22 09:35 etc\ndrwxr-xr-x   3 root     root       4096  2月 22  2023 home\nlrwxrwxrwx   1 root     root          7  2月 22  2023 lib -> usr/lib\nlrwxrwxrwx   1 root     root          9  2月 22  2023 lib32 -> usr/lib32\nlrwxrwxrwx   1 root     root          9  2月 22  2023 lib64 -> usr/lib64\nlrwxrwxrwx   1 root     root         10  2月 22  2023 libx32 -> usr/libx32\ndrwx------   2 root     root      16384  2月 22  2023 lost+found\ndrwxr-xr-x   3 root     root       4096  5月 21  2023 media\ndrwxr-xr-x   4 root     root       4096  8月 28  2023 mnt\ndrwxr-xr-x  10 root     root       4096  2月 23  2025 opt\ndr-xr-xr-x 960 root     root          0 12月 22 09:24 proc\ndrwx------   9 root     root       4096 12月 17 17:35 root\ndrwxr-xr-x  47 root     root       1380 12月 28 21:11 run\nlrwxrwxrwx   1 root     root          8  2月 22  2023 sbin -> usr/sbin\ndrwxr-xr-x  15 root     root       4096  2月 23  2023 snap\ndrwxr-xr-x   2 root     root       4096  8月  9  2022 srv\n-rw-------   1 root     root 2147483648  2月 22  2023 swapfile\ndr-xr-xr-x  13 root     root          0 12月 22 09:24 sys\ndrwxrwxrwt  43 root     root     126976 12月 28 21:50 tmp\ndrwxr-xr-x  14 root     root       4096  8月  9  2022 usr\ndrwxr-xr-x  15 root     root       4096  6月 23  2023 var\n\n</stdout>\n<stderr>\n\n</stderr>\n<returncode>\n0\n</returncode>\n<executed_command>\nls -la /\n</executed_command>\n<success>\nTrue\n</success>\n</Task output content to analyze>\n\n<Task list waiting for execute>\nNo tasks waiting in queue\n</Task list waiting for execute>\n",
+        "tools": [
+          {
+            "function": {
+              "description": "Extract new task descriptions that need to be executed by the agent",
+              "name": "extract_new_tasks",
+              "parameters": {
+                "properties": {
+                  "tasks": {
+                    "description": "List of new task descriptions that need to be executed, each task should be a valid json string, be careful when you escape newline and quotes \". Empty array if no new tasks found.",
+                    "items": {
+                      "description": "A single task description string",
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "think_process": {
+                    "description": "The process of analyze if there is new task for to do, and if there is any task duplicate with task list waiting for execute.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "tasks"
+                ],
+                "type": "object"
+              }
+            },
+            "type": "function"
+          }
+        ]
+      },
+      "output": {
+        "content": "",
+        "tool_calls": [
+          {
+            "id": "mock_extract_new_tasks_0",
+            "name": "extract_new_tasks",
+            "arguments": {
+              "think_process": "No new tasks.",
+              "tasks": []
+            }
+          }
+        ]
+      },
+      "timestamp": "2026-01-08T00:30:00.000000",
+      "execution_time_ms": 0.0,
+      "parameters_hash": "7367f0d0b4326837"
+    },
+    {
+      "tool_id": "LLM",
+      "parameters": {
+        "__sop_doc_body": null,
+        "model": "gemini-3-pro-preview",
+        "prompt": "<instructions>\nYou are a helpful agent which can perform task like run comamnd / code / search data / thinking on behalf of user. You are receiving root task description to execute, and you have performed some work for it. Your work's output is provided in aggregated_outputs.\n\nRight now, you need to evaluate whether your work has satisfied the root task requirements. \n\n1. First, you need to think about what to check based on the requirement evaluation rule. If no requirement evaluation rule present then consider the task description. If requirement evaluation rule is present, do not use any other evaluation rule. Only consider requirement not met if some requirement totally missed. Eg. We need to run a command and command not exists. Or if we need to write a paragraph and no text outputed. Start your think process by \"The requirement evaluation rule is ....\"\n2. If requirements are NOT met, list specific failing aspects and create new tasks to address them, so that user's end goal can be achieved. If there are multiple failing aspect and only some of them are root cause, you should only generate new task to address root cause. You should NOT generate new task to address non-root-cause issue or issue you are not confirmed. When you generate a retry task, make sure you use the same reference document as the original subtask.\n3. If requirements ARE met, provide a summary and which path in the aggregated_outputs should be used to consider as the deliverable output, put the json path as it is in the deliverable_output_path parameter. The deliverable_output_path should contains only the deliverable information, eg. if root task is asking a summary of an article, the deliverable_output_path should only contain summary, not including other thinking or execution process like download article or parse article. If the deliverable content is nested, you can access it like $.some_output_path.some_json_field_in_that_output. If there are multiple deliverable, include all paths. If all sub path are important, use the root path.\n\nUse the evaluate_and_summarize_subtree function to provide your evaluation.\n</instructions>\n\n<root_task_description>List root directory contents using command: ls -la /</root_task_description>\n<root_task_short_name>List root directory contents using command: ls ...</root_task_short_name>\n\n\n<task_execution_history>\n<task_event>\n<short_name>List root directory contents using command: ls ...</short_name>\n<description>\nList root directory contents using command: ls -la /\n</description>\n<output_json_path>$.cli_result</output_json_path>\n</task_event>\n</task_execution_history>\n\n<output json path content>\n<$.cli_result>\n{'stdout': 'total 2097372\\ndrwxr-xr-x  22 root     root       4096  8月  3  2023 .\\ndrwxr-xr-x  22 root     root       4096  8月  3  2023 ..\\nlrwxrwxrwx   1 root     root          7  2月 22  2023 bin -> usr/bin\\ndrwxr-xr-x   4 root     root       4096 12月 20 06:30 boot\\ndrwxrwxr-x   2 root     root       4096  2月 22  2023 cdrom\\ndrwxr-xr-x  51 chenditc root       4096 12月 12 16:13 data\\ndrwxr-xr-x  19 root     root       4760 12月 22 09:24 dev\\ndrwxr-xr-x   2 root     root       4096  3月  9  2023 di_nas\\ndrwxr-xr-x 161 root     root      12288 12月 22 09:35 etc\\ndrwxr-xr-x   3 root     root       4096  2月 22  2023 home\\nlrwxrwxrwx   1 root     root          7  2月 22  2023 lib -> usr/lib\\nlrwxrwxrwx   1 root     root          9  2月 22  2023 lib32 -> usr/lib32\\nlrwxrwxrwx   1 root     root          9  2月 22  2023 lib64 -> usr/lib64\\nlrwxrwxrwx   1 root     root         10  2月 22  2023 libx32 -> usr/libx32\\ndrwx------   2 root     root      16384  2月 22  2023 lost+found\\ndrwxr-xr-x   3 root     root       4096  5月 21  2023 media\\ndrwxr-xr-x   4 root     root       4096  8月 28  2023 mnt\\ndrwxr-xr-x  10 root     root       4096  2月 23  2025 opt\\ndr-xr-xr-x 960 root     root          0 12月 22 09:24 proc\\ndrwx------   9 root     root       4096 12月 17 17:35 root\\ndrwxr-xr-x  47 root     root       1380 12月 28 21:11 run\\nlrwxrwxrwx   1 root     root          8  2月 22  2023 sbin -> usr/sbin\\ndrwxr-xr-x  15 root     root       4096  2月 23  2023 snap\\ndrwxr-xr-x   2 root     root       4096  8月  9  2022 srv\\n-rw-------   1 root     root 2147483648  2月 22  2023 swapfile\\ndr-xr-xr-x  13 root     root          0 12月 22 09:24 sys\\ndrwxrwxrwt  43 root     root     126976 12月 28 21:50 tmp\\ndrwxr-xr-x  14 root     root       4096  8月  9  2022 usr\\ndrwxr-xr-x  15 root     root       4096  6月 23  2023 var\\n', 'stderr': '', 'returncode': 0, 'executed_command': 'ls -la /', 'success': True}\n</$.cli_result>\n\n</output json path content>\n",
+        "tools": [
+          {
+            "function": {
+              "description": "Evaluate if subtree meets root task requirements and provide summary or missing items",
+              "name": "evaluate_and_summarize_subtree",
+              "parameters": {
+                "properties": {
+                  "deliverable_output_path": {
+                    "description": "Array of output paths that contain useful results to be preserved in the compacted artifact",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "new_task_to_execute": {
+                    "description": "Array of new tasks to execute",
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "requirements_met": {
+                    "description": "True if root task requirements are fully satisfied by aggregated outputs",
+                    "type": "boolean"
+                  },
+                  "summary": {
+                    "description": "Concise summary of the subtree results if requirements are met",
+                    "type": "string"
+                  },
+                  "think_process": {
+                    "description": "analyze if requirement is met and if not met, what is missing, and how to fix the missing part.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "requirements_met"
+                ],
+                "type": "object"
+              }
+            },
+            "type": "function"
+          }
+        ]
+      },
+      "output": {
+        "content": "",
+        "tool_calls": [
+          {
+            "id": "mock_eval_subtree_0",
+            "name": "evaluate_and_summarize_subtree",
+            "arguments": {
+              "requirements_met": true,
+              "think_process": "CLI command ran successfully.",
+              "new_task_to_execute": [],
+              "summary": "Listed root directory contents.",
+              "deliverable_output_path": [
+                "$.cli_result"
+              ]
+            }
+          }
+        ]
+      },
+      "timestamp": "2026-01-08T00:30:01.000000",
+      "execution_time_ms": 0.0,
+      "parameters_hash": "329f9c86dcc6bd91"
     }
   ],
   "metadata": {
-    "total_tool_calls": 2,
+    "total_tool_calls": 3,
     "tools_used": [
       "CLI",
       "LLM"
     ]
   },
-  "saved_at": "2025-12-28T21:50:31.392461"
+  "saved_at": "2026-01-04T21:27:42.246712"
 }

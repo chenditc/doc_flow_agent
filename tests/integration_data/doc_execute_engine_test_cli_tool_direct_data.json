@@ -1,7 +1,7 @@
 {
   "test_name": "doc_execute_engine_test_cli_tool_direct",
-  "mode": "real",
-  "timestamp": "2025-12-28T21:51:35.732610",
+  "mode": "mock_then_real",
+  "timestamp": "2026-01-04T21:37:43.534623",
   "tool_calls": [
     {
       "tool_id": "CLI",
@@ -16,8 +16,8 @@
         "executed_command": "echo 'Hello from CLI tool'",
         "success": true
       },
-      "timestamp": "2025-12-28T21:51:35.732290",
-      "execution_time_ms": 2.191558014601469,
+      "timestamp": "2026-01-04T21:37:43.534319",
+      "execution_time_ms": 0.0010097865015268326,
       "parameters_hash": "39c6dddba821011f"
     }
   ],
@@ -27,5 +27,5 @@
       "CLI"
     ]
   },
-  "saved_at": "2025-12-28T21:51:35.732659"
+  "saved_at": "2026-01-04T21:37:43.534673"
 }

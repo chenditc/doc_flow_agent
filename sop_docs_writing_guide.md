@@ -124,6 +124,32 @@ The system processes SOP documents through several stages:
    - Renders templates with runtime variables using `{variable}` syntax
    - Executes the specified tool with processed parameters
 
+## Implicit template variables (shortcut)
+
+To make SOP authoring simpler, the engine provides a minimal set of **always-available** template variables. You can reference these in any tool parameter string (and in `TEMPLATE` body placeholders) without defining `input_description` or `input_json_path`:
+
+- `{task_description}`: the current task's `description`
+- `{current_task}`: `context.current_task` if present, otherwise falls back to the current task's `description`
+
+**Override precedence**: If your SOP defines an explicit mapping via `input_json_path.task_description` or `input_json_path.current_task`, the explicitly resolved value overrides the implicit default.
+
+### Minimal example (no inputs declared)
+
+```yaml
+---
+description: Rewrite the task as a short checklist
+tool:
+  tool_id: LLM
+  parameters:
+    prompt: "{parameters.prompt}"
+output_description: A short checklist derived from the task text
+---
+## parameters.prompt
+
+Turn this task into a short checklist:
+{task_description}
+```
+
 ### Document Selection Process
 
 When executing natural language commands, the system:
@@ -178,9 +204,9 @@ def process_step(context: dict):
 - **Use Case**: Deterministic text / plan rendering (no logic branching)
 - **Dify Equivalent**: Template nodes, variable substitution
 - **Source of Truth**: The markdown body itself is the template; YAML usually keeps `parameters: {}` for this tool
-- **Variable Resolution**: Placeholders like `{recipient_name}` come from values mapped via `input_json_path`
+- **Variable Resolution**: Placeholders like `{recipient_name}` come from values mapped via `input_json_path` (plus implicit variables like `{task_description}` and `{current_task}`)
 - **Examples**: Generating structured output, formatting data, stable process task planning (see `sop_docs/examples/generate_personalized_email.md`)
-- **Failure Mode**: Missing variable raises error—document all placeholders in `input_description`.
+- **Failure Mode**: Missing variable raises error—document all placeholders in `input_description` (except the implicit `{task_description}` / `{current_task}` shortcut).
 
 ### CLI Tool
 - **Use Case**: System commands, external tool integration, quick inspection

@@ -165,12 +165,37 @@ class IntegrationTestProxy:
         parameters_for_hash = self._build_parameters_with_sop(parameters, sop_doc_body)
         param_hash = self.data_manager._hash_parameters(self.tool_id, parameters_for_hash)
 
+        # Backward compatibility: the engine may inject implicit template variables
+        # (e.g. current_task/task_description) into tool parameters. Older MOCK recordings
+        # may not include these keys, so attempt alternate hashes with them removed.
+        if self.mode in (IntegrationTestMode.MOCK, IntegrationTestMode.MOCK_THEN_REAL) and param_hash not in self._mock_data:
+            compat_candidates: List[Dict[str, Any]] = []
+            if "current_task" in parameters_for_hash:
+                cand = dict(parameters_for_hash)
+                cand.pop("current_task", None)
+                compat_candidates.append(cand)
+            if "task_description" in parameters_for_hash:
+                cand = dict(parameters_for_hash)
+                cand.pop("task_description", None)
+                compat_candidates.append(cand)
+            if "current_task" in parameters_for_hash and "task_description" in parameters_for_hash:
+                cand = dict(parameters_for_hash)
+                cand.pop("current_task", None)
+                cand.pop("task_description", None)
+                compat_candidates.append(cand)
+
+            for cand in compat_candidates:
+                cand_hash = self.data_manager._hash_parameters(self.tool_id, cand)
+                if cand_hash in self._mock_data:
+                    param_hash = cand_hash
+                    break
+
         # Backward compatibility: previously some tools (notably LLMTool) embedded retry control
         # keys inside the parameters dict. Existing MOCK recordings may include those keys, so the
         # new explicit-arg calls would miss the hash. If we are in MOCK / MOCK_THEN_REAL and miss,
         # attempt an alternate hash including legacy keys synthesized from kwargs.
         legacy_hash = None
-        if self.tool_id == "LLM" and param_hash not in getattr(self, "_mock_data", {}):
+        if self.tool_id == "LLM" and param_hash not in self._mock_data:
             legacy_params = dict(parameters_for_hash)
             if "max_retries" in kwargs:
                 legacy_params["max_retries"] = kwargs.get("max_retries")
@@ -180,13 +205,12 @@ class IntegrationTestProxy:
             if "retry_strategies" in kwargs:
                 legacy_params["retry_strategies"] = [type(s).__name__ for s in (kwargs.get("retry_strategies") or [])]
             legacy_hash = self.data_manager._hash_parameters(self.tool_id, legacy_params)
-            if legacy_hash in getattr(self, "_mock_data", {}):
+            if legacy_hash in self._mock_data:
                 param_hash = legacy_hash  # use legacy record
             elif self.mode in (IntegrationTestMode.MOCK, IntegrationTestMode.MOCK_THEN_REAL):
                 # Final heuristic: if only a single mock record exists for LLM, reuse it (API evolution tolerance)
-                mock_data = getattr(self, "_mock_data", {})
-                if len(mock_data) == 1:
-                    param_hash = next(iter(mock_data.keys()))
+                if len(self._mock_data) == 1:
+                    param_hash = next(iter(self._mock_data.keys()))
         
         if self.mode == IntegrationTestMode.REAL:
             return await self._execute_real(parameters, param_hash, sop_doc_body=sop_doc_body, **kwargs)

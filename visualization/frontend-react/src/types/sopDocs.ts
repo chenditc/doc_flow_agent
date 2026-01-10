@@ -63,6 +63,7 @@ export interface VectorSearchResultItem {
   embedded_text: string;
   tool_id?: string | null;
   used_doc_id_fallback: boolean;
+  used_query: string;
 }
 
 export interface VectorSearchResponse {

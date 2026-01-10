@@ -85,6 +85,7 @@ export const VectorSearchPanel: React.FC<VectorSearchPanelProps> = ({ onSelectDo
         <div className="vector-search-results">
           <div className="vector-search-results-header">
             {response.total} result{response.total !== 1 ? 's' : ''}
+            <div className="vector-search-results-query">Query: {response.query}</div>
           </div>
 
           {response.total === 0 ? (
@@ -106,6 +107,14 @@ export const VectorSearchPanel: React.FC<VectorSearchPanelProps> = ({ onSelectDo
                     {r.tool_id ? <span className="vector-search-pill">tool: {r.tool_id}</span> : null}
                     {r.used_doc_id_fallback ? (
                       <span className="vector-search-pill">used doc_id fallback</span>
+                    ) : null}
+                    {r.used_query !== response.query ? (
+                      <span
+                        className="vector-search-pill vector-search-pill-rewritten"
+                        title={`used query: ${r.used_query}`}
+                      >
+                        matched via: {r.used_query}
+                      </span>
                     ) : null}
                   </div>
                   {r.embedded_text ? (

@@ -1,0 +1,18 @@
+---
+description: Code style that must follow
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+## Do not use getattr and setattr
+
+Almost all getattr and setattr use can be avoided. Because the code base is controlled by you, all attribute should be defined statically in code, you can verify if the attribute definition exists before get or set it. If there is attribute missing error, we want to fail fast instead of failing silently.
+
+## Fail fast and do not handle unexpected case.
+
+If there is unexpected things happen, let the error happen and raise exception. We don't want to swallow them.
+
+## Clean up debugging code after debug
+
+Do not left debugging trace and environment variable to code base, only keep necessary informtive logging.

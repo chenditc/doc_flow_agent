@@ -1,12 +1,12 @@
 {
   "test_name": "python_executor_tool_test_string_concatenation",
-  "mode": "real",
-  "timestamp": "2025-10-04T22:07:00.740294",
+  "mode": "mock_then_real",
+  "timestamp": "2026-01-04T21:37:43.700769",
   "tool_calls": [
     {
       "tool_id": "LLM",
       "parameters": {
-        "prompt": "\nYou are a Python code generation assistant.\nYour task is to write a single Python function named `process_step` that takes one argument: `context: dict`.\nThis function will be executed to perform following specific task. Import necessary library if you used any.\nThe context object will contain all the necessary data. The json serialized context object has been attached here for you to understand the input data structure.\nThe function should return a JSON-serializable value.\n\n<available library>\naiohappyeyeballs\naiohttp\naiosignal\nannotated-types\nanyio\nasync-timeout\nattrs\nazure-core\nazure-identity\ncertifi\ncffi\ncharset-normalizer\nclick\ncryptography\ndistro\nexceptiongroup\nfastapi\nfrozenlist\ngenson\nh11\nhttpcore\nhttptools\nhttpx\nidna\niniconfig\njiter\njson_repair\njsonpath-ng\nmsal\nmsal-extensions\nmultidict\nopenai\npackaging\npip\npluggy\nply\npropcache\npycparser\npydantic\npydantic_core\nPyJWT\npytest\npytest-asyncio\nPyYAML\nrequests\nsetuptools\nsix\nsniffio\nstarlette\ntomli\ntqdm\ntyping-inspection\ntyping_extensions\nurllib3\nuvicorn\nuvloop\nwatchdog\nwatchfiles\nwebsockets\nyarl\n</available library>\n\n<Task Description>\nCombine first_name and last_name from context with a space between them, return as dict with key 'full_name'\n</Task Description>\n\n<context object type><class 'dict'></context object type>\n<Json serialized context object>\n{\n  \"first_name\": \"John\",\n  \"last_name\": \"Doe\"\n}\n</Json serialized context object>\n",
+        "prompt": "\nYou are a Python code generation assistant.\nYour task is to write a single Python function named `process_step` that takes one argument: `context: dict`. It will contain all the necessary data. The content of context has been attached here for you to understand the input data structure.\nThis function will be executed to perform following specific task. Import necessary library if you used any.\nThe function should return a JSON-serializable value.\nThe function should contains necessary print statements to output intermediate results for debugging purpose.\nIf any exception occurs during execution, do not handle it inside the function, let it propagate to the caller.\nDO NOT return a large amount of data. If you need to deliver a large amount of data (html/image/long text), write to a file in /tmp and return the file path. For small amount of data (<10k character), you can directly return them.\nIf you need to write data to files, use the /tmp directory unless explicitly specifies in the task description.\n\n<available library>\nagent-sandbox\naiohappyeyeballs\naiohttp\naiosignal\nannotated-types\nanyio\nasync-timeout\nattrs\nazure-core\nazure-identity\ncertifi\ncffi\ncharset-normalizer\nclick\ncryptography\ndataclasses-json\ndistro\nexceptiongroup\nfastapi\nfrozenlist\ngenson\ngreenlet\nh11\nhttpcore\nhttptools\nhttpx\nhttpx-sse\nidna\niniconfig\njiter\njson_repair\njsonpatch\njsonpath-ng\njsonpointer\nlangchain-classic\nlangchain-community\nlangchain-core\nlangchain-text-splitters\nlangsmith\nloguru\nmarshmallow\nmsal\nmsal-extensions\nmultidict\nmypy_extensions\nnumpy\nopenai\norjson\npackaging\npip\npluggy\nply\npropcache\npycparser\npydantic\npydantic-settings\npydantic_core\nPyJWT\npytest\npytest-asyncio\npytest-timeout\nPyYAML\nrequests\nrequests-toolbelt\nsetuptools\nsix\nsniffio\nsocksio\nSQLAlchemy\nstarlette\ntenacity\ntomli\ntqdm\ntyping-inspect\ntyping-inspection\ntyping_extensions\nurllib3\nuuid_utils\nuvicorn\nuvloop\nvolcengine-python-sdk\nwatchdog\nwatchfiles\nwebsockets\nyarl\nzstandard\n</available library>\n\n<Task Description>\nCombine first_name and last_name from context with a space between them, return as dict with key 'full_name'\n</Task Description>\n\n<context object type>dict</context object type>\n<result of json.dumps(context)>\n{\n  \"first_name\": \"John\",\n  \"last_name\": \"Doe\"\n}\n</result of json.dumps(context)>\n",
         "temperature": 0.0,
         "tools": [
           {
@@ -19,7 +19,7 @@
                 "properties": {
                   "code": {
                     "type": "string",
-                    "description": "Complete Python function definition for process_step(context: dict) that performs the requested task"
+                    "description": "Complete Python function definition for function `process_step` that performs the requested task"
                   }
                 },
                 "required": [
@@ -43,9 +43,9 @@
           }
         ]
       },
-      "timestamp": "2025-10-04T22:07:00.717474",
-      "execution_time_ms": 15191.34849589318,
-      "parameters_hash": "bec73b79f62a63a7"
+      "timestamp": "2026-01-04T21:37:43.677228",
+      "execution_time_ms": 0.0012598466128110886,
+      "parameters_hash": "b628d4dbb172e90d"
     }
   ],
   "metadata": {
@@ -54,5 +54,5 @@
       "LLM"
     ]
   },
-  "saved_at": "2025-10-04T22:07:00.740417"
+  "saved_at": "2026-01-04T21:37:43.700932"
 }

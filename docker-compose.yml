@@ -26,8 +26,8 @@ services:
       retries: 3
       start_period: 20s
     depends_on:
-      # init-embedding-cache:
-      #   condition: service_completed_successfully
+      init-embedding-cache:
+        condition: service_completed_successfully
       sandbox:
         condition: service_started
     environment:
@@ -92,14 +92,14 @@ services:
       - "8080:8080"
     security_opt:
       - seccomp=unconfined
-    # depends_on:
-    #   init-embedding-cache:
-    #     condition: service_completed_successfully
+    depends_on:
+      init-embedding-cache:
+        condition: service_completed_successfully
     env_file:
       - .env
     environment:
       - EMBEDDING_CACHE_DIR=/app/embedding_cache
-      - USER=root
+        #      - USER=root
     volumes:
       - embedding_cache:/app/embedding_cache
       - sandbox_user_comm:/app/user_comm
@@ -115,14 +115,14 @@ services:
       retries: 5
       start_period: 10s
 
-  # init-embedding-cache:
-  #   image: alpine:3.20
-  #   command: >
-  #     sh -e -x -c "mkdir -p /app/embedding_cache && chmod -R 777 /app/embedding_cache && chmod -R 777 /user_data"
-  #   volumes:
-  #     - embedding_cache:/app/embedding_cache
-  #     - sandbox_user_data:/user_data/
-  #   restart: "no"
+  init-embedding-cache:
+    image: alpine:3.20
+    command: >
+      sh -e -x -c "mkdir -p /app/embedding_cache && chmod -R 777 /app/embedding_cache && chmod -R 777 /user_data"
+    volumes:
+      - embedding_cache:/app/embedding_cache
+      - sandbox_user_data:/user_data/
+    restart: "no"
 
 volumes:
   traces:

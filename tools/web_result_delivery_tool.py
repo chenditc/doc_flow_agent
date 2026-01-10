@@ -107,10 +107,10 @@ class WebResultDeliveryTool(BaseTool):
         data_file_path = files_dir / data_file_name
         payload_file_path = files_dir / payload_file_name
         self._write_result_data_file(result_data, data_file_path)
-        delivery_payload = self._build_delivery_payload(result_data, session_id, task_id)
+        delivery_payload, provided_meta_keys = self._build_delivery_payload(result_data, session_id, task_id)
         generated_assets_dir = session_dir / "generated_assets"
         self._ensure_downloadable_blocks(delivery_payload, generated_assets_dir)
-        self._write_delivery_payload_file(delivery_payload, payload_file_path)
+        self._write_delivery_payload_file(delivery_payload, payload_file_path, provided_meta_keys=provided_meta_keys)
 
         payload_file_url = f"{file_base_url}{payload_file_name}"
 
@@ -255,7 +255,7 @@ class WebResultDeliveryTool(BaseTool):
         result_data: Any,
         session_id: str,
         task_id: str,
-    ) -> DeliveryPayload:
+    ) -> tuple[DeliveryPayload, set[str]]:
         try:
             payload = normalize_result_data(
                 result_data,
@@ -265,12 +265,17 @@ class WebResultDeliveryTool(BaseTool):
         except DeliveryPayloadError as exc:
             raise ValueError(f"Failed to normalize result data: {exc}") from exc
 
-        payload._provided_meta_keys = self._extract_meta_field_keys(result_data)
-        return payload
+        provided_meta_keys = self._extract_meta_field_keys(result_data)
+        return payload, provided_meta_keys
 
-    def _write_delivery_payload_file(self, payload: DeliveryPayload, file_path: Path) -> None:
+    def _write_delivery_payload_file(
+        self,
+        payload: DeliveryPayload,
+        file_path: Path,
+        *,
+        provided_meta_keys: Optional[set[str]] = None,
+    ) -> None:
         payload_dict = payload.to_dict()
-        provided_meta_keys = getattr(payload, "_provided_meta_keys", None)
         if provided_meta_keys is not None:
             meta_dict = payload_dict.get("meta", {})
             pruned_meta = {k: v for k, v in meta_dict.items() if k in provided_meta_keys}

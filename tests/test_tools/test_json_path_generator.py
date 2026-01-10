@@ -248,7 +248,9 @@ def extract_func(context):
     def test_generate_input_json_paths_empty_descriptions(self, mock_print, mock_candidates, mock_extraction):
         """Test generate_input_json_paths with empty input descriptions"""
         async def run_test():
-            result = await self.smart_generator.generate_input_json_paths({}, {})
+            result = await self.smart_generator.generate_input_json_paths(
+                {}, {}, tool_description="unit-test-tool"
+            )
             return result
         
         result = asyncio.run(run_test())
@@ -272,7 +274,9 @@ def extract_func(context):
         async def run_test():
             input_descriptions = {"field1": "Test field description"}
             context = {"current_task": "test task"}
-            result = await self.smart_generator.generate_input_json_paths(input_descriptions, context)
+            result = await self.smart_generator.generate_input_json_paths(
+                input_descriptions, context, tool_description="unit-test-tool"
+            )
             return result, context
         
         result, updated_context = asyncio.run(run_test())
@@ -303,7 +307,9 @@ def extract_func(context):
             input_descriptions = {"field1": "Test field description"}
             context = {"current_task": "test task"}
             with self.assertRaises(TaskInputMissingError) as context_manager:
-                await self.smart_generator.generate_input_json_paths(input_descriptions, context)
+                await self.smart_generator.generate_input_json_paths(
+                    input_descriptions, context, tool_description="unit-test-tool"
+                )
             return str(context_manager.exception)
         
         error_message = asyncio.run(run_test())
@@ -732,7 +738,7 @@ class TestBatchJsonPathGenerator(unittest.TestCase):
         
         async def run_test():
             return await self.generator._extract_all_fields_with_llm(
-                input_descriptions, candidate_fields, user_ask, tool_schema
+                input_descriptions, candidate_fields, user_ask, "unit-test-tool", tool_schema
             )
         
         # Execute
@@ -766,11 +772,89 @@ class TestBatchJsonPathGenerator(unittest.TestCase):
         
         async def run_test():
             return await self.generator._extract_all_fields_with_llm(
-                input_descriptions, candidate_fields, user_ask, tool_schema
+                input_descriptions, candidate_fields, user_ask, "unit-test-tool", tool_schema
             )
         
         result = asyncio.run(run_test())
         
         # Should return NOT_FOUND for all fields
         self.assertEqual(result["title"], "<NOT_FOUND_IN_CANDIDATES>")
+
+    def test_generate_input_json_paths_includes_tool_description_in_prompt(self):
+        """Ensure Batch flow includes tool_description in the LLM prompt"""
+        from tools.json_path_generator import BatchJsonPathGenerator
+
+        tool_description = "unit-test-batch-tool-description"
+        llm_tool_mock = MagicMock()
+        llm_tool_mock.execute = AsyncMock(return_value={
+            "content": "Extraction completed",
+            "tool_calls": [
+                {
+                    "name": "extract_request_parameters",
+                    "arguments": {"title": "AI Blog", "topic": "Artificial Intelligence"}
+                }
+            ]
+        })
+
+        generator = BatchJsonPathGenerator(llm_tool=llm_tool_mock)
+        generator._analyze_context_candidates = AsyncMock(return_value={})
+
+        async def run_test():
+            await generator.generate_input_json_paths(
+                {"title": "Blog title", "topic": "Main topic"},
+                {"current_task": "Generate blog about AI"},
+                tool_description=tool_description,
+                user_original_ask="Create AI blog"
+            )
+
+        asyncio.run(run_test())
+
+        prompt = llm_tool_mock.execute.call_args[0][0]["prompt"]
+        self.assertIn(tool_description, prompt)
+
+
+class TestOnebyOneJsonPathGeneratorPrompt(unittest.TestCase):
+    """Focused regression tests for OnebyOneJsonPathGenerator prompts"""
+
+    def test_generate_input_json_paths_includes_tool_description_in_prompt(self):
+        """Ensure One-by-one flow includes tool_description in the LLM prompt"""
+        from tools.json_path_generator import OnebyOneJsonPathGenerator
+
+        tool_description = "unit-test-one-by-one-tool-description"
+
+        async def mock_execute(payload, *args, **kwargs):
+            # Simulate LLMTool.execute running validators and returning enriched response
+            resp = {
+                "content": (
+                    "<THINK_PROCESS>ok</THINK_PROCESS>\n"
+                    "<GENERATED_CODE>\n"
+                    "```python\n"
+                    "def extract_func(context):\n"
+                    "    return 'extracted_value'\n"
+                    "```\n"
+                    "</GENERATED_CODE>\n"
+                )
+            }
+            for validator in kwargs.get("validators", []):
+                validator(resp)
+            return resp
+
+        llm_tool_mock = MagicMock()
+        llm_tool_mock.execute = AsyncMock(side_effect=mock_execute)
+
+        generator = OnebyOneJsonPathGenerator(llm_tool=llm_tool_mock)
+        generator._analyze_context_candidates = AsyncMock(return_value={})
+
+        async def run_test():
+            await generator.generate_input_json_paths(
+                {"field1": "Test field description"},
+                {"current_task": "test task"},
+                tool_description=tool_description,
+                user_original_ask="Original ask"
+            )
+
+        asyncio.run(run_test())
+
+        prompt = llm_tool_mock.execute.call_args[0][0]["prompt"]
+        self.assertIn(tool_description, prompt)
    

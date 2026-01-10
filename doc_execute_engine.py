@@ -403,6 +403,17 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
         for key, value in variables.items():
             template = template.replace(f"{{{key}}}", str(value))
         return template
+
+    def _build_implicit_template_variables(self, task: Task) -> Dict[str, Any]:
+        """Build a minimal set of implicit/default template variables.
+
+        These are always available to SOP parameter rendering without requiring
+        input_description/input_json_path boilerplate.
+        """
+        return {
+            "task_description": task.description,
+            "current_task": self.context.get("current_task", task.description),
+        }
     
     def _needs_planning_metadata(self, task: Task) -> bool:
         """Return True if the task should receive planning metadata injections."""
@@ -474,6 +485,16 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
 
         if input_description_to_generate_path:
             print(f"[TASK_CREATION] Generating input JSON paths for {sop_doc.doc_id}, {input_description_to_generate_path}")
+            # Build a concise downstream tool/SOP description for the extractor prompts.
+            # NOTE: Do not validate emptiness; only omit parts that are truly missing (None).
+            sop_desc = sop_doc.description
+            tool_id = (sop_doc.tool or {}).get("tool_id")
+            tool_description = f"{sop_doc.doc_id}"
+            if sop_desc is not None:
+                tool_description = f"{tool_description}: {sop_desc}"
+            if tool_id is not None:
+                tool_description = f"{tool_description} (tool_id={tool_id})"
+
             # Build context_key_meaning_map: map stored context keys to task short names if available
             context_key_meaning_map: Dict[str, str] = {}
             # Use completed tasks' output_json_path to reverse map
@@ -486,8 +507,8 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
             update_input_json_path = await self.json_path_generator.generate_input_json_paths(
                 input_description_to_generate_path,
                 self.context,
-                pending_task.description,
-                
+                tool_description=tool_description,
+                user_original_ask=pending_task.description,
                 context_key_meaning_map=context_key_meaning_map,
                 task_short_name=pending_task.short_name
             )
@@ -618,7 +639,7 @@ Use the XML blocks below. Do not include any markdown. Return only via the funct
         # Start task execution phase
         with self.tracer.trace_phase_with_data("task_execution") as phase_ctx:
             # Resolve input values from context
-            input_values = {}
+            input_values = self._build_implicit_template_variables(task)
             for key, path in task.input_json_path.items():
                 value = self.resolve_json_path(path, self.context)
                 if value is None:

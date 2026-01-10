@@ -490,6 +490,7 @@ class OnebyOneJsonPathGenerator(BaseJsonPathGenerator):
         input_description: str, 
         candidate_fields: Dict[str, Any], 
         context: Dict[str, Any], 
+        tool_description: str,
         user_original_ask: str
     ) -> str:
         """Step 2: Generate Python code for content extraction
@@ -515,6 +516,7 @@ class OnebyOneJsonPathGenerator(BaseJsonPathGenerator):
         
         prompt = f"""## Task: Generate Parameter Extraction Code
 Generate Python code to extract and reformat parameter for the request parameter from candidate fields. User has raise a request and we need to extract and reformat the parameter from the candidate fields in the context. Avoid using f-string when need to fill in variables, use string replacement or concatenation instead.
+These parameter will be used for a tool: {tool_description}
 
 ## User Original Request
 {user_original_ask}
@@ -644,6 +646,7 @@ def extract_func(context):
         self,
         input_descriptions: Dict[str, str],
         context: Dict[str, Any],
+        tool_description: str,
         user_original_ask: str = "",
         context_key_meaning_map: Optional[Dict[str, str]] = None,
         task_short_name: Optional[str] = None
@@ -680,7 +683,7 @@ def extract_func(context):
 
                 # Step 2: Generate extraction code
                 extraction_code = await self._generate_extraction_code(
-                    description, candidate_fields, context, user_original_ask
+                    description, candidate_fields, context, tool_description, user_original_ask
                 )
 
                 # Step 3: Execute code and store in temporary context
@@ -723,6 +726,7 @@ class BatchJsonPathGenerator(BaseJsonPathGenerator):
         self, 
         input_descriptions: Dict[str, str], 
         context: Dict[str, Any],
+        tool_description: str,
         user_original_ask: str = "",
         context_key_meaning_map: Optional[Dict[str, str]] = None,
         task_short_name: Optional[str] = None
@@ -764,7 +768,7 @@ class BatchJsonPathGenerator(BaseJsonPathGenerator):
             
             # Step 3: Use LLM tool to extract all fields at once
             extracted_values = await self._extract_all_fields_with_llm(
-                input_descriptions, candidate_fields, user_original_ask, tool_schema
+                input_descriptions, candidate_fields, user_original_ask, tool_description, tool_schema
             )
             
             # Step 4: Process results and create JSON paths
@@ -839,6 +843,7 @@ class BatchJsonPathGenerator(BaseJsonPathGenerator):
         input_descriptions: Dict[str, str],
         candidate_fields: Dict[str, Any], 
         user_original_ask: str,
+        tool_description: str,
         tool_schema: Dict[str, Any]
     ) -> Dict[str, str]:
         """Extract all input fields at once using LLM with tool schema
@@ -866,7 +871,7 @@ class BatchJsonPathGenerator(BaseJsonPathGenerator):
         
         # Create prompt using the template from requirements
         prompt = f"""## Task: Extract request parameter
-User has raise a request and we need to extract and reformat the parameter from the candidate fields in the context. These parameter will be used for a tool: {getattr(self, 'tool_description', 'General purpose tool')}
+User has raise a request and we need to extract and reformat the parameter from the candidate fields in the context. These parameter will be used for a tool: {tool_description}
 
 ## User Original Request
 {user_original_ask}
@@ -943,7 +948,8 @@ async def test_json_path_generator():
     input_paths = await generator.generate_input_json_paths(
         input_descriptions, 
         test_context, 
-        test_context["current_task"]
+        tool_description="demo-one-by-one-json-path-generator",
+        user_original_ask=test_context["current_task"]
     )
     print(f"Generated input paths: {input_paths}")
     
@@ -994,7 +1000,8 @@ async def test_simple_json_path_generator():
     input_paths = await generator.generate_input_json_paths(
         input_descriptions, 
         test_context, 
-        test_context["current_task"]
+        tool_description="demo-batch-json-path-generator",
+        user_original_ask=test_context["current_task"]
     )
     print(f"Generated input paths: {input_paths}")
     
@@ -1029,6 +1036,7 @@ class SmartJsonPathGenerator(BaseJsonPathGenerator):
         self,
         input_descriptions: Dict[str, str],
         context: Dict[str, Any],
+        tool_description: str,
         user_original_ask: str = "",
         context_key_meaning_map: Optional[Dict[str, str]] = None,
         task_short_name: Optional[str] = None
@@ -1053,12 +1061,22 @@ class SmartJsonPathGenerator(BaseJsonPathGenerator):
         if len(input_descriptions) == 1:
             print(f"[SMART_JSON_PATH_GEN] Using OneByOneJsonPathGenerator for single input")
             return await self.one_by_one_generator.generate_input_json_paths(
-                input_descriptions, context, user_original_ask, context_key_meaning_map, task_short_name=task_short_name
+                input_descriptions,
+                context,
+                tool_description=tool_description,
+                user_original_ask=user_original_ask,
+                context_key_meaning_map=context_key_meaning_map,
+                task_short_name=task_short_name
             )
         else:
             print(f"[SMART_JSON_PATH_GEN] Using BatchJsonPathGenerator for {len(input_descriptions)} inputs")
             return await self.batch_generator.generate_input_json_paths(
-                input_descriptions, context, user_original_ask, context_key_meaning_map, task_short_name=task_short_name
+                input_descriptions,
+                context,
+                tool_description=tool_description,
+                user_original_ask=user_original_ask,
+                context_key_meaning_map=context_key_meaning_map,
+                task_short_name=task_short_name
             )
     
 

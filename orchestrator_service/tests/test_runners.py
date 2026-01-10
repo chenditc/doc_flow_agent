@@ -71,7 +71,8 @@ async def test_sandbox_runner_executes_command(tmp_path: Path):
         sandbox_url=sandbox_url,
         log_path=remote_log_path,
         tail_lines=5,
-        timeout=5.0,
+        # Keep this below the global pytest-timeout budget to avoid flakes
+        timeout=1.0,
     )
     if tail_output is None:
         pytest.skip("Sandbox remote log tailing unavailable; verify sandbox file service is reachable.")

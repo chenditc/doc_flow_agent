@@ -38,7 +38,7 @@ async def manager(temp_env):
         # Ensure background job tasks don't leak between tests (pytest-asyncio strict mode).
         # Only manage real asyncio Tasks; do not poll on `_jobs` because some tests
         # register synthetic Job objects without runners/tasks.
-        pending = [t for t in getattr(mgr, "_tasks", {}).values() if not t.done()]
+        pending = [t for t in mgr._tasks.values() if not t.done()]
         for t in pending:
             t.cancel()
         if pending:

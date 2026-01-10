@@ -264,13 +264,13 @@ class SandboxRunner(BaseRunner):
         output_lines: List[str] = []
         for record in console_records:
             if isinstance(record, dict):
-                ps1 = record.get("ps1", "")
+                ps1 = record.get("ps1", "") or record.get("ps_1", "")
                 issued_command = record.get("command", "")
                 record_output = record.get("output", "")
             else:
-                ps1 = getattr(record, "ps1", "")
-                issued_command = getattr(record, "command", "")
-                record_output = getattr(record, "output", "")
+                ps1 = record.ps_1
+                issued_command = record.command
+                record_output = record.output
             if ps1 or issued_command:
                 output_lines.append(f"{ps1}{issued_command}")
             if record_output:
@@ -348,8 +348,8 @@ class SandboxRunner(BaseRunner):
                 timeout=timeout,
             )
             data = SandboxRunner._unwrap_response_data(response, context="tail remote log")
-            session_id = getattr(data, "session_id", None)
-            if getattr(data, "status", None) != "completed":
+            session_id = data.session_id
+            if data.status != "completed":
                 return None
             if data.exit_code not in (0, None):
                 return None
@@ -369,10 +369,10 @@ class SandboxRunner(BaseRunner):
     def _unwrap_response_data(response: Any, *, context: str):
         if response is None:
             raise RuntimeError(f"Sandbox 【{context}】 returned no response object")
-        if getattr(response, "success", None) is False:
-            message = getattr(response, "message", "unknown error")
+        if response.success is False:
+            message = response.message
             raise RuntimeError(f"Sandbox 【{context}】 failed: {message}")
-        data = getattr(response, "data", None)
+        data = response.data
         if data is None:
             raise RuntimeError(f"Sandbox 【{context}】 returned empty data")
         return data

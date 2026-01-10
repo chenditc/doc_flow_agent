@@ -53,6 +53,9 @@ def setup_test_environment():
     cache_dir.mkdir(parents=True, exist_ok=True)
     os.environ.setdefault("EMBEDDING_CACHE_DIR", str(cache_dir))
     os.environ.setdefault("EMBEDDING_MODEL", "text-embedding-ada-002")
+    # Keep tests offline/deterministic: rewrite would trigger additional LLM calls in mocks.
+    # Unit tests that validate rewrite behavior explicitly override this env var.
+    os.environ["SOP_VECTOR_SEARCH_QUERY_REWRITE_MODE"] = "off"
     
     yield
     
