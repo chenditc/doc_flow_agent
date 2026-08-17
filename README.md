@@ -1,3 +1,5 @@
+
+
 # Doc Flow Agent
 
 **Version:** 2.0  
@@ -496,4 +498,4 @@ Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) file.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines. All commits must be signed off with a `Signed-off-by` line (DCO sign-off).
